@@ -1,7 +1,8 @@
 import os
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 _DEFAULT_CONFIG_TEMPLATE = """\
 # gh-snitch configuration
