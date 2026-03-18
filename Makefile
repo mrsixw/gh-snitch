@@ -13,6 +13,7 @@ activate: .venv
 build: .venv
 
 	uv sync --extra build
+	mkdir -p dist
 	uv run shiv -c gh-snitch -o dist/gh-snitch --python '/usr/bin/env python3' .
 
 version-bump:
