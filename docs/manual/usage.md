@@ -40,6 +40,23 @@ gh-snitch --show-config
 
 Prints the currently loaded configuration.
 
+## GitHub Enterprise Server
+
+To surveil operatives on a GitHub Enterprise Server instance, set the base URL either in your config file:
+
+```toml
+[network]
+github_url = "https://github.example.com"
+```
+
+Or pass it directly on the command line:
+
+```bash
+gh-snitch --github-url https://github.example.com --users alice,bob
+```
+
+The GraphQL API endpoint is derived automatically (`<host>/api/graphql`). Your `GITHUB_TOKEN` should be a personal access token issued by the Enterprise instance.
+
 ## One-Shot Command
 
 Combine flags for a quick ad-hoc sweep without touching your config:

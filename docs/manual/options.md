@@ -5,6 +5,7 @@
 | `--config PATH` | `~/.config/gh-snitch/config.toml` | Path to TOML config file |
 | `--users TEXT` | (from config) | Comma-separated GitHub usernames to surveil |
 | `--years INTEGER` | (from config, default 3) | Number of prior complete years to include |
+| `--github-url URL` | `https://github.com` | GitHub base URL — set to your GitHub Enterprise Server hostname |
 | `--show-config` | off | Print current config and exit |
 | `--init-config` | off | Write default config file and exit |
 | `--no-update-check` | off | Skip checking for new releases |
@@ -30,6 +31,9 @@ users = ["alice", "bob"]
 
 [surveillance]
 years = 3
+
+[network]
+# github_url = "https://github.example.com"  # omit for github.com
 ```
 
-CLI flags `--users` and `--years` always override config file values.
+CLI flags `--users`, `--years`, and `--github-url` always override config file values.

@@ -46,6 +46,15 @@ gh-snitch --users alice,bob
 
 **Fix:** Check your network connection and verify your `GITHUB_TOKEN` is valid and not expired. GitHub's API may also be temporarily unavailable.
 
+## GitHub Enterprise Server: `Signal lost` or `GraphQL errors`
+
+If you're targeting a GHES instance and see network or GraphQL errors, check:
+
+1. **Correct URL** — use the base hostname, e.g. `https://github.example.com` (no path, no trailing slash).
+2. **Token source** — the `GITHUB_TOKEN` must be issued by the Enterprise instance, not github.com.
+3. **Token scope** — the token needs `read:user` scope on the Enterprise instance.
+4. **API access** — confirm the instance is reachable and the GraphQL API is enabled.
+
 ## Colours not showing
 
 If you see raw ANSI escape codes instead of colours, your terminal may not support them. Set `NO_COLOR=1` to disable colour output entirely:
