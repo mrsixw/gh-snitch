@@ -122,6 +122,53 @@ def test_no_update_check_skips_update(runner, tmp_path, requests_mock):
     assert result.exit_code == 0
 
 
+def test_github_url_cli_override(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[operatives]\nusers = []\n[surveillance]\nyears = 0\n")
+
+    requests_mock.post(
+        "https://github.example.com/api/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 5}
+                    },
+                }
+            }
+        },
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            result = runner.invoke(
+                gh_snitch,
+                [
+                    "--config",
+                    str(config_file),
+                    "--users",
+                    "alice",
+                    "--github-url",
+                    "https://github.example.com",
+                    "--no-update-check",
+                ],
+            )
+
+    assert result.exit_code == 0
+    assert "alice" in result.output
+
+
+def test_show_config_includes_github_url(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = []\n[network]\ngithub_url = "https://github.example.com"\n'
+    )
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+    assert result.exit_code == 0
+    assert "github.example.com" in result.output
+
+
 def test_users_cli_override(runner, tmp_path, requests_mock):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[operatives]\nusers = []\n[surveillance]\nyears = 0\n")

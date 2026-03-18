@@ -16,6 +16,10 @@ users = []
 # Number of prior complete years to include (in addition to the current year)
 years = 3
 
+[network]
+# GitHub base URL. Change this to target a GitHub Enterprise Server instance.
+# github_url = "https://github.example.com"
+
 [display]
 # Future display options go here
 """
@@ -39,7 +43,7 @@ def load_config(config_path=None):
     Warns (does not error) if the file is not found.
     """
     path = Path(config_path) if config_path else _default_config_path()
-    config = {"users": [], "years": 3}
+    config = {"users": [], "years": 3, "github_url": "https://github.com"}
 
     if not path.exists():
         print(
@@ -59,10 +63,14 @@ def load_config(config_path=None):
     operatives = data.get("operatives", {})
     surveillance = data.get("surveillance", {})
 
+    network = data.get("network", {})
+
     if "users" in operatives:
         config["users"] = operatives["users"]
     if "years" in surveillance:
         config["years"] = surveillance["years"]
+    if "github_url" in network:
+        config["github_url"] = network["github_url"]
 
     return config
 

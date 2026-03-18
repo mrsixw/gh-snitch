@@ -3,18 +3,30 @@ from datetime import date, datetime, timezone
 
 import requests
 
-GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
+DEFAULT_GITHUB_URL = "https://github.com"
 SECRET_GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 
-def make_github_graphql_request(query):
+def graphql_url_for(github_url: str) -> str:
+    """Return the GraphQL API endpoint for a given GitHub base URL.
+
+    github.com uses a different hostname for its API (api.github.com),
+    while GitHub Enterprise Server exposes the API at <host>/api/graphql.
+    """
+    url = github_url.rstrip("/")
+    if url == "https://github.com":
+        return "https://api.github.com/graphql"
+    return f"{url}/api/graphql"
+
+
+def make_github_graphql_request(query, github_url: str = DEFAULT_GITHUB_URL):
     """POST a GraphQL query to GitHub's API and return the response JSON."""
     headers = {
         "Authorization": f"bearer {SECRET_GITHUB_TOKEN}",
         "Content-Type": "application/json",
     }
     response = requests.post(
-        GITHUB_GRAPHQL_URL,
+        graphql_url_for(github_url),
         json={"query": query},
         headers=headers,
         timeout=30,
@@ -70,7 +82,7 @@ def build_contributions_query(users, from_iso, to_iso):
     return "{ " + "".join(aliases) + " }"
 
 
-def fetch_contributions(users, years):
+def fetch_contributions(users, years, github_url: str = DEFAULT_GITHUB_URL):
     """Fetch contribution counts for all users across year ranges.
 
     Returns dict[username][label] = int.
@@ -80,7 +92,7 @@ def fetch_contributions(users, years):
 
     for label, from_iso, to_iso in year_ranges:
         query = build_contributions_query(users, from_iso, to_iso)
-        data = make_github_graphql_request(query)
+        data = make_github_graphql_request(query, github_url)
         response_data = data.get("data", {})
 
         for username in users:

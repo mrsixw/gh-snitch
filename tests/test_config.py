@@ -11,6 +11,20 @@ def test_load_config_from_file(tmp_path):
     assert cfg["years"] == 5
 
 
+def test_load_config_github_url(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[network]\ngithub_url = "https://github.example.com"\n')
+    cfg = load_config(str(config_file))
+    assert cfg["github_url"] == "https://github.example.com"
+
+
+def test_load_config_github_url_defaults_to_github_com(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[operatives]\nusers = []\n")
+    cfg = load_config(str(config_file))
+    assert cfg["github_url"] == "https://github.com"
+
+
 def test_load_config_defaults_on_missing_file(tmp_path, capsys):
     cfg = load_config(str(tmp_path / "nonexistent.toml"))
     assert cfg["users"] == []

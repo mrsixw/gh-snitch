@@ -4,7 +4,11 @@ import sys
 import click
 import requests
 
-from .api import SECRET_GITHUB_TOKEN, fetch_contributions, get_year_ranges
+from .api import (
+    SECRET_GITHUB_TOKEN,
+    fetch_contributions,
+    get_year_ranges,
+)
 from .config import generate_default_config, load_config
 from .ui import render_table
 from .updater import check_for_update
@@ -36,13 +40,20 @@ from .updater import check_for_update
     help="Write a default config file and exit.",
 )
 @click.option(
+    "--github-url",
+    default=None,
+    help="GitHub base URL (default: https://github.com). For GitHub Enterprise Server.",
+)
+@click.option(
     "--no-update-check",
     is_flag=True,
     default=False,
     help="Skip checking for updates.",
 )
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
-def gh_snitch(config, users, years, show_config, init_config, no_update_check):
+def gh_snitch(  # noqa: PLR0913
+    config, users, years, github_url, show_config, init_config, no_update_check
+):
     """Spy-themed GitHub contribution surveillance tool."""
     if init_config:
         path = generate_default_config(config)
@@ -53,6 +64,7 @@ def gh_snitch(config, users, years, show_config, init_config, no_update_check):
         cfg = load_config(config)
         click.echo(f"users = {cfg['users']}")
         click.echo(f"years = {cfg['years']}")
+        click.echo(f"github_url = {cfg['github_url']}")
         return
 
     if not SECRET_GITHUB_TOKEN:
@@ -70,9 +82,12 @@ def gh_snitch(config, users, years, show_config, init_config, no_update_check):
         cfg["users"] = [u.strip() for u in users.split(",") if u.strip()]
     if years is not None:
         cfg["years"] = years
+    if github_url is not None:
+        cfg["github_url"] = github_url
 
     operative_list = cfg["users"]
     num_years = cfg["years"]
+    operative_github_url = cfg["github_url"]
 
     if not operative_list:
         click.echo(
@@ -85,7 +100,7 @@ def gh_snitch(config, users, years, show_config, init_config, no_update_check):
     click.echo(f"📡 Intercepting field reports for {len(operative_list)} operatives...")
 
     try:
-        data = fetch_contributions(operative_list, num_years)
+        data = fetch_contributions(operative_list, num_years, operative_github_url)
     except requests.exceptions.RequestException as e:
         click.echo(f"📡 Signal lost. Operative unreachable: {e}", err=True)
         sys.exit(1)
