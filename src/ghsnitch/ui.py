@@ -1,9 +1,24 @@
 import os
+import re
 import sys
 
+import tabulate as _tabulate_module
 from tabulate import tabulate
 
 IS_TTY = sys.stdout.isatty() and not os.getenv("NO_COLOR")
+
+# Patch tabulate to strip OSC 8 hyperlink sequences when measuring column widths.
+# Without this, tabulate counts invisible escape bytes as visible characters,
+# causing grossly over-wide columns and broken alignment.
+_OSC8_RE = re.compile(r"\x1b\]8;[^;]*;[^\x1b]*\x1b\\")
+_orig_visible_width = _tabulate_module._visible_width
+
+
+def _patched_visible_width(s):
+    return _orig_visible_width(_OSC8_RE.sub("", str(s)))
+
+
+_tabulate_module._visible_width = _patched_visible_width
 
 
 def _percentile(values, p):
