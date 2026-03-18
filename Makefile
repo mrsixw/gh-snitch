@@ -14,7 +14,7 @@ build: .venv
 
 	uv sync --extra build
 	mkdir -p dist
-	uv run shiv -c gh-snitch -o dist/gh-snitch --python "$(shell uv python find 3.13)" .
+	uv run shiv -c gh-snitch -o dist/gh-snitch --python '/usr/bin/env python3.13' .
 
 version-bump:
 	git mkver patch

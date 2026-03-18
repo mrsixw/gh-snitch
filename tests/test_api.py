@@ -8,8 +8,31 @@ from ghsnitch.api import (
     build_contributions_query,
     fetch_contributions,
     get_year_ranges,
+    graphql_url_for,
     make_github_graphql_request,
 )
+
+
+def test_graphql_url_for_github_com():
+    assert graphql_url_for("https://github.com") == "https://api.github.com/graphql"
+
+
+def test_graphql_url_for_github_com_trailing_slash():
+    assert graphql_url_for("https://github.com/") == "https://api.github.com/graphql"
+
+
+def test_graphql_url_for_enterprise():
+    assert (
+        graphql_url_for("https://github.example.com")
+        == "https://github.example.com/api/graphql"
+    )
+
+
+def test_graphql_url_for_enterprise_trailing_slash():
+    assert (
+        graphql_url_for("https://github.example.com/")
+        == "https://github.example.com/api/graphql"
+    )
 
 
 def test_get_year_ranges_structure():
@@ -95,6 +118,29 @@ def test_fetch_contributions_null_user_returns_zero(requests_mock):
         result = fetch_contributions(["ghost"], 0)
 
     assert result["ghost"][current_year] == 0
+
+
+def test_fetch_contributions_uses_enterprise_url(requests_mock):
+    current_year = str(date.today().year)
+
+    requests_mock.post(
+        "https://github.example.com/api/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 99}
+                    },
+                }
+            }
+        },
+    )
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        result = fetch_contributions(["alice"], 0, "https://github.example.com")
+
+    assert result["alice"][current_year] == 99
 
 
 def test_make_github_graphql_request_raises_on_http_error(requests_mock):
