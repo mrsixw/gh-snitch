@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghsnitch"
+version = "0.1.0"
+description = "Spy-themed GitHub contribution surveillance tool"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Steve Williams" }]
+dependencies = [
+  "click",
+  "requests",
+  "tabulate",
+  "rich",
+]
+
+[project.scripts]
+gh-snitch = "ghsnitch.cli:gh_snitch"
+
+[project.optional-dependencies]
+test = ["pytest", "requests-mock", "pytest-mock"]
+lint = ["black", "ruff"]
+build = ["shiv"]
+dev = ["black", "pytest", "requests-mock", "pytest-mock", "ruff", "shiv"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
