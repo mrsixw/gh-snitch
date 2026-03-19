@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 
 import requests
@@ -82,11 +83,19 @@ def build_contributions_query(users, from_iso, to_iso):
     return "{ " + "".join(aliases) + " }"
 
 
+def _fetch_year(users, label, from_iso, to_iso, github_url):
+    """Fetch contributions for all users for a single year range."""
+    query = build_contributions_query(users, from_iso, to_iso)
+    data = make_github_graphql_request(query, github_url)
+    return label, data.get("data", {})
+
+
 def fetch_contributions(
     users, years, github_url: str = DEFAULT_GITHUB_URL, on_progress=None
 ):
     """Fetch contribution counts for all users across year ranges.
 
+    Requests are dispatched concurrently — one per year range.
     Returns dict[username][label] = int.
     on_progress, if provided, is called with (completed, total) after each year.
     """
@@ -94,26 +103,29 @@ def fetch_contributions(
     total = len(year_ranges)
     result = {username: {} for username in users}
 
-    for completed, (label, from_iso, to_iso) in enumerate(year_ranges, start=1):
-        query = build_contributions_query(users, from_iso, to_iso)
-        data = make_github_graphql_request(query, github_url)
-        response_data = data.get("data", {})
+    with ThreadPoolExecutor() as executor:
+        futures = {
+            executor.submit(_fetch_year, users, label, from_iso, to_iso, github_url)
+            for label, from_iso, to_iso in year_ranges
+        }
 
-        for username in users:
-            alias = f"user_{username.replace('-', '_').replace('.', '_')}"
-            user_data = response_data.get(alias)
-            if user_data is None:
-                # User not found — return 0
-                result[username][label] = 0
-            else:
-                count = (
-                    user_data.get("contributionsCollection", {})
-                    .get("contributionCalendar", {})
-                    .get("totalContributions", 0)
-                )
-                result[username][label] = count
+        for completed, future in enumerate(as_completed(futures), start=1):
+            label, response_data = future.result()
 
-        if on_progress is not None:
-            on_progress(completed, total)
+            for username in users:
+                alias = f"user_{username.replace('-', '_').replace('.', '_')}"
+                user_data = response_data.get(alias)
+                if user_data is None:
+                    result[username][label] = 0
+                else:
+                    count = (
+                        user_data.get("contributionsCollection", {})
+                        .get("contributionCalendar", {})
+                        .get("totalContributions", 0)
+                    )
+                    result[username][label] = count
+
+            if on_progress is not None:
+                on_progress(completed, total)
 
     return result
