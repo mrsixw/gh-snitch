@@ -82,15 +82,19 @@ def build_contributions_query(users, from_iso, to_iso):
     return "{ " + "".join(aliases) + " }"
 
 
-def fetch_contributions(users, years, github_url: str = DEFAULT_GITHUB_URL):
+def fetch_contributions(
+    users, years, github_url: str = DEFAULT_GITHUB_URL, on_progress=None
+):
     """Fetch contribution counts for all users across year ranges.
 
     Returns dict[username][label] = int.
+    on_progress, if provided, is called with (completed, total) after each year.
     """
     year_ranges = get_year_ranges(years)
+    total = len(year_ranges)
     result = {username: {} for username in users}
 
-    for label, from_iso, to_iso in year_ranges:
+    for completed, (label, from_iso, to_iso) in enumerate(year_ranges, start=1):
         query = build_contributions_query(users, from_iso, to_iso)
         data = make_github_graphql_request(query, github_url)
         response_data = data.get("data", {})
@@ -108,5 +112,8 @@ def fetch_contributions(users, years, github_url: str = DEFAULT_GITHUB_URL):
                     .get("totalContributions", 0)
                 )
                 result[username][label] = count
+
+        if on_progress is not None:
+            on_progress(completed, total)
 
     return result
