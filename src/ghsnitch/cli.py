@@ -3,6 +3,7 @@ import sys
 
 import click
 import requests
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 from .api import (
     SECRET_GITHUB_TOKEN,
@@ -97,10 +98,28 @@ def gh_snitch(  # noqa: PLR0913
         return
 
     click.echo("🔍 Initiating surveillance sweep...")
-    click.echo(f"📡 Intercepting field reports for {len(operative_list)} operatives...")
+
+    num_years_total = num_years + 1  # current year + prior years
+    use_progress = sys.stdout.isatty()
+
+    progress = Progress(
+        TextColumn("[bold blue]📡 Sweeping field reports..."),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("[dim]{task.completed}/{task.total} years"),
+        disable=not use_progress,
+    )
 
     try:
-        data = fetch_contributions(operative_list, num_years, operative_github_url)
+        with progress:
+            task = progress.add_task("sweep", total=num_years_total)
+
+            def on_progress(completed, total):  # noqa: ARG001
+                progress.update(task, completed=completed)
+
+            data = fetch_contributions(
+                operative_list, num_years, operative_github_url, on_progress
+            )
     except requests.exceptions.RequestException as e:
         click.echo(f"📡 Signal lost. Operative unreachable: {e}", err=True)
         sys.exit(1)

@@ -143,6 +143,31 @@ def test_fetch_contributions_uses_enterprise_url(requests_mock):
     assert result["alice"][current_year] == 99
 
 
+def test_fetch_contributions_calls_on_progress(requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 1}
+                    },
+                }
+            }
+        },
+    )
+
+    calls = []
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        fetch_contributions(["alice"], 1, on_progress=lambda c, t: calls.append((c, t)))
+
+    # years=1 → 2 ranges (current + 1 prior), progress called once per range
+    assert len(calls) == 2
+    assert calls[0] == (1, 2)
+    assert calls[1] == (2, 2)
+
+
 def test_make_github_graphql_request_raises_on_http_error(requests_mock):
     requests_mock.post("https://api.github.com/graphql", status_code=401)
 
