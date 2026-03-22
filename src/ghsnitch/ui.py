@@ -84,6 +84,35 @@ def make_operative_cell(username):
     return make_hyperlink(url, username)
 
 
+def _trend_indicator(current, previous):
+    """Return a YoY trend indicator string for one operative.
+
+    Compares current-year count to previous-year count:
+      >= 10% increase → ↑ (green in TTY, '+' plain)
+      <= 10% decrease → ↓ (red in TTY,  '-' plain)
+      within ±10%     → → (dim in TTY,  '=' plain)
+
+    When previous is 0, any positive current count is treated as an increase.
+    """
+    if previous == 0:
+        if current > 0:
+            sym = "↑" if IS_TTY else "+"
+            return f"\033[32m{sym}\033[0m" if IS_TTY else sym
+        sym = "→" if IS_TTY else "="
+        return f"\033[2m{sym}\033[0m" if IS_TTY else sym
+
+    change = (current - previous) / previous
+    if change >= 0.10:
+        sym = "↑" if IS_TTY else "+"
+        return f"\033[32m{sym}\033[0m" if IS_TTY else sym
+    elif change <= -0.10:
+        sym = "↓" if IS_TTY else "-"
+        return f"\033[31m{sym}\033[0m" if IS_TTY else sym
+    else:
+        sym = "→" if IS_TTY else "="
+        return f"\033[2m{sym}\033[0m" if IS_TTY else sym
+
+
 def render_table(rows, year_labels):
     """Render contribution data as a formatted table string.
 
@@ -95,6 +124,7 @@ def render_table(rows, year_labels):
         return "(no operatives configured)"
 
     current_year_label = year_labels[0]
+    show_trend = len(year_labels) >= 2
 
     # Sort descending by current year, then alpha by username
     sorted_rows = sorted(
@@ -107,13 +137,17 @@ def render_table(rows, year_labels):
     for label in year_labels:
         col_values[label] = [r.get(label, 0) for r in sorted_rows]
 
-    headers = ["Operative"] + year_labels
+    headers = ["Operative"] + (["Trend"] if show_trend else []) + year_labels
 
     table_data = []
     for row in sorted_rows:
         username = row["username"]
         profile_url = f"https://github.com/{username}"
         cells = [make_hyperlink(profile_url, username)]
+        if show_trend:
+            current = row.get(year_labels[0], 0)
+            previous = row.get(year_labels[1], 0)
+            cells.append(_trend_indicator(current, previous))
         for label in year_labels:
             count = row.get(label, 0)
             contrib_url = f"https://github.com/{username}"
@@ -123,9 +157,11 @@ def render_table(rows, year_labels):
         table_data.append(cells)
 
     n_year_cols = len(year_labels)
+    trend_align = ("center",) if show_trend else ()
+    colalign = ("left",) + trend_align + ("right",) * n_year_cols
     return tabulate(
         table_data,
         headers=headers,
         tablefmt="simple",
-        colalign=("left",) + ("right",) * n_year_cols,
+        colalign=colalign,
     )
