@@ -1,83 +1,87 @@
-import json
+import logging
 from unittest.mock import patch
 
+import pytest
 
-def test_log_run_writes_json_line(tmp_path):
+
+@pytest.fixture(autouse=True)
+def clean_ghsnitch_logger():
+    """Remove handlers added by setup_logging() after each test."""
+    yield
+    log = logging.getLogger("ghsnitch")
+    log.handlers.clear()
+
+
+def test_setup_logging_creates_log_file(tmp_path):
+    log_file = tmp_path / "run.log"
     with (
         patch("ghsnitch.logger.CACHE_DIR", tmp_path),
-        patch("ghsnitch.logger._LOG_FILE", tmp_path / "run.log"),
+        patch("ghsnitch.logger._LOG_FILE", log_file),
     ):
-        from ghsnitch.logger import log_run
+        from ghsnitch.logger import setup_logging
 
-        log_run(
-            operatives=["alice", "bob"],
-            year_labels=["2026", "2025"],
-            contributions={"alice": {"2026": 100, "2025": 380}},
-            duration_seconds=1.234,
-        )
+        setup_logging()
 
-    lines = (tmp_path / "run.log").read_text().splitlines()
-    assert len(lines) == 1
-    entry = json.loads(lines[0])
-    assert entry["operatives"] == ["alice", "bob"]
-    assert entry["year_labels"] == ["2026", "2025"]
-    assert entry["contributions"] == {"alice": {"2026": 100, "2025": 380}}
-    assert entry["duration_seconds"] == 1.234
-    assert entry["error"] is None
-    assert "timestamp" in entry
+    logging.getLogger("ghsnitch").info("test entry")
+    assert log_file.exists()
+    assert "test entry" in log_file.read_text()
 
 
-def test_log_run_records_error(tmp_path):
+def test_setup_logging_writes_debug_level(tmp_path):
+    log_file = tmp_path / "run.log"
     with (
         patch("ghsnitch.logger.CACHE_DIR", tmp_path),
-        patch("ghsnitch.logger._LOG_FILE", tmp_path / "run.log"),
+        patch("ghsnitch.logger._LOG_FILE", log_file),
     ):
-        from ghsnitch.logger import log_run
+        from ghsnitch.logger import setup_logging
 
-        log_run([], [], {}, 0.5, error="connection refused")
+        setup_logging()
 
-    entry = json.loads((tmp_path / "run.log").read_text())
-    assert entry["error"] == "connection refused"
+    logging.getLogger("ghsnitch.api").debug("low-level trace")
+    assert "low-level trace" in log_file.read_text()
 
 
-def test_log_run_appends_multiple_entries(tmp_path):
+def test_setup_logging_format(tmp_path):
+    log_file = tmp_path / "run.log"
     with (
         patch("ghsnitch.logger.CACHE_DIR", tmp_path),
-        patch("ghsnitch.logger._LOG_FILE", tmp_path / "run.log"),
+        patch("ghsnitch.logger._LOG_FILE", log_file),
     ):
-        from ghsnitch.logger import log_run
+        from ghsnitch.logger import setup_logging
 
-        log_run(["alice"], ["2026"], {}, 1.0)
-        log_run(["bob"], ["2026"], {}, 2.0)
+        setup_logging()
 
-    lines = (tmp_path / "run.log").read_text().splitlines()
-    assert len(lines) == 2
-    assert json.loads(lines[0])["operatives"] == ["alice"]
-    assert json.loads(lines[1])["operatives"] == ["bob"]
+    logging.getLogger("ghsnitch").info("check format")
+    line = log_file.read_text().strip()
+    # e.g. "2026-03-23T12:00:00 INFO     ghsnitch: check format"
+    assert "INFO" in line
+    assert "ghsnitch" in line
+    assert "check format" in line
 
 
-def test_log_run_creates_cache_dir(tmp_path):
+def test_setup_logging_silent_on_os_error(tmp_path):
+    # Make CACHE_DIR a file so mkdir fails
+    bad_dir = tmp_path / "notadir"
+    bad_dir.write_text("blocker")
+    with (
+        patch("ghsnitch.logger.CACHE_DIR", bad_dir),
+        patch("ghsnitch.logger._LOG_FILE", bad_dir / "run.log"),
+    ):
+        from ghsnitch.logger import setup_logging
+
+        setup_logging()  # must not raise
+
+
+def test_setup_logging_creates_cache_dir(tmp_path):
     nested = tmp_path / "a" / "b" / "gh-snitch"
+    log_file = nested / "run.log"
     with (
         patch("ghsnitch.logger.CACHE_DIR", nested),
-        patch("ghsnitch.logger._LOG_FILE", nested / "run.log"),
+        patch("ghsnitch.logger._LOG_FILE", log_file),
     ):
-        from ghsnitch.logger import log_run
+        from ghsnitch.logger import setup_logging
 
-        log_run([], [], {}, 0.0)
+        setup_logging()
 
-    assert (nested / "run.log").exists()
-
-
-def test_log_run_silent_on_os_error(tmp_path):
-    # Point log file at an unwritable path (a directory, not a file)
-    bad_log = tmp_path / "run.log"
-    bad_log.mkdir()
-    with (
-        patch("ghsnitch.logger.CACHE_DIR", tmp_path),
-        patch("ghsnitch.logger._LOG_FILE", bad_log),
-    ):
-        from ghsnitch.logger import log_run
-
-        # Must not raise
-        log_run([], [], {}, 0.0)
+    logging.getLogger("ghsnitch").info("hello")
+    assert log_file.exists()

@@ -1,38 +1,30 @@
-import json
-from datetime import datetime, timezone
+import logging
 
 from .updater import CACHE_DIR
 
 _LOG_FILE = CACHE_DIR / "run.log"
+_FMT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
+_DATE_FMT = "%Y-%m-%dT%H:%M:%S"
 
 
-def log_run(operatives, year_labels, contributions, duration_seconds, error=None):
-    """Append a structured JSON log entry for this run to the cache log file.
+def setup_logging():
+    """Attach a DEBUG-level file handler to the ghsnitch logger.
 
-    Each line is a self-contained JSON object (JSON Lines format):
-      {
-        "timestamp":        ISO 8601 UTC timestamp,
-        "operatives":       list of surveilled usernames,
-        "year_labels":      list of year strings, current year first,
-        "contributions":    {username: {year: count, ...}, ...},
-        "duration_seconds": wall-clock time for the API sweep,
-        "error":            error message string, or null on success
-      }
+    Writes a plain-text trace log to ~/.cache/gh-snitch/run.log so that
+    the full execution flow is available for post-hoc debugging without
+    any output appearing in the terminal.
 
-    Silently does nothing if the log file cannot be written — a logging
+    Silently does nothing if the log file cannot be opened — a logging
     failure must never surface to the user.
     """
-    entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "operatives": operatives,
-        "year_labels": year_labels,
-        "contributions": contributions,
-        "duration_seconds": round(duration_seconds, 3),
-        "error": error,
-    }
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        with _LOG_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(logging.Formatter(_FMT, datefmt=_DATE_FMT))
+        logger = logging.getLogger("ghsnitch")
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(handler)
+        logger.propagate = False
     except OSError:
         pass

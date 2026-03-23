@@ -1,9 +1,12 @@
 import calendar
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_GITHUB_URL = "https://github.com"
 SECRET_GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -97,8 +100,12 @@ def build_contributions_query(users, from_iso, to_iso):
 
 def _fetch_year(users, label, from_iso, to_iso, github_url):
     """Fetch contributions for all users for a single year range."""
+    logger.debug(
+        "fetching year=%s users=%s from=%s to=%s", label, users, from_iso, to_iso
+    )
     query = build_contributions_query(users, from_iso, to_iso)
     data = make_github_graphql_request(query, github_url)
+    logger.debug("year=%s response received", label)
     return label, data.get("data", {})
 
 
@@ -128,6 +135,9 @@ def fetch_contributions(
                 alias = f"user_{username.replace('-', '_').replace('.', '_')}"
                 user_data = response_data.get(alias)
                 if user_data is None:
+                    logger.warning(
+                        "no data returned for user=%s year=%s", username, label
+                    )
                     result[username][label] = 0
                 else:
                     count = (
@@ -136,6 +146,9 @@ def fetch_contributions(
                         .get("totalContributions", 0)
                     )
                     result[username][label] = count
+                    logger.debug(
+                        "user=%s year=%s contributions=%d", username, label, count
+                    )
 
             if on_progress is not None:
                 on_progress(completed, total)
