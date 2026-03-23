@@ -6,6 +6,7 @@ import requests
 
 from ghsnitch.api import (
     build_contributions_query,
+    current_year_fraction,
     fetch_contributions,
     get_year_ranges,
     graphql_url_for,
@@ -166,6 +167,31 @@ def test_fetch_contributions_calls_on_progress(requests_mock):
     assert len(calls) == 2
     assert calls[0] == (1, 2)
     assert calls[1] == (2, 2)
+
+
+def test_current_year_fraction_jan_1():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2025, 1, 1)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        fraction = current_year_fraction()
+    assert fraction == pytest.approx(1 / 365)
+
+
+def test_current_year_fraction_dec_31():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2025, 12, 31)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        fraction = current_year_fraction()
+    assert fraction == pytest.approx(1.0)
+
+
+def test_current_year_fraction_leap_year():
+    # 2024 is a leap year (366 days); Jan 1 → 1/366
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2024, 1, 1)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        fraction = current_year_fraction()
+    assert fraction == pytest.approx(1 / 366)
 
 
 def test_make_github_graphql_request_raises_on_http_error(requests_mock):

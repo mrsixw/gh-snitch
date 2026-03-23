@@ -84,17 +84,59 @@ def make_operative_cell(username):
     return make_hyperlink(url, username)
 
 
-def render_table(rows, year_labels):
+def _trend_indicator(current, previous, year_fraction):
+    """Return a YoY trend indicator string for one operative.
+
+    Compares an annualized current-year count to the previous full year:
+      >= 10% increase → ↑ (green in TTY, '+' plain)
+      <= 10% decrease → ↓ (red in TTY,  '-' plain)
+      within ±10%     → → (dim in TTY,  '=' plain)
+
+    year_fraction is the proportion of the current year elapsed (0–1], used to
+    project the current count to a full-year rate before comparison. For example,
+    100 contributions by day 82 of 365 (≈22% through the year) projects to
+    100 / 0.225 ≈ 444 — a fair comparison against last year's full total.
+    Note: this assumes a linear contribution rate, which may not reflect real
+    patterns (e.g. conference bursts, quieter summer months).
+
+    When previous is 0, any positive projected count is treated as an increase.
+    """
+    effective = current / year_fraction
+
+    if previous == 0:
+        if effective > 0:
+            sym = "↑" if IS_TTY else "+"
+            return f"\033[32m{sym}\033[0m" if IS_TTY else sym
+        sym = "→" if IS_TTY else "="
+        return f"\033[2m{sym}\033[0m" if IS_TTY else sym
+
+    change = (effective - previous) / previous
+    if change >= 0.10:
+        sym = "↑" if IS_TTY else "+"
+        return f"\033[32m{sym}\033[0m" if IS_TTY else sym
+    elif change <= -0.10:
+        sym = "↓" if IS_TTY else "-"
+        return f"\033[31m{sym}\033[0m" if IS_TTY else sym
+    else:
+        sym = "→" if IS_TTY else "="
+        return f"\033[2m{sym}\033[0m" if IS_TTY else sym
+
+
+def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
     """Render contribution data as a formatted table string.
 
     Args:
         rows: list of dicts with keys "username" and one key per year label (int values)
         year_labels: list of year label strings (first = current year)
+        year_fraction: proportion of the current year elapsed (0–1], used to
+            annualize current-year counts for trend comparison
+        show_trend: whether to include the Trend column (requires >= 2 year labels)
     """
     if not rows:
         return "(no operatives configured)"
 
     current_year_label = year_labels[0]
+    show_trend = show_trend and len(year_labels) >= 2
 
     # Sort descending by current year, then alpha by username
     sorted_rows = sorted(
@@ -107,13 +149,17 @@ def render_table(rows, year_labels):
     for label in year_labels:
         col_values[label] = [r.get(label, 0) for r in sorted_rows]
 
-    headers = ["Operative"] + year_labels
+    headers = ["Operative"] + (["Trend"] if show_trend else []) + year_labels
 
     table_data = []
     for row in sorted_rows:
         username = row["username"]
         profile_url = f"https://github.com/{username}"
         cells = [make_hyperlink(profile_url, username)]
+        if show_trend:
+            current = row.get(year_labels[0], 0)
+            previous = row.get(year_labels[1], 0)
+            cells.append(_trend_indicator(current, previous, year_fraction))
         for label in year_labels:
             count = row.get(label, 0)
             contrib_url = f"https://github.com/{username}"
@@ -123,9 +169,11 @@ def render_table(rows, year_labels):
         table_data.append(cells)
 
     n_year_cols = len(year_labels)
+    trend_align = ("center",) if show_trend else ()
+    colalign = ("left",) + trend_align + ("right",) * n_year_cols
     return tabulate(
         table_data,
         headers=headers,
         tablefmt="simple",
-        colalign=("left",) + ("right",) * n_year_cols,
+        colalign=colalign,
     )
