@@ -1,5 +1,6 @@
 import importlib.metadata
 import sys
+import time
 
 import click
 import requests
@@ -12,6 +13,7 @@ from .api import (
     get_year_ranges,
 )
 from .config import generate_default_config, load_config
+from .logger import log_run
 from .ui import render_table
 from .updater import check_for_update
 
@@ -124,6 +126,7 @@ def gh_snitch(  # noqa: PLR0913
         disable=not use_progress,
     )
 
+    sweep_start = time.monotonic()
     try:
         with progress:
             task = progress.add_task("sweep", total=num_years_total)
@@ -135,8 +138,12 @@ def gh_snitch(  # noqa: PLR0913
                 operative_list, num_years, operative_github_url, on_progress
             )
     except requests.exceptions.RequestException as e:
+        duration = time.monotonic() - sweep_start
+        log_run(operative_list, [], {}, duration, error=str(e))
         click.echo(f"📡 Signal lost. Operative unreachable: {e}", err=True)
         sys.exit(1)
+
+    duration = time.monotonic() - sweep_start
 
     year_ranges = get_year_ranges(num_years)
     year_labels = [label for label, _, _ in year_ranges]
@@ -146,6 +153,8 @@ def gh_snitch(  # noqa: PLR0913
         row = {"username": username}
         row.update(year_data)
         rows.append(row)
+
+    log_run(operative_list, year_labels, data, duration)
 
     table = render_table(
         rows,
