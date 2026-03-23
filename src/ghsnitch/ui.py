@@ -98,6 +98,12 @@ def _trend_indicator(current, previous, year_fraction=None):
 
     When previous is 0, any positive effective count is treated as an increase.
     """
+    # Annualize the current count so that a partial year is fairly compared to a
+    # full prior year. For example, 100 contributions by day 82 of 365 (≈22% through
+    # the year) projects to 100 / 0.225 ≈ 444 for the full year. Without this
+    # adjustment, early-year counts look artificially low against last year's total.
+    # Note: this assumes a linear contribution rate across the year, which may not
+    # reflect real patterns (e.g. bursts around conferences, quieter summer months).
     effective = current / year_fraction if year_fraction else current
 
     if previous == 0:
