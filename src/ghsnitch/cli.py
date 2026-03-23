@@ -1,5 +1,7 @@
 import importlib.metadata
+import logging
 import sys
+import time
 
 import click
 import requests
@@ -12,8 +14,11 @@ from .api import (
     get_year_ranges,
 )
 from .config import generate_default_config, load_config
+from .logger import setup_logging
 from .ui import render_table
 from .updater import check_for_update
+
+logger = logging.getLogger(__name__)
 
 
 @click.command()
@@ -70,6 +75,15 @@ def gh_snitch(  # noqa: PLR0913
     no_trend,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
+    setup_logging()
+    logger.info(
+        "gh-snitch started config=%s users=%s years=%s github_url=%s",
+        config,
+        users,
+        years,
+        github_url,
+    )
+
     if init_config:
         path = generate_default_config(config)
         click.echo(f"🗂️  Handler config established at: {path}")
@@ -101,6 +115,12 @@ def gh_snitch(  # noqa: PLR0913
         cfg["github_url"] = github_url
 
     operative_list = cfg["users"]
+    logger.info(
+        "effective config operatives=%s years=%s github_url=%s",
+        operative_list,
+        cfg["years"],
+        cfg["github_url"],
+    )
     num_years = cfg["years"]
     operative_github_url = cfg["github_url"]
 
@@ -124,6 +144,8 @@ def gh_snitch(  # noqa: PLR0913
         disable=not use_progress,
     )
 
+    logger.info("sweep starting operatives=%s num_years=%d", operative_list, num_years)
+    sweep_start = time.monotonic()
     try:
         with progress:
             task = progress.add_task("sweep", total=num_years_total)
@@ -135,8 +157,13 @@ def gh_snitch(  # noqa: PLR0913
                 operative_list, num_years, operative_github_url, on_progress
             )
     except requests.exceptions.RequestException as e:
+        duration = time.monotonic() - sweep_start
+        logger.error("sweep failed after %.3fs: %s", duration, e)
         click.echo(f"📡 Signal lost. Operative unreachable: {e}", err=True)
         sys.exit(1)
+
+    duration = time.monotonic() - sweep_start
+    logger.info("sweep complete duration=%.3fs", duration)
 
     year_ranges = get_year_ranges(num_years)
     year_labels = [label for label, _, _ in year_ranges]

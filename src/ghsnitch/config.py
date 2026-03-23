@@ -1,7 +1,10 @@
+import logging
 import os
 import sys
 import tomllib
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_TEMPLATE = """\
 # gh-snitch configuration
@@ -44,8 +47,10 @@ def load_config(config_path=None):
     """
     path = Path(config_path) if config_path else _default_config_path()
     config = {"users": [], "years": 3, "github_url": "https://github.com"}
+    logger.debug("loading config from %s", path)
 
     if not path.exists():
+        logger.debug("config not found at %s, using defaults", path)
         print(
             f"⚠️  No handler config found at {path}. "
             "Run gh-snitch --init-config to establish a cover.",
@@ -57,6 +62,7 @@ def load_config(config_path=None):
         with open(path, "rb") as f:
             data = tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError) as e:
+        logger.warning("failed to read config at %s: %s", path, e)
         print(f"⚠️  Failed to read config at {path}: {e}", file=sys.stderr)
         return config
 
@@ -72,6 +78,12 @@ def load_config(config_path=None):
     if "github_url" in network:
         config["github_url"] = network["github_url"]
 
+    logger.debug(
+        "config loaded users=%s years=%s github_url=%s",
+        config["users"],
+        config["years"],
+        config["github_url"],
+    )
     return config
 
 

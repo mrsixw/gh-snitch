@@ -20,7 +20,8 @@ def _get_cache_dir():
     return Path.home() / ".cache" / "gh-snitch"
 
 
-_CACHE_DIR = _get_cache_dir()
+CACHE_DIR = _get_cache_dir()
+_CACHE_DIR = CACHE_DIR  # backwards-compatible alias
 _CACHE_TTL_SECONDS = 86400  # 24 hours
 
 
