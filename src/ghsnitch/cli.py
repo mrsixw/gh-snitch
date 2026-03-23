@@ -7,6 +7,7 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 from .api import (
     SECRET_GITHUB_TOKEN,
+    current_year_fraction,
     fetch_contributions,
     get_year_ranges,
 )
@@ -51,9 +52,26 @@ from .updater import check_for_update
     default=False,
     help="Skip checking for updates.",
 )
+@click.option(
+    "--annualized-trend",
+    is_flag=True,
+    default=False,
+    help=(
+        "Annualize the current year's contributions before computing the trend, "
+        "accounting for how far through the year we are. "
+        "Useful early in the year when raw counts are naturally lower."
+    ),
+)
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
-    config, users, years, github_url, show_config, init_config, no_update_check
+    config,
+    users,
+    years,
+    github_url,
+    show_config,
+    init_config,
+    no_update_check,
+    annualized_trend,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     if init_config:
@@ -133,7 +151,8 @@ def gh_snitch(  # noqa: PLR0913
         row.update(year_data)
         rows.append(row)
 
-    table = render_table(rows, year_labels)
+    year_fraction = current_year_fraction() if annualized_trend else None
+    table = render_table(rows, year_labels, year_fraction=year_fraction)
     click.echo(table)
     click.echo("🗂️  Dossier compiled. Handler review recommended.")
 

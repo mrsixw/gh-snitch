@@ -84,7 +84,7 @@ def make_operative_cell(username):
     return make_hyperlink(url, username)
 
 
-def _trend_indicator(current, previous):
+def _trend_indicator(current, previous, year_fraction=None):
     """Return a YoY trend indicator string for one operative.
 
     Compares current-year count to previous-year count:
@@ -92,16 +92,22 @@ def _trend_indicator(current, previous):
       <= 10% decrease → ↓ (red in TTY,  '-' plain)
       within ±10%     → → (dim in TTY,  '=' plain)
 
-    When previous is 0, any positive current count is treated as an increase.
+    When year_fraction is provided (0–1], the current count is annualized
+    (divided by the fraction) before comparison, correcting for how far
+    through the year we are.
+
+    When previous is 0, any positive effective count is treated as an increase.
     """
+    effective = current / year_fraction if year_fraction else current
+
     if previous == 0:
-        if current > 0:
+        if effective > 0:
             sym = "↑" if IS_TTY else "+"
             return f"\033[32m{sym}\033[0m" if IS_TTY else sym
         sym = "→" if IS_TTY else "="
         return f"\033[2m{sym}\033[0m" if IS_TTY else sym
 
-    change = (current - previous) / previous
+    change = (effective - previous) / previous
     if change >= 0.10:
         sym = "↑" if IS_TTY else "+"
         return f"\033[32m{sym}\033[0m" if IS_TTY else sym
@@ -113,7 +119,7 @@ def _trend_indicator(current, previous):
         return f"\033[2m{sym}\033[0m" if IS_TTY else sym
 
 
-def render_table(rows, year_labels):
+def render_table(rows, year_labels, year_fraction=None):
     """Render contribution data as a formatted table string.
 
     Args:
@@ -147,7 +153,7 @@ def render_table(rows, year_labels):
         if show_trend:
             current = row.get(year_labels[0], 0)
             previous = row.get(year_labels[1], 0)
-            cells.append(_trend_indicator(current, previous))
+            cells.append(_trend_indicator(current, previous, year_fraction))
         for label in year_labels:
             count = row.get(label, 0)
             contrib_url = f"https://github.com/{username}"

@@ -131,6 +131,33 @@ def test_trend_indicator_flat_tty():
     assert "\033[2m" in result  # dim
 
 
+# --- _trend_indicator annualized tests ---
+
+
+def test_trend_indicator_annualized_projects_up():
+    # 100 contributions in first quarter → annualizes to ~400, vs 300 last year → ↑
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _trend_indicator(100, 300, year_fraction=0.25) == "+"
+
+
+def test_trend_indicator_annualized_projects_down():
+    # 50 contributions at half year → annualizes to 100, vs 300 last year → ↓
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _trend_indicator(50, 300, year_fraction=0.50) == "-"
+
+
+def test_trend_indicator_annualized_projects_flat():
+    # 150 contributions at half year → annualizes to 300, vs 300 last year → =
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _trend_indicator(150, 300, year_fraction=0.50) == "="
+
+
+def test_trend_indicator_no_fraction_unchanged():
+    # Without year_fraction, raw counts are used as before
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _trend_indicator(100, 300) == "-"
+
+
 # --- render_table trend column tests ---
 
 

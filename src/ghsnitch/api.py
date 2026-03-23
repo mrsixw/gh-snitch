@@ -1,3 +1,4 @@
+import calendar
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
@@ -37,6 +38,17 @@ def make_github_graphql_request(query, github_url: str = DEFAULT_GITHUB_URL):
     if "errors" in data:
         raise ValueError(f"GraphQL errors: {data['errors']}")
     return data
+
+
+def current_year_fraction() -> float:
+    """Return the fraction of the current calendar year that has elapsed (0–1].
+
+    Used to annualize partial-year contribution counts for trend comparison.
+    """
+    today = date.today()
+    days_in_year = 366 if calendar.isleap(today.year) else 365
+    day_of_year = (today - date(today.year, 1, 1)).days + 1
+    return day_of_year / days_in_year
 
 
 def get_year_ranges(years):
