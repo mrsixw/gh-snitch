@@ -19,7 +19,7 @@ def setup_logging():
     """
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+        handler = logging.FileHandler(_LOG_FILE, mode="w", encoding="utf-8")
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(logging.Formatter(_FMT, datefmt=_DATE_FMT))
         logger = logging.getLogger("ghsnitch")
