@@ -53,14 +53,10 @@ from .updater import check_for_update
     help="Skip checking for updates.",
 )
 @click.option(
-    "--no-annualized-trend",
+    "--no-trend",
     is_flag=True,
     default=False,
-    help=(
-        "Disable annualization of the current year's contributions when computing "
-        "the trend. By default, the current count is projected to a full year so "
-        "that an early-year pace is fairly compared to last year's total."
-    ),
+    help="Hide the Trend column.",
 )
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
@@ -71,7 +67,7 @@ def gh_snitch(  # noqa: PLR0913
     show_config,
     init_config,
     no_update_check,
-    no_annualized_trend,
+    no_trend,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     if init_config:
@@ -151,8 +147,12 @@ def gh_snitch(  # noqa: PLR0913
         row.update(year_data)
         rows.append(row)
 
-    year_fraction = None if no_annualized_trend else current_year_fraction()
-    table = render_table(rows, year_labels, year_fraction=year_fraction)
+    table = render_table(
+        rows,
+        year_labels,
+        year_fraction=current_year_fraction(),
+        show_trend=not no_trend,
+    )
     click.echo(table)
     click.echo("🗂️  Dossier compiled. Handler review recommended.")
 

@@ -77,56 +77,56 @@ def test_render_table_empty_rows():
 
 def test_trend_indicator_increase_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(220, 200) == "+"  # 10% increase
+        assert _trend_indicator(220, 200, 1.0) == "+"  # 10% increase
 
 
 def test_trend_indicator_decrease_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(180, 200) == "-"  # 10% decrease
+        assert _trend_indicator(180, 200, 1.0) == "-"  # 10% decrease
 
 
 def test_trend_indicator_flat_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(205, 200) == "="  # 2.5% — within ±10%
+        assert _trend_indicator(205, 200, 1.0) == "="  # 2.5% — within ±10%
 
 
 def test_trend_indicator_exact_boundary_up_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(110, 100) == "+"  # exactly 10%
+        assert _trend_indicator(110, 100, 1.0) == "+"  # exactly 10%
 
 
 def test_trend_indicator_exact_boundary_down_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(90, 100) == "-"  # exactly -10%
+        assert _trend_indicator(90, 100, 1.0) == "-"  # exactly -10%
 
 
 def test_trend_indicator_zero_previous_with_activity_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(50, 0) == "+"  # new activity
+        assert _trend_indicator(50, 0, 1.0) == "+"  # new activity
 
 
 def test_trend_indicator_both_zero_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(0, 0) == "="  # flat at zero
+        assert _trend_indicator(0, 0, 1.0) == "="  # flat at zero
 
 
 def test_trend_indicator_increase_tty():
     with patch("ghsnitch.ui.IS_TTY", True):
-        result = _trend_indicator(220, 200)
+        result = _trend_indicator(220, 200, 1.0)
     assert "↑" in result
     assert "\033[32m" in result  # green
 
 
 def test_trend_indicator_decrease_tty():
     with patch("ghsnitch.ui.IS_TTY", True):
-        result = _trend_indicator(180, 200)
+        result = _trend_indicator(180, 200, 1.0)
     assert "↓" in result
     assert "\033[31m" in result  # red
 
 
 def test_trend_indicator_flat_tty():
     with patch("ghsnitch.ui.IS_TTY", True):
-        result = _trend_indicator(205, 200)
+        result = _trend_indicator(205, 200, 1.0)
     assert "→" in result
     assert "\033[2m" in result  # dim
 
@@ -137,25 +137,19 @@ def test_trend_indicator_flat_tty():
 def test_trend_indicator_annualized_projects_up():
     # 100 contributions in first quarter → annualizes to ~400, vs 300 last year → ↑
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(100, 300, year_fraction=0.25) == "+"
+        assert _trend_indicator(100, 300, 0.25) == "+"
 
 
 def test_trend_indicator_annualized_projects_down():
     # 50 contributions at half year → annualizes to 100, vs 300 last year → ↓
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(50, 300, year_fraction=0.50) == "-"
+        assert _trend_indicator(50, 300, 0.50) == "-"
 
 
 def test_trend_indicator_annualized_projects_flat():
     # 150 contributions at half year → annualizes to 300, vs 300 last year → =
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(150, 300, year_fraction=0.50) == "="
-
-
-def test_trend_indicator_no_fraction_unchanged():
-    # Without year_fraction, raw counts are used as before
-    with patch("ghsnitch.ui.IS_TTY", False):
-        assert _trend_indicator(100, 300) == "-"
+        assert _trend_indicator(150, 300, 0.50) == "="
 
 
 # --- render_table trend column tests ---
@@ -164,14 +158,23 @@ def test_trend_indicator_no_fraction_unchanged():
 def test_render_table_shows_trend_column_with_two_years():
     rows = [{"username": "alice", "2025": 220, "2024": 200}]
     with patch("ghsnitch.ui.IS_TTY", False):
-        output = render_table(rows, ["2025", "2024"])
+        output = render_table(rows, ["2025", "2024"], year_fraction=1.0)
     assert "Trend" in output
 
 
 def test_render_table_no_trend_column_with_one_year():
     rows = [{"username": "alice", "2025": 100}]
     with patch("ghsnitch.ui.IS_TTY", False):
-        output = render_table(rows, ["2025"])
+        output = render_table(rows, ["2025"], year_fraction=1.0)
+    assert "Trend" not in output
+
+
+def test_render_table_no_trend_column_when_hidden():
+    rows = [{"username": "alice", "2025": 220, "2024": 200}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows, ["2025", "2024"], year_fraction=1.0, show_trend=False
+        )
     assert "Trend" not in output
 
 
@@ -182,7 +185,7 @@ def test_render_table_trend_values_non_tty():
         {"username": "charlie", "2025": 205, "2024": 200},  # +2.5% → =
     ]
     with patch("ghsnitch.ui.IS_TTY", False):
-        output = render_table(rows, ["2025", "2024"])
+        output = render_table(rows, ["2025", "2024"], year_fraction=1.0)
     assert "+" in output
     assert "-" in output
     assert "=" in output

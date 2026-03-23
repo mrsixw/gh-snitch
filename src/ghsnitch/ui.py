@@ -84,27 +84,24 @@ def make_operative_cell(username):
     return make_hyperlink(url, username)
 
 
-def _trend_indicator(current, previous, year_fraction=None):
+def _trend_indicator(current, previous, year_fraction):
     """Return a YoY trend indicator string for one operative.
 
-    Compares current-year count to previous-year count:
+    Compares an annualized current-year count to the previous full year:
       >= 10% increase → ↑ (green in TTY, '+' plain)
       <= 10% decrease → ↓ (red in TTY,  '-' plain)
       within ±10%     → → (dim in TTY,  '=' plain)
 
-    When year_fraction is provided (0–1], the current count is annualized
-    (divided by the fraction) before comparison, correcting for how far
-    through the year we are.
+    year_fraction is the proportion of the current year elapsed (0–1], used to
+    project the current count to a full-year rate before comparison. For example,
+    100 contributions by day 82 of 365 (≈22% through the year) projects to
+    100 / 0.225 ≈ 444 — a fair comparison against last year's full total.
+    Note: this assumes a linear contribution rate, which may not reflect real
+    patterns (e.g. conference bursts, quieter summer months).
 
-    When previous is 0, any positive effective count is treated as an increase.
+    When previous is 0, any positive projected count is treated as an increase.
     """
-    # Annualize the current count so that a partial year is fairly compared to a
-    # full prior year. For example, 100 contributions by day 82 of 365 (≈22% through
-    # the year) projects to 100 / 0.225 ≈ 444 for the full year. Without this
-    # adjustment, early-year counts look artificially low against last year's total.
-    # Note: this assumes a linear contribution rate across the year, which may not
-    # reflect real patterns (e.g. bursts around conferences, quieter summer months).
-    effective = current / year_fraction if year_fraction else current
+    effective = current / year_fraction
 
     if previous == 0:
         if effective > 0:
@@ -125,18 +122,21 @@ def _trend_indicator(current, previous, year_fraction=None):
         return f"\033[2m{sym}\033[0m" if IS_TTY else sym
 
 
-def render_table(rows, year_labels, year_fraction=None):
+def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
     """Render contribution data as a formatted table string.
 
     Args:
         rows: list of dicts with keys "username" and one key per year label (int values)
         year_labels: list of year label strings (first = current year)
+        year_fraction: proportion of the current year elapsed (0–1], used to
+            annualize current-year counts for trend comparison
+        show_trend: whether to include the Trend column (requires >= 2 year labels)
     """
     if not rows:
         return "(no operatives configured)"
 
     current_year_label = year_labels[0]
-    show_trend = len(year_labels) >= 2
+    show_trend = show_trend and len(year_labels) >= 2
 
     # Sort descending by current year, then alpha by username
     sorted_rows = sorted(
