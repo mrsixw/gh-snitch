@@ -48,9 +48,42 @@ def test_render_table_headers():
     rows = [{"username": "alice", "2025": 100, "2024": 80}]
     with patch("ghsnitch.ui.IS_TTY", False):
         output = render_table(rows, ["2025", "2024"])
+    assert "#" in output
     assert "Operative" in output
     assert "2025" in output
     assert "2024" in output
+
+
+def test_render_table_rank_column():
+    rows = [
+        {"username": "alice", "2025": 200},
+        {"username": "bob", "2025": 100},
+        {"username": "carol", "2025": 50},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"])
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("-")]
+    # First data row (alice) should have rank 1
+    assert "1" in lines[1]
+    assert "alice" in lines[1]
+    # Second (bob) rank 2, third (carol) rank 3
+    assert "2" in lines[2]
+    assert "3" in lines[3]
+
+
+def test_render_table_rank_ties():
+    rows = [
+        {"username": "alice", "2025": 100},
+        {"username": "bob", "2025": 100},
+        {"username": "carol", "2025": 50},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"])
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("-")]
+    # alice and bob tie at rank 1; carol is rank 3 (competition ranking)
+    assert "1" in lines[1]
+    assert "1" in lines[2]
+    assert "3" in lines[3]
 
 
 def test_render_table_sorted_by_current_year():

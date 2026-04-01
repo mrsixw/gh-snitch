@@ -5,15 +5,16 @@
 gh-snitch renders a plain-text table using `tabulate` with `simple` format:
 
 ```
-Operative      2026    2025    2024
------------  ------  ------  ------
-alice           312     890     754
-bob             205     430     611
-carol            42     180     290
+  #  Operative      2026    2025    2024
+---  -----------  ------  ------  ------
+  1  alice           312     890     754
+  2  bob             205     430     611
+  3  carol            42     180     290
 ```
 
 ### Columns
 
+- **#** — leaderboard rank, based on the current year's contribution count. Ties share the same rank; the next rank skips accordingly (competition ranking: 1, 2, 2, 4, …).
 - **Operative** — GitHub username, hyperlinked to the user's profile (in TTY mode)
 - **Year columns** — total contribution count for that calendar year
 
