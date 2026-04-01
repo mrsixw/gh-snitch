@@ -38,6 +38,17 @@ Or pass them via `--users`:
 gh-snitch --users alice,bob
 ```
 
+## Operative not found — "gone dark" warning
+
+```
+⚠️  Operative 'username' not found — they may have gone dark.
+🚨 1 operative(s) could not be located. Verify their handles and try again.
+```
+
+One or more of the supplied usernames could not be resolved to a GitHub account. The tool still renders the table for valid operatives and exits with a non-zero status code.
+
+**Fix:** Check the spelling of the username(s). GitHub usernames are case-insensitive but must otherwise be exact. Usernames containing dots (`.`) or hyphens (`-`) must be specified exactly as they appear on GitHub.
+
 ## `Signal lost. Operative unreachable`
 
 ```

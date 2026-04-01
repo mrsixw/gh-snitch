@@ -39,7 +39,11 @@ def make_github_graphql_request(query, github_url: str = DEFAULT_GITHUB_URL):
     response.raise_for_status()
     data = response.json()
     if "errors" in data:
-        raise ValueError(f"GraphQL errors: {data['errors']}")
+        fatal_errors = [e for e in data["errors"] if e.get("type") != "NOT_FOUND"]
+        if fatal_errors:
+            raise ValueError(f"GraphQL errors: {fatal_errors}")
+        for err in data["errors"]:
+            logger.warning("operative not found: %s", err.get("message", err))
     return data
 
 
@@ -115,12 +119,15 @@ def fetch_contributions(
     """Fetch contribution counts for all users across year ranges.
 
     Requests are dispatched concurrently — one per year range.
-    Returns dict[username][label] = int.
+    Returns (dict[username][label] = int, set[not_found_usernames]).
+    Usernames that could not be resolved on GitHub appear in the not_found set
+    with zero contributions in the result dict.
     on_progress, if provided, is called with (completed, total) after each year.
     """
     year_ranges = get_year_ranges(years)
     total = len(year_ranges)
     result = {username: {} for username in users}
+    null_counts: dict[str, int] = {username: 0 for username in users}
 
     with ThreadPoolExecutor() as executor:
         futures = {
@@ -139,6 +146,7 @@ def fetch_contributions(
                         "no data returned for user=%s year=%s", username, label
                     )
                     result[username][label] = 0
+                    null_counts[username] += 1
                 else:
                     count = (
                         user_data.get("contributionsCollection", {})
@@ -153,4 +161,5 @@ def fetch_contributions(
             if on_progress is not None:
                 on_progress(completed, total)
 
-    return result
+    not_found = {u for u, c in null_counts.items() if c == total}
+    return result, not_found

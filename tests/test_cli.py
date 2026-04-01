@@ -169,6 +169,40 @@ def test_show_config_includes_github_url(runner, tmp_path):
     assert "github.example.com" in result.output
 
 
+def test_not_found_operative_shows_warning_and_exits_nonzero(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["ghost"]\n[surveillance]\nyears = 0\n'
+    )
+
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {"user_ghost": None},
+            "errors": [
+                {
+                    "type": "NOT_FOUND",
+                    "path": ["user_ghost"],
+                    "message": "Could not resolve to a User with the login of 'ghost'.",
+                }
+            ],
+        },
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            result = runner.invoke(
+                gh_snitch,
+                ["--config", str(config_file), "--no-update-check"],
+            )
+
+    assert result.exit_code != 0
+    assert "ghost" in result.output
+    assert "gone dark" in result.output
+
+
 def test_users_cli_override(runner, tmp_path, requests_mock):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[operatives]\nusers = []\n[surveillance]\nyears = 0\n")
