@@ -149,13 +149,23 @@ def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
     for label in year_labels:
         col_values[label] = [r.get(label, 0) for r in sorted_rows]
 
-    headers = ["Operative"] + (["Trend"] if show_trend else []) + year_labels
+    headers = ["#", "Operative"] + (["Trend"] if show_trend else []) + year_labels
+
+    # Compute competition ranks (1, 2, 2, 4, ...) based on current-year count
+    ranks = []
+    for i, row in enumerate(sorted_rows):
+        if i == 0:
+            ranks.append(1)
+        else:
+            prev_count = sorted_rows[i - 1].get(current_year_label, 0)
+            curr_count = row.get(current_year_label, 0)
+            ranks.append(ranks[-1] if curr_count == prev_count else i + 1)
 
     table_data = []
-    for row in sorted_rows:
+    for rank, row in zip(ranks, sorted_rows):
         username = row["username"]
         profile_url = f"https://github.com/{username}"
-        cells = [make_hyperlink(profile_url, username)]
+        cells = [rank, make_hyperlink(profile_url, username)]
         if show_trend:
             current = row.get(year_labels[0], 0)
             previous = row.get(year_labels[1], 0)
@@ -170,7 +180,7 @@ def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
 
     n_year_cols = len(year_labels)
     trend_align = ("center",) if show_trend else ()
-    colalign = ("left",) + trend_align + ("right",) * n_year_cols
+    colalign = ("right",) + ("left",) + trend_align + ("right",) * n_year_cols
     return tabulate(
         table_data,
         headers=headers,
