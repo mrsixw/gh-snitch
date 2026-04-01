@@ -153,7 +153,7 @@ def gh_snitch(  # noqa: PLR0913
             def on_progress(completed, total):  # noqa: ARG001
                 progress.update(task, completed=completed)
 
-            data = fetch_contributions(
+            data, not_found = fetch_contributions(
                 operative_list, num_years, operative_github_url, on_progress
             )
     except requests.exceptions.RequestException as e:
@@ -181,9 +181,25 @@ def gh_snitch(  # noqa: PLR0913
         show_trend=not no_trend,
     )
     click.echo(table)
+
+    if not_found:
+        for username in sorted(not_found):
+            click.echo(
+                f"⚠️  Operative '{username}' not found — they may have gone dark.",
+                err=True,
+            )
+        click.echo(
+            f"🚨 {len(not_found)} operative(s) could not be located. "
+            "Verify their handles and try again.",
+            err=True,
+        )
+
     click.echo("🗂️  Dossier compiled. Handler review recommended.")
 
     if not no_update_check:
         update_msg = check_for_update()
         if update_msg:
             click.echo(update_msg)
+
+    if not_found:
+        sys.exit(1)

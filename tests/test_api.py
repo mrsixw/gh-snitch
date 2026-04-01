@@ -101,10 +101,11 @@ def test_fetch_contributions_parses_response(requests_mock):
     requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-        result = fetch_contributions(["alice"], 1)
+        result, not_found = fetch_contributions(["alice"], 1)
 
     assert result["alice"][current_year] == 150
     assert result["alice"][prior_year] == 150
+    assert not_found == set()
 
 
 def test_fetch_contributions_null_user_returns_zero(requests_mock):
@@ -116,9 +117,10 @@ def test_fetch_contributions_null_user_returns_zero(requests_mock):
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-        result = fetch_contributions(["ghost"], 0)
+        result, not_found = fetch_contributions(["ghost"], 0)
 
     assert result["ghost"][current_year] == 0
+    assert "ghost" in not_found
 
 
 def test_fetch_contributions_uses_enterprise_url(requests_mock):
@@ -139,9 +141,12 @@ def test_fetch_contributions_uses_enterprise_url(requests_mock):
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-        result = fetch_contributions(["alice"], 0, "https://github.example.com")
+        result, not_found = fetch_contributions(
+            ["alice"], 0, "https://github.example.com"
+        )
 
     assert result["alice"][current_year] == 99
+    assert not_found == set()
 
 
 def test_fetch_contributions_calls_on_progress(requests_mock):
@@ -167,6 +172,64 @@ def test_fetch_contributions_calls_on_progress(requests_mock):
     assert len(calls) == 2
     assert calls[0] == (1, 2)
     assert calls[1] == (2, 2)
+
+
+def test_fetch_contributions_not_found_user_via_graphql_error(requests_mock):
+    """NOT_FOUND GraphQL errors should not crash; affected user appears in not_found."""
+    current_year = str(date.today().year)
+
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {"user_ghost": None},
+            "errors": [
+                {
+                    "type": "NOT_FOUND",
+                    "path": ["user_ghost"],
+                    "message": "Could not resolve to a User with the login of 'ghost'.",
+                }
+            ],
+        },
+    )
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        result, not_found = fetch_contributions(["ghost"], 0)
+
+    assert result["ghost"][current_year] == 0
+    assert "ghost" in not_found
+
+
+def test_make_github_graphql_request_raises_on_non_not_found_errors(requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={"errors": [{"type": "FORBIDDEN", "message": "Access denied"}]},
+    )
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        with pytest.raises(ValueError, match="GraphQL errors"):
+            make_github_graphql_request("{ viewer { login } }")
+
+
+def test_make_github_graphql_request_tolerates_not_found_errors(requests_mock):
+    """NOT_FOUND errors should not raise; partial data is returned."""
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {"user_ghost": None},
+            "errors": [
+                {
+                    "type": "NOT_FOUND",
+                    "path": ["user_ghost"],
+                    "message": "Could not resolve to a User with the login of 'ghost'.",
+                }
+            ],
+        },
+    )
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        data = make_github_graphql_request("{ user_ghost { login } }")
+
+    assert data["data"]["user_ghost"] is None
 
 
 def test_current_year_fraction_jan_1():
@@ -205,7 +268,7 @@ def test_make_github_graphql_request_raises_on_http_error(requests_mock):
 def test_make_github_graphql_request_raises_on_graphql_errors(requests_mock):
     requests_mock.post(
         "https://api.github.com/graphql",
-        json={"errors": [{"message": "Not found"}]},
+        json={"errors": [{"type": "INTERNAL", "message": "Something went wrong"}]},
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
