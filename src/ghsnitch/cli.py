@@ -221,12 +221,46 @@ def gh_snitch(  # noqa: PLR0913
         row.update(year_data)
         rows.append(row)
 
-    # Always persist a snapshot so --delta works on the next run.
+    # Always persist a snapshot so --delta and rank-delta work on the next run.
     # Load the previous snapshot first (before overwriting it).
-    prev_snapshot = load_snapshot() if delta else None
-    save_snapshot(
-        {row["username"]: {lbl: row.get(lbl, 0) for lbl in year_labels} for row in rows}
+    prev_snapshot = load_snapshot()
+
+    # Compute current ranks (competition ranking, same sort order as render_table).
+    current_year_label = year_labels[0]
+    sorted_for_ranks = sorted(
+        rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
     )
+    current_ranks: dict[str, int] = {}
+    for i, row in enumerate(sorted_for_ranks):
+        if i == 0:
+            current_ranks[row["username"]] = 1
+        else:
+            prev_count = sorted_for_ranks[i - 1].get(current_year_label, 0)
+            curr_count = row.get(current_year_label, 0)
+            prev_rank = current_ranks[sorted_for_ranks[i - 1]["username"]]
+            current_ranks[row["username"]] = (
+                prev_rank if curr_count == prev_count else i + 1
+            )
+
+    save_snapshot(
+        {
+            row["username"]: {lbl: row.get(lbl, 0) for lbl in year_labels}
+            for row in rows
+        },
+        ranks=current_ranks,
+    )
+
+    # Compute rank deltas if a previous run's ranks are available.
+    rank_deltas = None
+    if prev_snapshot is not None:
+        prev_ranks: dict[str, int] = prev_snapshot.get("ranks", {})
+        if prev_ranks:
+            rank_deltas = {}
+            for username, curr_rank in current_ranks.items():
+                if username not in prev_ranks:
+                    rank_deltas[username] = None  # new operative
+                else:
+                    rank_deltas[username] = prev_ranks[username] - curr_rank
 
     threshold = cfg["min_contributions"]
     suppressed = 0
@@ -261,6 +295,8 @@ def gh_snitch(  # noqa: PLR0913
             for row in rows:
                 row["Δ Today"] = row.pop(current_label)
             delta_col = "Δ Today"
+            # Rank deltas are not meaningful when showing contribution deltas
+            rank_deltas = None
 
     table = render_table(
         rows,
@@ -270,6 +306,7 @@ def gh_snitch(  # noqa: PLR0913
         show_totals=cfg.get("totals", False),
         show_percent=cfg.get("percent", False),
         delta_col=delta_col,
+        rank_deltas=rank_deltas,
     )
     click.echo(table)
 

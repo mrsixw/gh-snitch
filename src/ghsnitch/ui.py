@@ -210,6 +210,25 @@ def _delta_cell(delta, col_values):
     return f"{colour}{text}\033[0m"
 
 
+def _rank_delta_cell(delta):
+    """Return a formatted rank-delta string for the ± column.
+
+    Positive delta means the operative moved up (lower rank number = better).
+    Negative means they dropped. Zero means no change. None means new operative.
+    """
+    if delta is None:
+        text = "new"
+        return f"\033[2m{text}\033[0m" if IS_TTY else text
+    if delta == 0:
+        text = "="
+        return f"\033[2m{text}\033[0m" if IS_TTY else text
+    if delta > 0:
+        text = f"↑{delta}" if IS_TTY else f"+{delta}"
+        return f"\033[32m{text}\033[0m" if IS_TTY else text
+    text = f"↓{abs(delta)}" if IS_TTY else f"-{abs(delta)}"
+    return f"\033[31m{text}\033[0m" if IS_TTY else text
+
+
 def _trend_indicator(current, previous, year_fraction):
     """Return a YoY trend indicator string for one operative.
 
@@ -256,6 +275,7 @@ def render_table(
     show_totals=False,
     show_percent=False,
     delta_col=None,
+    rank_deltas=None,
 ):
     """Render contribution data as a formatted table string.
 
@@ -269,6 +289,9 @@ def render_table(
         show_percent: whether to annotate each cell with (N%) share of that year's total
         delta_col: label of the column whose values are deltas (rendered with +/- and
             green/red colouring instead of percentile-based grading)
+        rank_deltas: optional dict[username, int | None] mapping each operative to their
+            rank change since the previous run (positive = moved up, None = new
+            operative). When provided, a ± column is shown after the # column.
     """
     if not rows:
         return "(no operatives configured)"
@@ -302,8 +325,11 @@ def render_table(
                 for r in sorted_rows
             ]
 
+    show_rank_delta = rank_deltas is not None
     headers = (
-        ["#", "Operative"]
+        ["#"]
+        + (["±"] if show_rank_delta else [])
+        + ["Operative"]
         + (["Trend"] if show_trend else [])
         + year_labels
         + (["Total"] if show_totals else [])
@@ -323,7 +349,10 @@ def render_table(
     for rank, row in zip(ranks, sorted_rows):
         username = row["username"]
         profile_url = f"https://github.com/{username}"
-        cells = [rank, make_hyperlink(profile_url, username)]
+        cells = [rank]
+        if show_rank_delta:
+            cells.append(_rank_delta_cell(rank_deltas.get(username)))
+        cells.append(make_hyperlink(profile_url, username))
         if show_trend:
             current = row.get(year_labels[0], 0)
             previous = row.get(year_labels[1], 0)
@@ -353,7 +382,10 @@ def render_table(
 
     # Add totals footer row (neutral — no colour grading)
     if show_totals:
-        totals_cells = ["", "Total"]
+        totals_cells = [""]
+        if show_rank_delta:
+            totals_cells.append("")
+        totals_cells.append("Total")
         if show_trend:
             totals_cells.append("")
         for label in year_labels:
@@ -362,10 +394,16 @@ def render_table(
         table_data.append(totals_cells)
 
     n_year_cols = len(year_labels)
+    rank_delta_align = ("center",) if show_rank_delta else ()
     trend_align = ("center",) if show_trend else ()
     total_align = ("right",) if show_totals else ()
     colalign = (
-        ("right",) + ("left",) + trend_align + ("right",) * n_year_cols + total_align
+        ("right",)
+        + rank_delta_align
+        + ("left",)
+        + trend_align
+        + ("right",) * n_year_cols
+        + total_align
     )
     return tabulate(
         table_data,

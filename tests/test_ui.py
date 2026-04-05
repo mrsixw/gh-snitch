@@ -3,6 +3,7 @@ from unittest.mock import patch
 from ghsnitch.ui import (
     _delta_cell,
     _grade_colour,
+    _rank_delta_cell,
     _trend_indicator,
     make_hyperlink,
     render_table,
@@ -425,6 +426,109 @@ def test_render_table_delta_col_no_trend():
             rows, ["Δ Today", "2024"], delta_col="Δ Today", show_trend=False
         )
     assert "Trend" not in output
+
+
+# --- _rank_delta_cell tests ---
+
+
+def test_rank_delta_cell_up_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _rank_delta_cell(2) == "+2"
+
+
+def test_rank_delta_cell_down_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _rank_delta_cell(-3) == "-3"
+
+
+def test_rank_delta_cell_flat_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _rank_delta_cell(0) == "="
+
+
+def test_rank_delta_cell_new_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _rank_delta_cell(None) == "new"
+
+
+def test_rank_delta_cell_up_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _rank_delta_cell(1)
+    assert "↑1" in result
+    assert "\033[32m" in result  # green
+
+
+def test_rank_delta_cell_down_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _rank_delta_cell(-2)
+    assert "↓2" in result
+    assert "\033[31m" in result  # red
+
+
+def test_rank_delta_cell_flat_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _rank_delta_cell(0)
+    assert "=" in result
+    assert "\033[2m" in result  # dim
+
+
+def test_rank_delta_cell_new_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _rank_delta_cell(None)
+    assert "new" in result
+    assert "\033[2m" in result  # dim
+
+
+# --- render_table rank_deltas tests ---
+
+
+def test_render_table_rank_delta_column_shown():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], rank_deltas={"alice": 0})
+    assert "±" in output
+
+
+def test_render_table_no_rank_delta_column_by_default():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"])
+    assert "±" not in output
+
+
+def test_render_table_rank_delta_up_non_tty():
+    rows = [
+        {"username": "alice", "2025": 200},
+        {"username": "bob", "2025": 100},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], rank_deltas={"alice": 2, "bob": -1})
+    assert "+2" in output
+    assert "-1" in output
+
+
+def test_render_table_rank_delta_flat_non_tty():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], rank_deltas={"alice": 0})
+    assert "=" in output
+
+
+def test_render_table_rank_delta_new_operative_non_tty():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], rank_deltas={"alice": None})
+    assert "new" in output
+
+
+def test_render_table_rank_delta_with_totals():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows, ["2025"], show_totals=True, rank_deltas={"alice": 1}
+        )
+    assert "±" in output
+    assert "Total" in output
 
 
 def test_render_table_delta_col_non_delta_column_still_graded():

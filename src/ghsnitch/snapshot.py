@@ -23,22 +23,22 @@ def load_snapshot():
         return None
 
 
-def save_snapshot(contributions):
-    """Persist contributions to the snapshot cache.
+def save_snapshot(contributions, ranks=None):
+    """Persist contributions (and optionally ranks) to the snapshot cache.
 
     Args:
         contributions: dict[username, dict[year_label, int]]
+        ranks: optional dict[username, int] mapping each operative to their rank
     """
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _SNAPSHOT_FILE.write_text(
-            json.dumps(
-                {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "contributions": contributions,
-                }
-            )
-        )
+        data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "contributions": contributions,
+        }
+        if ranks is not None:
+            data["ranks"] = ranks
+        _SNAPSHOT_FILE.write_text(json.dumps(data))
     except OSError as e:
         logger.warning("failed to save snapshot: %s", e)
 
