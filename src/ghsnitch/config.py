@@ -24,7 +24,9 @@ years = 3
 # github_url = "https://github.example.com"
 
 [display]
-# Future display options go here
+# Hide operatives whose current-year contribution count is below this threshold.
+# Set to 0 (default) to show all operatives.
+# min_contributions = 10
 """
 
 
@@ -46,7 +48,12 @@ def load_config(config_path=None):
     Warns (does not error) if the file is not found.
     """
     path = Path(config_path) if config_path else _default_config_path()
-    config = {"users": [], "years": 3, "github_url": "https://github.com"}
+    config = {
+        "users": [],
+        "years": 3,
+        "github_url": "https://github.com",
+        "min_contributions": 0,
+    }
     logger.debug("loading config from %s", path)
 
     if not path.exists():
@@ -77,6 +84,10 @@ def load_config(config_path=None):
         config["years"] = surveillance["years"]
     if "github_url" in network:
         config["github_url"] = network["github_url"]
+
+    display = data.get("display", {})
+    if "min_contributions" in display:
+        config["min_contributions"] = display["min_contributions"]
 
     logger.debug(
         "config loaded users=%s years=%s github_url=%s",

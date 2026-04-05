@@ -63,6 +63,12 @@ logger = logging.getLogger(__name__)
     default=False,
     help="Hide the Trend column.",
 )
+@click.option(
+    "--min-contributions",
+    default=None,
+    type=int,
+    help="Hide operatives with fewer than N contributions in the current year.",
+)
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
     config,
@@ -73,6 +79,7 @@ def gh_snitch(  # noqa: PLR0913
     init_config,
     no_update_check,
     no_trend,
+    min_contributions,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     setup_logging()
@@ -113,6 +120,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["years"] = years
     if github_url is not None:
         cfg["github_url"] = github_url
+    if min_contributions is not None:
+        cfg["min_contributions"] = min_contributions
 
     operative_list = cfg["users"]
     logger.info(
@@ -174,6 +183,18 @@ def gh_snitch(  # noqa: PLR0913
         row.update(year_data)
         rows.append(row)
 
+    threshold = cfg["min_contributions"]
+    suppressed = 0
+    if threshold > 0 and year_labels:
+        current_year_label = year_labels[0]
+        filtered_rows = []
+        for row in rows:
+            if row.get(current_year_label, 0) >= threshold:
+                filtered_rows.append(row)
+            else:
+                suppressed += 1
+        rows = filtered_rows
+
     table = render_table(
         rows,
         year_labels,
@@ -181,6 +202,9 @@ def gh_snitch(  # noqa: PLR0913
         show_trend=not no_trend,
     )
     click.echo(table)
+
+    if suppressed > 0:
+        click.echo(f"🔕 {suppressed} operative(s) below threshold suppressed.")
 
     if not_found:
         for username in sorted(not_found):

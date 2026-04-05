@@ -50,6 +50,7 @@ make build
 |---|---|
 | `--users` | Comma-separated usernames (overrides config) |
 | `--years` | Number of prior years (overrides config) |
+| `--min-contributions` | Hide operatives below this contribution count |
 | `--config` | Path to config file |
 | `--init-config` | Write default config and exit |
 | `--show-config` | Print current config and exit |
