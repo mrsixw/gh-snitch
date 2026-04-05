@@ -112,33 +112,41 @@ _DELTA_PALETTES = {
 }
 
 
-def _easter_month(year):
-    """Return the month (3 or 4) that Easter Sunday falls in for the given year."""
-    a = year % 19
-    b, c = divmod(year, 100)
-    d, e = divmod(b, 4)
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = divmod(c, 4)
-    lo = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * lo) // 451
-    return (h + lo - 7 * m + 114) // 31
+def _easter_month():
+    """Return the month (3 or 4) that Easter Sunday falls in for the current year."""
+    year = datetime.now().year
+    golden_number = year % 19
+    century, year_of_century = divmod(year, 100)
+    century_leap_correction = century // 4
+    century_remainder = century % 4
+    gregorian_correction = (century + 8) // 25
+    lunar_correction = (century - gregorian_correction + 1) // 3
+    epact = (
+        19 * golden_number + century - century_leap_correction - lunar_correction + 15
+    ) % 30
+    year_leap_days, year_leap_remainder = divmod(year_of_century, 4)
+    weekday_offset = (
+        32 + 2 * century_remainder + 2 * year_leap_days - epact - year_leap_remainder
+    ) % 7
+    metonic_adjustment = (golden_number + 11 * epact + 22 * weekday_offset) // 451
+    return (epact + weekday_offset - 7 * metonic_adjustment + 114) // 31
+
+
+# Map each month to its palette name; Easter month is resolved at call time.
+_MONTH_PALETTE_NAMES = {
+    1: "purple",
+    10: "orange",
+    12: "red",
+}
 
 
 def _delta_palette():
     """Return the colour palette list for delta cells based on the current month."""
-    month = datetime.now().month
-    year = datetime.now().year
-    if month == 1:
-        return _DELTA_PALETTES["purple"]
-    if month == _easter_month(year):
+    now = datetime.now()
+    month = now.month
+    if now.month == _easter_month():
         return _DELTA_PALETTES["yellow"]
-    if month == 10:
-        return _DELTA_PALETTES["orange"]
-    if month == 12:
-        return _DELTA_PALETTES["red"]
-    return _DELTA_PALETTES["green"]
+    return _DELTA_PALETTES[_MONTH_PALETTE_NAMES.get(month, "green")]
 
 
 def _delta_cell(delta, col_values):
