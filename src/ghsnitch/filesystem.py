@@ -2,6 +2,18 @@ import os
 from pathlib import Path
 
 
+def get_config_dir() -> Path:
+    """Return the XDG-compliant config directory for gh-snitch.
+
+    Uses $XDG_CONFIG_HOME if set, otherwise ~/.config/gh-snitch.
+    Appropriate for user configuration files.
+    """
+    xdg_config = os.getenv("XDG_CONFIG_HOME")
+    if xdg_config:
+        return Path(xdg_config) / "gh-snitch"
+    return Path.home() / ".config" / "gh-snitch"
+
+
 def get_cache_dir() -> Path:
     """Return the XDG-compliant cache directory for gh-snitch.
 
@@ -26,5 +38,6 @@ def get_log_dir() -> Path:
     return Path.home() / ".local" / "state" / "gh-snitch"
 
 
+CONFIG_DIR = get_config_dir()
 CACHE_DIR = get_cache_dir()
 LOG_DIR = get_log_dir()
