@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+from datetime import datetime
 
 import tabulate as _tabulate_module
 from tabulate import tabulate
@@ -84,6 +85,131 @@ def make_operative_cell(username):
     return make_hyperlink(url, username)
 
 
+# ---------------------------------------------------------------------------
+# Delta cell colouring
+#
+# Zero delta → dim red (no activity this period).
+# Positive delta → graduated colour dark→bright based on percentile rank
+# within the column.  The colour palette rotates by month — a small easter
+# egg for attentive operatives:
+#
+#   January  → purple  (handler's birthday)
+#   March/April (Easter month, computed per year) → yellow
+#   October  → orange  (Halloween)
+#   December → red     (Christmas)
+#   all other months   → green  (default surveillance mode)
+# ---------------------------------------------------------------------------
+
+_DELTA_ZERO = "\033[2;31m"  # dim red — no activity
+
+# 256-colour palettes: 4 shades, darkest → brightest
+_DELTA_PALETTES = {
+    "green": ["\033[38;5;22m", "\033[38;5;34m", "\033[38;5;40m", "\033[38;5;46m"],
+    "purple": ["\033[38;5;54m", "\033[38;5;90m", "\033[38;5;129m", "\033[38;5;165m"],
+    "yellow": ["\033[38;5;136m", "\033[38;5;178m", "\033[38;5;220m", "\033[38;5;226m"],
+    "orange": ["\033[38;5;130m", "\033[38;5;166m", "\033[38;5;202m", "\033[38;5;208m"],
+    "red": ["\033[38;5;88m", "\033[38;5;124m", "\033[38;5;160m", "\033[38;5;196m"],
+}
+
+
+def _easter_month():
+    """Return the month (3 or 4) that Easter Sunday falls in for the current year.
+
+    Uses the Anonymous Gregorian algorithm (Meeus/Jones/Butcher), which works
+    by layering three interlocking corrections on top of a simple lunar cycle:
+
+    1. Golden number — where the current year sits in the 19-year Metonic cycle
+       (after 19 solar years, lunar phases recur on the same calendar dates).
+
+    2. Epact — the age of the moon on 1 January, derived from the golden number
+       then adjusted for two Gregorian-calendar corrections that the older Julian
+       algorithm ignored:
+         - The century leap correction accounts for the dropped leap years in
+           century years (e.g. 1900 was not a leap year).
+         - The lunar correction accounts for the accumulated drift of the
+           Gregorian calendar's lunar approximation over the centuries.
+
+    3. Weekday offset — pushes the date forward to the following Sunday, since
+       Easter is defined as the first Sunday after the first full moon on or
+       after the spring equinox (21 March).
+
+    4. Metonic adjustment — a final correction for the two rare cases where the
+       raw result lands on one of the historically excluded dates (April 26 or
+       a full-moon Easter that would coincide with a Jewish Passover).
+
+    Throughout, // is Python's floor-division operator: it divides and discards
+    the remainder, returning only the whole-number part (e.g. 7 // 2 == 3).
+    This is essential wherever the algorithm needs a count of complete cycles
+    rather than a fractional quantity.
+    """
+    year = datetime.now().year
+    golden_number = year % 19
+    century, year_of_century = divmod(year, 100)
+    century_leap_correction = century // 4  # dropped leap years in century years
+    century_remainder = century % 4
+    gregorian_correction = (century + 8) // 25  # accumulated Gregorian lunar drift
+    lunar_correction = (century - gregorian_correction + 1) // 3
+    epact = (
+        19 * golden_number + century - century_leap_correction - lunar_correction + 15
+    ) % 30  # age of moon on 1 Jan, adjusted for Gregorian corrections
+    year_leap_days, year_leap_remainder = divmod(year_of_century, 4)
+    weekday_offset = (
+        32 + 2 * century_remainder + 2 * year_leap_days - epact - year_leap_remainder
+    ) % 7  # days to advance to reach the next Sunday
+    metonic_adjustment = (golden_number + 11 * epact + 22 * weekday_offset) // 451
+    return (epact + weekday_offset - 7 * metonic_adjustment + 114) // 31
+
+
+# Map each month to its palette name; Easter month is resolved at call time.
+_MONTH_PALETTE_NAMES = {
+    1: "purple",
+    10: "orange",
+    12: "red",
+}
+
+
+def _delta_palette():
+    """Return the colour palette list for delta cells based on the current month."""
+    now = datetime.now()
+    month = now.month
+    if now.month == _easter_month():
+        return _DELTA_PALETTES["yellow"]
+    return _DELTA_PALETTES[_MONTH_PALETTE_NAMES.get(month, "green")]
+
+
+def _delta_cell(delta, col_values):
+    """Return a coloured cell string for a delta (change) value.
+
+    Zero (or negative) → dim red.  Positive → graduated dark→bright using
+    the current month's palette, ranked by percentile within col_values.
+    """
+    if delta <= 0:
+        text = str(delta) if delta < 0 else "0"
+        return f"{_DELTA_ZERO}{text}\033[0m" if IS_TTY else text
+
+    text = f"+{delta}"
+    if not IS_TTY:
+        return text
+
+    palette = _delta_palette()
+    non_zero = [v for v in col_values if v > 0]
+    if not non_zero or len(non_zero) == 1:
+        colour = palette[-1]
+    else:
+        p25 = _percentile(non_zero, 25)
+        p50 = _percentile(non_zero, 50)
+        p75 = _percentile(non_zero, 75)
+        if delta <= p25:
+            colour = palette[0]
+        elif delta <= p50:
+            colour = palette[1]
+        elif delta <= p75:
+            colour = palette[2]
+        else:
+            colour = palette[3]
+    return f"{colour}{text}\033[0m"
+
+
 def _trend_indicator(current, previous, year_fraction):
     """Return a YoY trend indicator string for one operative.
 
@@ -129,6 +255,7 @@ def render_table(
     show_trend=True,
     show_totals=False,
     show_percent=False,
+    delta_col=None,
 ):
     """Render contribution data as a formatted table string.
 
@@ -140,6 +267,8 @@ def render_table(
         show_trend: whether to include the Trend column (requires >= 2 year labels)
         show_totals: whether to add a Total column per operative and a Total footer row
         show_percent: whether to annotate each cell with (N%) share of that year's total
+        delta_col: label of the column whose values are deltas (rendered with +/- and
+            green/red colouring instead of percentile-based grading)
     """
     if not rows:
         return "(no operatives configured)"
@@ -201,18 +330,23 @@ def render_table(
             cells.append(_trend_indicator(current, previous, year_fraction))
         for label in year_labels:
             count = row.get(label, 0)
-            contrib_url = f"https://github.com/{username}"
-            cell = make_coloured_hyperlink_cell(count, contrib_url, col_values[label])
-            if show_percent:
-                total = year_totals[label]
-                pct = (count / total * 100) if total > 0 else 0.0
-                if IS_TTY:
-                    prefix, suffix = _grade_colour(pct, col_pct_values[label])
-                    pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
-                else:
-                    pct_annotation = f"({pct:.0f}%)"
-                cell = f"{cell} {pct_annotation}"
-            cells.append(cell)
+            if label == delta_col:
+                cells.append(_delta_cell(count, col_values[label]))
+            else:
+                contrib_url = f"https://github.com/{username}"
+                cell = make_coloured_hyperlink_cell(
+                    count, contrib_url, col_values[label]
+                )
+                if show_percent:
+                    total = year_totals[label]
+                    pct = (count / total * 100) if total > 0 else 0.0
+                    if IS_TTY:
+                        prefix, suffix = _grade_colour(pct, col_pct_values[label])
+                        pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
+                    else:
+                        pct_annotation = f"({pct:.0f}%)"
+                    cell = f"{cell} {pct_annotation}"
+                cells.append(cell)
         if show_totals:
             cells.append(sum(row.get(label, 0) for label in year_labels))
         table_data.append(cells)

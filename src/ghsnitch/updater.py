@@ -1,26 +1,15 @@
 import json
-import os
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
-from pathlib import Path
 
 import requests
 
 from .api import SECRET_GITHUB_TOKEN
+from .xdg import CACHE_DIR
 
 _UPDATE_CHECK_REPO = "mrsixw/gh-snitch"
 
-
-def _get_cache_dir():
-    """Get the XDG-compliant cache directory."""
-    xdg_cache = os.getenv("XDG_CACHE_HOME")
-    if xdg_cache:
-        return Path(xdg_cache) / "gh-snitch"
-    return Path.home() / ".cache" / "gh-snitch"
-
-
-CACHE_DIR = _get_cache_dir()
 _CACHE_DIR = CACHE_DIR  # backwards-compatible alias
 _CACHE_TTL_SECONDS = 86400  # 24 hours
 

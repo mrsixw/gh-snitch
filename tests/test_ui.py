@@ -1,6 +1,12 @@
 from unittest.mock import patch
 
-from ghsnitch.ui import _grade_colour, _trend_indicator, make_hyperlink, render_table
+from ghsnitch.ui import (
+    _delta_cell,
+    _grade_colour,
+    _trend_indicator,
+    make_hyperlink,
+    render_table,
+)
 
 
 def test_grade_colour_all_zeros():
@@ -325,3 +331,109 @@ def test_render_table_percent_without_totals():
         output = render_table(rows, ["2025"], show_totals=False, show_percent=True)
     assert "(50%)" in output
     assert "Total" not in output
+
+
+# --- _delta_cell tests ---
+
+
+def test_delta_cell_positive_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _delta_cell(14, [5, 10, 14, 20]) == "+14"
+
+
+def test_delta_cell_negative_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _delta_cell(-5, [0, 5, 10]) == "-5"
+
+
+def test_delta_cell_zero_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _delta_cell(0, [0, 5, 10]) == "0"
+
+
+def test_delta_cell_zero_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _delta_cell(0, [0, 5, 10])
+    assert "0" in result
+    assert "\033[2;31m" in result  # dim red
+
+
+def test_delta_cell_positive_tty_uses_colour():
+    # Positive delta should get a colour prefix (exact colour depends on month)
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _delta_cell(10, [5, 10, 15, 20])
+    assert "+10" in result
+    assert "\033[0m" in result  # reset present
+
+
+def test_delta_cell_top_quartile_brightest():
+    # Top-quartile value should get the last (brightest) palette entry
+    col = [1, 2, 3, 100]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        with patch(
+            "ghsnitch.ui._delta_palette",
+            return_value=[
+                "\033[38;5;22m",
+                "\033[38;5;34m",
+                "\033[38;5;40m",
+                "\033[38;5;46m",
+            ],
+        ):
+            result = _delta_cell(100, col)
+    assert "\033[38;5;46m" in result  # brightest green
+
+
+def test_delta_cell_bottom_quartile_darkest():
+    col = [1, 2, 3, 100]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        with patch(
+            "ghsnitch.ui._delta_palette",
+            return_value=[
+                "\033[38;5;22m",
+                "\033[38;5;34m",
+                "\033[38;5;40m",
+                "\033[38;5;46m",
+            ],
+        ):
+            result = _delta_cell(1, col)
+    assert "\033[38;5;22m" in result  # darkest green
+
+
+# --- render_table delta_col tests ---
+
+
+def test_render_table_delta_col_shows_plus_prefix():
+    rows = [{"username": "alice", "Δ Today": 14, "2024": 412}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["Δ Today", "2024"], delta_col="Δ Today")
+    assert "+14" in output
+    assert "Δ Today" in output
+
+
+def test_render_table_delta_col_shows_negative():
+    rows = [{"username": "alice", "Δ Today": -5, "2024": 412}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["Δ Today", "2024"], delta_col="Δ Today")
+    assert "-5" in output
+
+
+def test_render_table_delta_col_no_trend():
+    # delta_col suppresses trend (caller passes show_trend=False)
+    rows = [{"username": "alice", "Δ Today": 10, "2024": 412}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows, ["Δ Today", "2024"], delta_col="Δ Today", show_trend=False
+        )
+    assert "Trend" not in output
+
+
+def test_render_table_delta_col_non_delta_column_still_graded():
+    # The non-delta year column should still render as a plain count
+    rows = [
+        {"username": "alice", "Δ Today": 10, "2024": 412},
+        {"username": "bob", "Δ Today": 5, "2024": 200},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["Δ Today", "2024"], delta_col="Δ Today")
+    assert "412" in output
+    assert "200" in output

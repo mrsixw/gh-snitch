@@ -1,8 +1,9 @@
 import logging
-import os
 import sys
 import tomllib
 from pathlib import Path
+
+from .xdg import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +37,8 @@ years = 3
 """
 
 
-def get_config_dir():
-    """Return the XDG-compliant config directory for gh-snitch."""
-    xdg_config = os.getenv("XDG_CONFIG_HOME")
-    if xdg_config:
-        return Path(xdg_config) / "gh-snitch"
-    return Path.home() / ".config" / "gh-snitch"
-
-
 def _default_config_path():
-    return get_config_dir() / "config.toml"
+    return CONFIG_DIR / "config.toml"
 
 
 def load_config(config_path=None):

@@ -78,6 +78,30 @@ You can also set this in your config file to apply it by default:
 min_contributions = 10
 ```
 
+## Delta Mode — Changes Since Last Run
+
+Every successful run saves a snapshot of contribution counts to `~/.cache/gh-snitch/snapshot.json`. Pass `--delta` on a subsequent run to replace the current-year column with the change since the previous snapshot:
+
+```bash
+gh-snitch --users alice,bob --delta
+```
+
+```
+#  Operative     Δ Today   2024   2023
+1  alice         +14       380    310
+2  bob           +3        195    180
+```
+
+- Positive deltas are green, negative are red, zero is dim
+- The Trend column is suppressed in delta mode (comparing a delta to a prior full year is meaningless)
+- If no prior snapshot exists, absolute counts are shown and a note is printed; the new snapshot is saved for next time
+
+To clear the snapshot:
+
+```bash
+gh-snitch --reset-snapshot
+```
+
 ## Totals and Percentage Breakdown
 
 Show a **Total column** (per-operative sum across all years) and a **Total footer row** (per-year sum across all operatives):

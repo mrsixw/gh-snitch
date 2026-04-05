@@ -9,6 +9,8 @@
 | `--min-contributions INTEGER` | `0` (show all) | Hide operatives with fewer than N contributions in the current year |
 | `--totals` | off | Add a `Total` column (per-operative sum across all years) and a `Total` footer row (per-year sum across all operatives) |
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
+| `--delta` | off | Replace the current-year column with `Δ Today` showing the change since the last saved snapshot; green/red-coded |
+| `--reset-snapshot` | off | Clear the saved contribution snapshot and exit |
 | `--no-trend` | off | Hide the Trend column |
 | `--show-config` | off | Print current config and exit |
 | `--init-config` | off | Write default config file and exit |
