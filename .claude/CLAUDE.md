@@ -56,9 +56,13 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 ## Documentation
 - User-facing documentation lives in `docs/manual/`.
 - Design documents live in `docs/design/`.
-- Update relevant docs when changing CLI options or user-visible behaviour.
+- When changing CLI options or user-visible behaviour, always update **all three** of:
+  - `README.md` — the options table
+  - `docs/manual/options.md` — the full options reference and config file example
+  - `docs/manual/usage.md` — add or update the relevant usage section
 
 ## Code Quality
 - Use `ruff` (lint + import sorting) and `black` (formatting).
 - Never use bare `except Exception`.
 - Before committing, run `make test`, `make lint`.
+- Before committing a feature or fix, confirm docs have been updated if any CLI options or user-visible behaviour changed.
