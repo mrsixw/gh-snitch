@@ -3,7 +3,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from .filesystem import CONFIG_DIR
+from .xdg import CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 

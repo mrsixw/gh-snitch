@@ -6,7 +6,7 @@ from importlib.metadata import version as pkg_version
 import requests
 
 from .api import SECRET_GITHUB_TOKEN
-from .filesystem import CACHE_DIR
+from .xdg import CACHE_DIR
 
 _UPDATE_CHECK_REPO = "mrsixw/gh-snitch"
 

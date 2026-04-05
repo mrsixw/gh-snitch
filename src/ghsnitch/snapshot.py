@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from .filesystem import CACHE_DIR
+from .xdg import CACHE_DIR
 
 logger = logging.getLogger(__name__)
 
