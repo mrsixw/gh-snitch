@@ -1,6 +1,6 @@
 import logging
 
-from .updater import CACHE_DIR
+from .cache import CACHE_DIR
 
 _LOG_FILE = CACHE_DIR / "run.log"
 _FMT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
