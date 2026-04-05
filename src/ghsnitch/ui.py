@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+from datetime import datetime
 
 import tabulate as _tabulate_module
 from tabulate import tabulate
@@ -84,19 +85,93 @@ def make_operative_cell(username):
     return make_hyperlink(url, username)
 
 
-def _delta_cell(delta):
+# ---------------------------------------------------------------------------
+# Delta cell colouring
+#
+# Zero delta → dim red (no activity this period).
+# Positive delta → graduated colour dark→bright based on percentile rank
+# within the column.  The colour palette rotates by month — a small easter
+# egg for attentive operatives:
+#
+#   January  → purple  (handler's birthday)
+#   March/April (Easter month, computed per year) → yellow
+#   October  → orange  (Halloween)
+#   December → red     (Christmas)
+#   all other months   → green  (default surveillance mode)
+# ---------------------------------------------------------------------------
+
+_DELTA_ZERO = "\033[2;31m"  # dim red — no activity
+
+# 256-colour palettes: 4 shades, darkest → brightest
+_DELTA_PALETTES = {
+    "green": ["\033[38;5;22m", "\033[38;5;34m", "\033[38;5;40m", "\033[38;5;46m"],
+    "purple": ["\033[38;5;54m", "\033[38;5;90m", "\033[38;5;129m", "\033[38;5;165m"],
+    "yellow": ["\033[38;5;136m", "\033[38;5;178m", "\033[38;5;220m", "\033[38;5;226m"],
+    "orange": ["\033[38;5;130m", "\033[38;5;166m", "\033[38;5;202m", "\033[38;5;208m"],
+    "red": ["\033[38;5;88m", "\033[38;5;124m", "\033[38;5;160m", "\033[38;5;196m"],
+}
+
+
+def _easter_month(year):
+    """Return the month (3 or 4) that Easter Sunday falls in for the given year."""
+    a = year % 19
+    b, c = divmod(year, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    lo = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * lo) // 451
+    return (h + lo - 7 * m + 114) // 31
+
+
+def _delta_palette():
+    """Return the colour palette list for delta cells based on the current month."""
+    month = datetime.now().month
+    year = datetime.now().year
+    if month == 1:
+        return _DELTA_PALETTES["purple"]
+    if month == _easter_month(year):
+        return _DELTA_PALETTES["yellow"]
+    if month == 10:
+        return _DELTA_PALETTES["orange"]
+    if month == 12:
+        return _DELTA_PALETTES["red"]
+    return _DELTA_PALETTES["green"]
+
+
+def _delta_cell(delta, col_values):
     """Return a coloured cell string for a delta (change) value.
 
-    Positive → green with + prefix, negative → red, zero → dim grey.
+    Zero (or negative) → dim red.  Positive → graduated dark→bright using
+    the current month's palette, ranked by percentile within col_values.
     """
-    if delta > 0:
-        text = f"+{delta}"
-        return f"\033[32m{text}\033[0m" if IS_TTY else text
-    elif delta < 0:
-        text = str(delta)
-        return f"\033[31m{text}\033[0m" if IS_TTY else text
+    if delta <= 0:
+        text = str(delta) if delta < 0 else "0"
+        return f"{_DELTA_ZERO}{text}\033[0m" if IS_TTY else text
+
+    text = f"+{delta}"
+    if not IS_TTY:
+        return text
+
+    palette = _delta_palette()
+    non_zero = [v for v in col_values if v > 0]
+    if not non_zero or len(non_zero) == 1:
+        colour = palette[-1]
     else:
-        return "\033[2m0\033[0m" if IS_TTY else "0"
+        p25 = _percentile(non_zero, 25)
+        p50 = _percentile(non_zero, 50)
+        p75 = _percentile(non_zero, 75)
+        if delta <= p25:
+            colour = palette[0]
+        elif delta <= p50:
+            colour = palette[1]
+        elif delta <= p75:
+            colour = palette[2]
+        else:
+            colour = palette[3]
+    return f"{colour}{text}\033[0m"
 
 
 def _trend_indicator(current, previous, year_fraction):
@@ -220,7 +295,7 @@ def render_table(
         for label in year_labels:
             count = row.get(label, 0)
             if label == delta_col:
-                cells.append(_delta_cell(count))
+                cells.append(_delta_cell(count, col_values[label]))
             else:
                 contrib_url = f"https://github.com/{username}"
                 cell = make_coloured_hyperlink_cell(

@@ -338,38 +338,65 @@ def test_render_table_percent_without_totals():
 
 def test_delta_cell_positive_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _delta_cell(14) == "+14"
+        assert _delta_cell(14, [5, 10, 14, 20]) == "+14"
 
 
 def test_delta_cell_negative_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _delta_cell(-5) == "-5"
+        assert _delta_cell(-5, [0, 5, 10]) == "-5"
 
 
 def test_delta_cell_zero_non_tty():
     with patch("ghsnitch.ui.IS_TTY", False):
-        assert _delta_cell(0) == "0"
-
-
-def test_delta_cell_positive_tty():
-    with patch("ghsnitch.ui.IS_TTY", True):
-        result = _delta_cell(10)
-    assert "+10" in result
-    assert "\033[32m" in result  # green
-
-
-def test_delta_cell_negative_tty():
-    with patch("ghsnitch.ui.IS_TTY", True):
-        result = _delta_cell(-3)
-    assert "-3" in result
-    assert "\033[31m" in result  # red
+        assert _delta_cell(0, [0, 5, 10]) == "0"
 
 
 def test_delta_cell_zero_tty():
     with patch("ghsnitch.ui.IS_TTY", True):
-        result = _delta_cell(0)
+        result = _delta_cell(0, [0, 5, 10])
     assert "0" in result
-    assert "\033[2m" in result  # dim
+    assert "\033[2;31m" in result  # dim red
+
+
+def test_delta_cell_positive_tty_uses_colour():
+    # Positive delta should get a colour prefix (exact colour depends on month)
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _delta_cell(10, [5, 10, 15, 20])
+    assert "+10" in result
+    assert "\033[0m" in result  # reset present
+
+
+def test_delta_cell_top_quartile_brightest():
+    # Top-quartile value should get the last (brightest) palette entry
+    col = [1, 2, 3, 100]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        with patch(
+            "ghsnitch.ui._delta_palette",
+            return_value=[
+                "\033[38;5;22m",
+                "\033[38;5;34m",
+                "\033[38;5;40m",
+                "\033[38;5;46m",
+            ],
+        ):
+            result = _delta_cell(100, col)
+    assert "\033[38;5;46m" in result  # brightest green
+
+
+def test_delta_cell_bottom_quartile_darkest():
+    col = [1, 2, 3, 100]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        with patch(
+            "ghsnitch.ui._delta_palette",
+            return_value=[
+                "\033[38;5;22m",
+                "\033[38;5;34m",
+                "\033[38;5;40m",
+                "\033[38;5;46m",
+            ],
+        ):
+            result = _delta_cell(1, col)
+    assert "\033[38;5;22m" in result  # darkest green
 
 
 # --- render_table delta_col tests ---
