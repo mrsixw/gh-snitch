@@ -84,6 +84,21 @@ def make_operative_cell(username):
     return make_hyperlink(url, username)
 
 
+def _delta_cell(delta):
+    """Return a coloured cell string for a delta (change) value.
+
+    Positive → green with + prefix, negative → red, zero → dim grey.
+    """
+    if delta > 0:
+        text = f"+{delta}"
+        return f"\033[32m{text}\033[0m" if IS_TTY else text
+    elif delta < 0:
+        text = str(delta)
+        return f"\033[31m{text}\033[0m" if IS_TTY else text
+    else:
+        return "\033[2m0\033[0m" if IS_TTY else "0"
+
+
 def _trend_indicator(current, previous, year_fraction):
     """Return a YoY trend indicator string for one operative.
 
@@ -129,6 +144,7 @@ def render_table(
     show_trend=True,
     show_totals=False,
     show_percent=False,
+    delta_col=None,
 ):
     """Render contribution data as a formatted table string.
 
@@ -140,6 +156,8 @@ def render_table(
         show_trend: whether to include the Trend column (requires >= 2 year labels)
         show_totals: whether to add a Total column per operative and a Total footer row
         show_percent: whether to annotate each cell with (N%) share of that year's total
+        delta_col: label of the column whose values are deltas (rendered with +/- and
+            green/red colouring instead of percentile-based grading)
     """
     if not rows:
         return "(no operatives configured)"
@@ -201,18 +219,23 @@ def render_table(
             cells.append(_trend_indicator(current, previous, year_fraction))
         for label in year_labels:
             count = row.get(label, 0)
-            contrib_url = f"https://github.com/{username}"
-            cell = make_coloured_hyperlink_cell(count, contrib_url, col_values[label])
-            if show_percent:
-                total = year_totals[label]
-                pct = (count / total * 100) if total > 0 else 0.0
-                if IS_TTY:
-                    prefix, suffix = _grade_colour(pct, col_pct_values[label])
-                    pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
-                else:
-                    pct_annotation = f"({pct:.0f}%)"
-                cell = f"{cell} {pct_annotation}"
-            cells.append(cell)
+            if label == delta_col:
+                cells.append(_delta_cell(count))
+            else:
+                contrib_url = f"https://github.com/{username}"
+                cell = make_coloured_hyperlink_cell(
+                    count, contrib_url, col_values[label]
+                )
+                if show_percent:
+                    total = year_totals[label]
+                    pct = (count / total * 100) if total > 0 else 0.0
+                    if IS_TTY:
+                        prefix, suffix = _grade_colour(pct, col_pct_values[label])
+                        pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
+                    else:
+                        pct_annotation = f"({pct:.0f}%)"
+                    cell = f"{cell} {pct_annotation}"
+                cells.append(cell)
         if show_totals:
             cells.append(sum(row.get(label, 0) for label in year_labels))
         table_data.append(cells)

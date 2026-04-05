@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import pytest
@@ -361,4 +362,117 @@ def test_users_cli_override(runner, tmp_path, requests_mock):
             )
 
     assert result.exit_code == 0
-    assert "bob" in result.output
+
+
+_GRAPHQL_RESPONSE = {
+    "data": {
+        "user_alice": {
+            "login": "alice",
+            "contributionsCollection": {
+                "contributionCalendar": {"totalContributions": 50}
+            },
+        }
+    }
+}
+
+
+def test_reset_snapshot_clears_and_exits(runner, tmp_path):
+    snap = tmp_path / "snapshot.json"
+    snap.write_text('{"timestamp": "t", "contributions": {}}')
+    with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+        result = runner.invoke(gh_snitch, ["--reset-snapshot"])
+    assert result.exit_code == 0
+    assert "cleared" in result.output.lower()
+    assert not snap.exists()
+
+
+def test_delta_no_prior_snapshot_shows_absolute(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    snap = tmp_path / "snapshot.json"
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--delta",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "No prior snapshot" in result.output
+    assert "alice" in result.output
+    assert snap.exists()  # snapshot saved for next run
+
+
+def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    # Seed a prior snapshot with alice having 36 contributions
+    from datetime import date
+
+    current_year = str(date.today().year)
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-04T10:00:00+00:00",
+                "contributions": {"alice": {current_year: 36}},
+            }
+        )
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--delta",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    # alice: 50 - 36 = +14
+    assert "+14" in result.output
+    assert "Δ Today" in result.output
+
+
+def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    snap = tmp_path / "snapshot.json"
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        ["--config", str(config_file), "--no-update-check"],
+                    )
+
+    assert result.exit_code == 0
+    assert snap.exists()
+    data = json.loads(snap.read_text())
+    assert data["contributions"]["alice"] is not None

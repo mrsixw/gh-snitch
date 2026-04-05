@@ -1,6 +1,12 @@
 from unittest.mock import patch
 
-from ghsnitch.ui import _grade_colour, _trend_indicator, make_hyperlink, render_table
+from ghsnitch.ui import (
+    _delta_cell,
+    _grade_colour,
+    _trend_indicator,
+    make_hyperlink,
+    render_table,
+)
 
 
 def test_grade_colour_all_zeros():
@@ -325,3 +331,82 @@ def test_render_table_percent_without_totals():
         output = render_table(rows, ["2025"], show_totals=False, show_percent=True)
     assert "(50%)" in output
     assert "Total" not in output
+
+
+# --- _delta_cell tests ---
+
+
+def test_delta_cell_positive_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _delta_cell(14) == "+14"
+
+
+def test_delta_cell_negative_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _delta_cell(-5) == "-5"
+
+
+def test_delta_cell_zero_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        assert _delta_cell(0) == "0"
+
+
+def test_delta_cell_positive_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _delta_cell(10)
+    assert "+10" in result
+    assert "\033[32m" in result  # green
+
+
+def test_delta_cell_negative_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _delta_cell(-3)
+    assert "-3" in result
+    assert "\033[31m" in result  # red
+
+
+def test_delta_cell_zero_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = _delta_cell(0)
+    assert "0" in result
+    assert "\033[2m" in result  # dim
+
+
+# --- render_table delta_col tests ---
+
+
+def test_render_table_delta_col_shows_plus_prefix():
+    rows = [{"username": "alice", "Δ Today": 14, "2024": 412}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["Δ Today", "2024"], delta_col="Δ Today")
+    assert "+14" in output
+    assert "Δ Today" in output
+
+
+def test_render_table_delta_col_shows_negative():
+    rows = [{"username": "alice", "Δ Today": -5, "2024": 412}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["Δ Today", "2024"], delta_col="Δ Today")
+    assert "-5" in output
+
+
+def test_render_table_delta_col_no_trend():
+    # delta_col suppresses trend (caller passes show_trend=False)
+    rows = [{"username": "alice", "Δ Today": 10, "2024": 412}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows, ["Δ Today", "2024"], delta_col="Δ Today", show_trend=False
+        )
+    assert "Trend" not in output
+
+
+def test_render_table_delta_col_non_delta_column_still_graded():
+    # The non-delta year column should still render as a plain count
+    rows = [
+        {"username": "alice", "Δ Today": 10, "2024": 412},
+        {"username": "bob", "Δ Today": 5, "2024": 200},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["Δ Today", "2024"], delta_col="Δ Today")
+    assert "412" in output
+    assert "200" in output

@@ -15,6 +15,7 @@ from .api import (
 )
 from .config import generate_default_config, load_config
 from .logger import setup_logging
+from .snapshot import clear_snapshot, load_snapshot, save_snapshot
 from .ui import render_table
 from .updater import check_for_update
 
@@ -81,6 +82,18 @@ logger = logging.getLogger(__name__)
     default=False,
     help="Annotate each cell with the operative's (N%) share of that year's total.",
 )
+@click.option(
+    "--delta",
+    is_flag=True,
+    default=False,
+    help="Show change since the last snapshot instead of the current-year count.",
+)
+@click.option(
+    "--reset-snapshot",
+    is_flag=True,
+    default=False,
+    help="Clear the saved contribution snapshot and exit.",
+)
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
     config,
@@ -94,6 +107,8 @@ def gh_snitch(  # noqa: PLR0913
     min_contributions,
     totals,
     percent,
+    delta,
+    reset_snapshot,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     setup_logging()
@@ -104,6 +119,11 @@ def gh_snitch(  # noqa: PLR0913
         years,
         github_url,
     )
+
+    if reset_snapshot:
+        clear_snapshot()
+        click.echo("🗑️  Snapshot cleared. Operative history wiped.")
+        return
 
     if init_config:
         path = generate_default_config(config)
@@ -201,6 +221,13 @@ def gh_snitch(  # noqa: PLR0913
         row.update(year_data)
         rows.append(row)
 
+    # Always persist a snapshot so --delta works on the next run.
+    # Load the previous snapshot first (before overwriting it).
+    prev_snapshot = load_snapshot() if delta else None
+    save_snapshot(
+        {row["username"]: {lbl: row.get(lbl, 0) for lbl in year_labels} for row in rows}
+    )
+
     threshold = cfg["min_contributions"]
     suppressed = 0
     if threshold > 0 and year_labels:
@@ -213,13 +240,36 @@ def gh_snitch(  # noqa: PLR0913
                 suppressed += 1
         rows = filtered_rows
 
+    # Apply delta transformation if requested.
+    delta_col = None
+    if delta:
+        current_label = year_labels[0]
+        if prev_snapshot is None:
+            click.echo(
+                "📸 No prior snapshot found — showing absolute counts. "
+                "Run again with --delta to see changes.",
+                err=True,
+            )
+        else:
+            prev_data = prev_snapshot.get("contributions", {})
+            for row in rows:
+                username = row["username"]
+                prev_count = prev_data.get(username, {}).get(current_label, 0)
+                row[current_label] = row.get(current_label, 0) - prev_count
+            year_labels = ["Δ Today"] + year_labels[1:]
+            # Rename key in each row so render_table can look it up
+            for row in rows:
+                row["Δ Today"] = row.pop(current_label)
+            delta_col = "Δ Today"
+
     table = render_table(
         rows,
         year_labels,
         year_fraction=current_year_fraction(),
-        show_trend=not no_trend,
+        show_trend=not no_trend and delta_col is None,
         show_totals=cfg.get("totals", False),
         show_percent=cfg.get("percent", False),
+        delta_col=delta_col,
     )
     click.echo(table)
 
