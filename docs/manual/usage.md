@@ -57,6 +57,27 @@ gh-snitch --github-url https://github.example.com --users alice,bob
 
 The GraphQL API endpoint is derived automatically (`<host>/api/graphql`). Your `GITHUB_TOKEN` should be a personal access token issued by the Enterprise instance.
 
+## Filtering Inactive Operatives
+
+Suppress operatives whose current-year contribution count falls below a threshold:
+
+```bash
+gh-snitch --min-contributions 10
+```
+
+Operatives below the threshold are hidden from the table. A footnote reports how many were suppressed:
+
+```
+🔕 3 operative(s) below threshold suppressed.
+```
+
+You can also set this in your config file to apply it by default:
+
+```toml
+[display]
+min_contributions = 10
+```
+
 ## One-Shot Command
 
 Combine flags for a quick ad-hoc sweep without touching your config:
