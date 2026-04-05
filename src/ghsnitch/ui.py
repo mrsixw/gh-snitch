@@ -113,21 +113,49 @@ _DELTA_PALETTES = {
 
 
 def _easter_month():
-    """Return the month (3 or 4) that Easter Sunday falls in for the current year."""
+    """Return the month (3 or 4) that Easter Sunday falls in for the current year.
+
+    Uses the Anonymous Gregorian algorithm (Meeus/Jones/Butcher), which works
+    by layering three interlocking corrections on top of a simple lunar cycle:
+
+    1. Golden number — where the current year sits in the 19-year Metonic cycle
+       (after 19 solar years, lunar phases recur on the same calendar dates).
+
+    2. Epact — the age of the moon on 1 January, derived from the golden number
+       then adjusted for two Gregorian-calendar corrections that the older Julian
+       algorithm ignored:
+         - The century leap correction accounts for the dropped leap years in
+           century years (e.g. 1900 was not a leap year).
+         - The lunar correction accounts for the accumulated drift of the
+           Gregorian calendar's lunar approximation over the centuries.
+
+    3. Weekday offset — pushes the date forward to the following Sunday, since
+       Easter is defined as the first Sunday after the first full moon on or
+       after the spring equinox (21 March).
+
+    4. Metonic adjustment — a final correction for the two rare cases where the
+       raw result lands on one of the historically excluded dates (April 26 or
+       a full-moon Easter that would coincide with a Jewish Passover).
+
+    Throughout, // is Python's floor-division operator: it divides and discards
+    the remainder, returning only the whole-number part (e.g. 7 // 2 == 3).
+    This is essential wherever the algorithm needs a count of complete cycles
+    rather than a fractional quantity.
+    """
     year = datetime.now().year
     golden_number = year % 19
     century, year_of_century = divmod(year, 100)
-    century_leap_correction = century // 4
+    century_leap_correction = century // 4  # dropped leap years in century years
     century_remainder = century % 4
-    gregorian_correction = (century + 8) // 25
+    gregorian_correction = (century + 8) // 25  # accumulated Gregorian lunar drift
     lunar_correction = (century - gregorian_correction + 1) // 3
     epact = (
         19 * golden_number + century - century_leap_correction - lunar_correction + 15
-    ) % 30
+    ) % 30  # age of moon on 1 Jan, adjusted for Gregorian corrections
     year_leap_days, year_leap_remainder = divmod(year_of_century, 4)
     weekday_offset = (
         32 + 2 * century_remainder + 2 * year_leap_days - epact - year_leap_remainder
-    ) % 7
+    ) % 7  # days to advance to reach the next Sunday
     metonic_adjustment = (golden_number + 11 * epact + 22 * weekday_offset) // 451
     return (epact + weekday_offset - 7 * metonic_adjustment + 114) // 31
 
