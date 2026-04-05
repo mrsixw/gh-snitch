@@ -122,7 +122,14 @@ def _trend_indicator(current, previous, year_fraction):
         return f"\033[2m{sym}\033[0m" if IS_TTY else sym
 
 
-def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
+def render_table(
+    rows,
+    year_labels,
+    year_fraction=1.0,
+    show_trend=True,
+    show_totals=False,
+    show_percent=False,
+):
     """Render contribution data as a formatted table string.
 
     Args:
@@ -131,6 +138,8 @@ def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
         year_fraction: proportion of the current year elapsed (0–1], used to
             annualize current-year counts for trend comparison
         show_trend: whether to include the Trend column (requires >= 2 year labels)
+        show_totals: whether to add a Total column per operative and a Total footer row
+        show_percent: whether to annotate each cell with (N%) share of that year's total
     """
     if not rows:
         return "(no operatives configured)"
@@ -149,7 +158,27 @@ def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
     for label in year_labels:
         col_values[label] = [r.get(label, 0) for r in sorted_rows]
 
-    headers = ["#", "Operative"] + (["Trend"] if show_trend else []) + year_labels
+    # Compute per-year totals (used for percentages and totals row)
+    year_totals = {
+        label: sum(r.get(label, 0) for r in sorted_rows) for label in year_labels
+    }
+
+    # Pre-compute per-year percentage lists for colour grading
+    col_pct_values = {}
+    if show_percent:
+        for label in year_labels:
+            total = year_totals[label]
+            col_pct_values[label] = [
+                (r.get(label, 0) / total * 100) if total > 0 else 0.0
+                for r in sorted_rows
+            ]
+
+    headers = (
+        ["#", "Operative"]
+        + (["Trend"] if show_trend else [])
+        + year_labels
+        + (["Total"] if show_totals else [])
+    )
 
     # Compute competition ranks (1, 2, 2, 4, ...) based on current-year count
     ranks = []
@@ -173,14 +202,37 @@ def render_table(rows, year_labels, year_fraction=1.0, show_trend=True):
         for label in year_labels:
             count = row.get(label, 0)
             contrib_url = f"https://github.com/{username}"
-            cells.append(
-                make_coloured_hyperlink_cell(count, contrib_url, col_values[label])
-            )
+            cell = make_coloured_hyperlink_cell(count, contrib_url, col_values[label])
+            if show_percent:
+                total = year_totals[label]
+                pct = (count / total * 100) if total > 0 else 0.0
+                if IS_TTY:
+                    prefix, suffix = _grade_colour(pct, col_pct_values[label])
+                    pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
+                else:
+                    pct_annotation = f"({pct:.0f}%)"
+                cell = f"{cell} {pct_annotation}"
+            cells.append(cell)
+        if show_totals:
+            cells.append(sum(row.get(label, 0) for label in year_labels))
         table_data.append(cells)
+
+    # Add totals footer row (neutral — no colour grading)
+    if show_totals:
+        totals_cells = ["", "Total"]
+        if show_trend:
+            totals_cells.append("")
+        for label in year_labels:
+            totals_cells.append(year_totals[label])
+        totals_cells.append(sum(year_totals.values()))
+        table_data.append(totals_cells)
 
     n_year_cols = len(year_labels)
     trend_align = ("center",) if show_trend else ()
-    colalign = ("right",) + ("left",) + trend_align + ("right",) * n_year_cols
+    total_align = ("right",) if show_totals else ()
+    colalign = (
+        ("right",) + ("left",) + trend_align + ("right",) * n_year_cols + total_align
+    )
     return tabulate(
         table_data,
         headers=headers,

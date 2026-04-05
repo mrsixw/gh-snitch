@@ -51,6 +51,8 @@ make build
 | `--users` | Comma-separated usernames (overrides config) |
 | `--years` | Number of prior years (overrides config) |
 | `--min-contributions` | Hide operatives below this contribution count |
+| `--totals` | Add a Total column per operative and a Total footer row |
+| `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
 | `--config` | Path to config file |
 | `--init-config` | Write default config and exit |
 | `--show-config` | Print current config and exit |

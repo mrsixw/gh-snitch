@@ -27,6 +27,12 @@ years = 3
 # Hide operatives whose current-year contribution count is below this threshold.
 # Set to 0 (default) to show all operatives.
 # min_contributions = 10
+
+# Show a Total column (per-operative sum) and a Total footer row (per-year sum).
+# totals = false
+
+# Annotate each cell with the operative's percentage share of that year's total.
+# percent = false
 """
 
 
@@ -53,6 +59,8 @@ def load_config(config_path=None):
         "years": 3,
         "github_url": "https://github.com",
         "min_contributions": 0,
+        "totals": False,
+        "percent": False,
     }
     logger.debug("loading config from %s", path)
 
@@ -88,6 +96,10 @@ def load_config(config_path=None):
     display = data.get("display", {})
     if "min_contributions" in display:
         config["min_contributions"] = display["min_contributions"]
+    if "totals" in display:
+        config["totals"] = bool(display["totals"])
+    if "percent" in display:
+        config["percent"] = bool(display["percent"])
 
     logger.debug(
         "config loaded users=%s years=%s github_url=%s",
