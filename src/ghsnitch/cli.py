@@ -69,6 +69,18 @@ logger = logging.getLogger(__name__)
     type=int,
     help="Hide operatives with fewer than N contributions in the current year.",
 )
+@click.option(
+    "--totals",
+    is_flag=True,
+    default=False,
+    help="Show a Total column per operative and a Total footer row.",
+)
+@click.option(
+    "--percent",
+    is_flag=True,
+    default=False,
+    help="Annotate each cell with the operative's (N%) share of that year's total.",
+)
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
     config,
@@ -80,6 +92,8 @@ def gh_snitch(  # noqa: PLR0913
     no_update_check,
     no_trend,
     min_contributions,
+    totals,
+    percent,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     setup_logging()
@@ -122,6 +136,10 @@ def gh_snitch(  # noqa: PLR0913
         cfg["github_url"] = github_url
     if min_contributions is not None:
         cfg["min_contributions"] = min_contributions
+    if totals:
+        cfg["totals"] = True
+    if percent:
+        cfg["percent"] = True
 
     operative_list = cfg["users"]
     logger.info(
@@ -200,6 +218,8 @@ def gh_snitch(  # noqa: PLR0913
         year_labels,
         year_fraction=current_year_fraction(),
         show_trend=not no_trend,
+        show_totals=cfg.get("totals", False),
+        show_percent=cfg.get("percent", False),
     )
     click.echo(table)
 

@@ -78,6 +78,44 @@ You can also set this in your config file to apply it by default:
 min_contributions = 10
 ```
 
+## Totals and Percentage Breakdown
+
+Show a **Total column** (per-operative sum across all years) and a **Total footer row** (per-year sum across all operatives):
+
+```bash
+gh-snitch --totals
+```
+
+Annotate each contribution cell with the operative's percentage share of that year's total:
+
+```bash
+gh-snitch --percent
+```
+
+Combine both for a full breakdown:
+
+```bash
+gh-snitch --users alice,bob,charlie --years 2 --totals --percent
+```
+
+```
+#  Operative     Trend    2025              2024              Total
+1  alice         +        412 (52%)         380 (48%)           792
+2  bob           =        210 (27%)         195 (25%)           405
+3  charlie       -        170 (21%)         210 (27%)           380
+   Total                  792               785                1577
+```
+
+Percentages are colour-graded in TTY mode. The totals row and total column use neutral styling.
+
+Both options can be set permanently in your config file:
+
+```toml
+[display]
+totals = true
+percent = true
+```
+
 ## One-Shot Command
 
 Combine flags for a quick ad-hoc sweep without touching your config:

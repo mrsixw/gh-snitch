@@ -222,3 +222,106 @@ def test_render_table_trend_values_non_tty():
     assert "+" in output
     assert "-" in output
     assert "=" in output
+
+
+# --- show_totals tests ---
+
+
+def test_render_table_totals_column_header():
+    rows = [{"username": "alice", "2025": 100, "2024": 80}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025", "2024"], show_totals=True)
+    assert "Total" in output
+
+
+def test_render_table_totals_column_value():
+    rows = [{"username": "alice", "2025": 100, "2024": 80}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025", "2024"], show_totals=True)
+    # alice's total should be 180
+    assert "180" in output
+
+
+def test_render_table_totals_footer_row():
+    rows = [
+        {"username": "alice", "2025": 100, "2024": 80},
+        {"username": "bob", "2025": 200, "2024": 120},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025", "2024"], show_totals=True)
+    # per-year totals: 300, 200; grand total: 500
+    assert "300" in output
+    assert "200" in output
+    assert "500" in output
+    # "Total" label appears in the footer row
+    lines = output.splitlines()
+    assert any("Total" in line for line in lines)
+
+
+def test_render_table_totals_single_operative():
+    rows = [{"username": "alice", "2025": 50}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_totals=True)
+    # total column = 50, footer row total = 50
+    assert output.count("50") >= 2
+
+
+def test_render_table_totals_zero_contributions():
+    rows = [{"username": "alice", "2025": 0}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_totals=True)
+    assert "Total" in output
+    assert "0" in output
+
+
+# --- show_percent tests ---
+
+
+def test_render_table_percent_annotation_non_tty():
+    rows = [
+        {"username": "alice", "2025": 300},
+        {"username": "bob", "2025": 100},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_percent=True)
+    # alice: 300/400 = 75%, bob: 100/400 = 25%
+    assert "75%" in output
+    assert "25%" in output
+
+
+def test_render_table_percent_annotation_format():
+    rows = [{"username": "alice", "2025": 200}, {"username": "bob", "2025": 200}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_percent=True)
+    # each operative: 50%
+    assert "(50%)" in output
+
+
+def test_render_table_percent_zero_total():
+    # all-zero year: percentages should be 0% without division error
+    rows = [{"username": "alice", "2025": 0}, {"username": "bob", "2025": 0}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_percent=True)
+    assert "(0%)" in output
+
+
+def test_render_table_percent_and_totals_combined():
+    rows = [
+        {"username": "alice", "2025": 300},
+        {"username": "bob", "2025": 100},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_totals=True, show_percent=True)
+    assert "75%" in output
+    assert "25%" in output
+    assert "Total" in output
+    assert "400" in output  # grand total
+
+
+def test_render_table_percent_without_totals():
+    # --percent without --totals is valid: no Total header
+    rows = [{"username": "alice", "2025": 100}, {"username": "bob", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_totals=False, show_percent=True)
+    assert "(50%)" in output
+    assert "Total" not in output
