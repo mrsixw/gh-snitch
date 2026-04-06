@@ -290,7 +290,7 @@ def gh_snitch(  # noqa: PLR0913
                 username = row["username"]
                 prev_count = prev_data.get(username, {}).get(current_label, 0)
                 row[current_label] = row.get(current_label, 0) - prev_count
-            year_labels = ["Δ Today"] + year_labels[1:]
+            year_labels = ["Δ Today"]
             # Rename key in each row so render_table can look it up
             for row in rows:
                 row["Δ Today"] = row.pop(current_label)

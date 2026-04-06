@@ -455,6 +455,46 @@ def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
     assert "Δ Today" in result.output
 
 
+def test_delta_with_years_hides_prior_year_columns(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 1\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    from datetime import date
+
+    current_year = str(date.today().year)
+    prior_year = str(date.today().year - 1)
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-04T10:00:00+00:00",
+                "contributions": {"alice": {current_year: 36, prior_year: 200}},
+            }
+        )
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--delta",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "Δ Today" in result.output
+    assert prior_year not in result.output
+
+
 def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     config_file = tmp_path / "config.toml"
     config_file.write_text(
