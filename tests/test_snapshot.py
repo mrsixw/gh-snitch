@@ -66,6 +66,28 @@ def test_save_snapshot_creates_parent_dirs(tmp_path):
     assert snap.exists()
 
 
+def test_save_snapshot_persists_ranks(tmp_path):
+    snap = tmp_path / "snapshot.json"
+    with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+        with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+            from ghsnitch.snapshot import save_snapshot
+
+            save_snapshot({"alice": {"2026": 100}}, ranks={"alice": 1})
+    data = json.loads(snap.read_text())
+    assert data["ranks"] == {"alice": 1}
+
+
+def test_save_snapshot_no_ranks_key_when_omitted(tmp_path):
+    snap = tmp_path / "snapshot.json"
+    with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+        with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+            from ghsnitch.snapshot import save_snapshot
+
+            save_snapshot({"alice": {"2026": 100}})
+    data = json.loads(snap.read_text())
+    assert "ranks" not in data
+
+
 def test_save_snapshot_silently_ignores_os_error(tmp_path):
     snap = tmp_path / "snapshot.json"
     snap.mkdir()  # make it a directory so write fails
