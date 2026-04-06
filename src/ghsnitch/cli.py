@@ -221,8 +221,9 @@ def gh_snitch(  # noqa: PLR0913
         row.update(year_data)
         rows.append(row)
 
-    # Always persist a snapshot so --delta and rank-delta work on the next run.
-    # Load the previous snapshot first (before overwriting it).
+    # Load the previous snapshot before potentially overwriting it.
+    # Snapshot is only saved on non-delta runs so the baseline stays pinned;
+    # repeated --delta invocations compare against the same fixed point.
     prev_snapshot = load_snapshot()
 
     # Compute current ranks (competition ranking, same sort order as render_table).
@@ -242,13 +243,14 @@ def gh_snitch(  # noqa: PLR0913
                 prev_rank if curr_count == prev_count else i + 1
             )
 
-    save_snapshot(
-        {
-            row["username"]: {lbl: row.get(lbl, 0) for lbl in year_labels}
-            for row in rows
-        },
-        ranks=current_ranks,
-    )
+    if not delta:
+        save_snapshot(
+            {
+                row["username"]: {lbl: row.get(lbl, 0) for lbl in year_labels}
+                for row in rows
+            },
+            ranks=current_ranks,
+        )
 
     # Compute rank deltas if a previous run's ranks are available.
     rank_deltas = None

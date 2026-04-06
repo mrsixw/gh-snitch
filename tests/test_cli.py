@@ -411,7 +411,7 @@ def test_delta_no_prior_snapshot_shows_absolute(runner, tmp_path, requests_mock)
     assert result.exit_code == 0
     assert "No prior snapshot" in result.output
     assert "alice" in result.output
-    assert snap.exists()  # snapshot saved for next run
+    assert not snap.exists()  # delta run does not create/update snapshot
 
 
 def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
@@ -453,6 +453,38 @@ def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
     # alice: 50 - 36 = +14
     assert "+14" in result.output
     assert "Δ Today" in result.output
+
+
+def test_delta_does_not_overwrite_snapshot(runner, tmp_path, requests_mock):
+    """Delta runs must not update the snapshot so the baseline stays pinned."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    from datetime import date
+
+    current_year = str(date.today().year)
+    original_snapshot = json.dumps(
+        {
+            "timestamp": "2026-04-04T10:00:00+00:00",
+            "contributions": {"alice": {current_year: 36}},
+        }
+    )
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(original_snapshot)
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    runner.invoke(
+                        gh_snitch,
+                        ["--config", str(config_file), "--no-update-check", "--delta"],
+                    )
+
+    assert snap.read_text() == original_snapshot
 
 
 def test_delta_with_years_hides_prior_year_columns(runner, tmp_path, requests_mock):
