@@ -94,6 +94,12 @@ logger = logging.getLogger(__name__)
     default=False,
     help="Clear the saved contribution snapshot and exit.",
 )
+@click.option(
+    "--rank-delta",
+    is_flag=True,
+    default=False,
+    help="Show a ± column indicating rank change since the last run.",
+)
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
     config,
@@ -109,6 +115,7 @@ def gh_snitch(  # noqa: PLR0913
     percent,
     delta,
     reset_snapshot,
+    rank_delta,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     setup_logging()
@@ -160,6 +167,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
+    if rank_delta:
+        cfg["rank_delta"] = True
 
     operative_list = cfg["users"]
     logger.info(
@@ -299,6 +308,10 @@ def gh_snitch(  # noqa: PLR0913
             delta_col = "Δ Today"
             # Rank deltas are not meaningful when showing contribution deltas
             rank_deltas = None
+
+    # Only show rank-delta column when explicitly requested.
+    if not cfg.get("rank_delta", False):
+        rank_deltas = None
 
     table = render_table(
         rows,

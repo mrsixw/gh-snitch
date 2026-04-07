@@ -54,6 +54,7 @@ make build
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
 | `--delta` | Show change since last snapshot instead of current-year count |
+| `--rank-delta` | Show a ± column with rank change since the last run |
 | `--reset-snapshot` | Clear the saved contribution snapshot and exit |
 | `--config` | Path to config file |
 | `--init-config` | Write default config and exit |
