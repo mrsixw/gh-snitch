@@ -34,6 +34,9 @@ years = 3
 
 # Annotate each cell with the operative's percentage share of that year's total.
 # percent = false
+
+# Show a ± column with each operative's rank change since the last run.
+# rank_delta = false
 """
 
 
@@ -54,6 +57,7 @@ def load_config(config_path=None):
         "min_contributions": 0,
         "totals": False,
         "percent": False,
+        "rank_delta": False,
     }
     logger.debug("loading config from %s", path)
 
@@ -93,6 +97,8 @@ def load_config(config_path=None):
         config["totals"] = bool(display["totals"])
     if "percent" in display:
         config["percent"] = bool(display["percent"])
+    if "rank_delta" in display:
+        config["rank_delta"] = bool(display["rank_delta"])
 
     logger.debug(
         "config loaded users=%s years=%s github_url=%s",

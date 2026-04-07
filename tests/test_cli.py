@@ -548,3 +548,78 @@ def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     assert snap.exists()
     data = json.loads(snap.read_text())
     assert data["contributions"]["alice"] is not None
+
+
+def test_rank_delta_hidden_by_default(runner, tmp_path, requests_mock):
+    """± column must not appear on a normal run even when a prior snapshot exists."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    from datetime import date
+
+    current_year = str(date.today().year)
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-04T10:00:00+00:00",
+                "contributions": {"alice": {current_year: 10}},
+                "ranks": {"alice": 1},
+            }
+        )
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        ["--config", str(config_file), "--no-update-check"],
+                    )
+
+    assert result.exit_code == 0
+    assert "±" not in result.output
+
+
+def test_rank_delta_shown_with_flag(runner, tmp_path, requests_mock):
+    """± column appears when --rank-delta is passed and a prior snapshot exists."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    from datetime import date
+
+    current_year = str(date.today().year)
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-04T10:00:00+00:00",
+                "contributions": {"alice": {current_year: 10}},
+                "ranks": {"alice": 1},
+            }
+        )
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--rank-delta",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "±" in result.output

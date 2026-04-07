@@ -78,6 +78,32 @@ You can also set this in your config file to apply it by default:
 min_contributions = 10
 ```
 
+## Rank Delta — Tracking Position Changes
+
+Show a `±` column indicating how each operative's rank has shifted since the last run:
+
+```bash
+gh-snitch --rank-delta
+```
+
+```
+#   ±    Operative     Trend    2025   2024   2023
+1   =    alice         +         412    380    310
+2   ↑1   bob           =         210    195    180
+3   ↓1   charlie       -         170    210    220
+```
+
+- `↑N` / `↓N` — moved up or down N positions
+- `=` — no change
+- `new` — operative not present in the previous run
+
+The column is hidden by default. Enable it permanently in your config:
+
+```toml
+[display]
+rank_delta = true
+```
+
 ## Delta Mode — Changes Since Last Run
 
 Every successful run saves a snapshot of contribution counts to `~/.cache/gh-snitch/snapshot.json`. Pass `--delta` on a subsequent run to replace the current-year column with the change since the previous snapshot:
