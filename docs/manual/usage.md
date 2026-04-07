@@ -102,6 +102,35 @@ To clear the snapshot:
 gh-snitch --reset-snapshot
 ```
 
+## Rank Delta — Position Changes Since Last Run
+
+Pass `--rank-delta` to add a `±` column showing how each operative's rank has shifted since the previous snapshot:
+
+```bash
+gh-snitch --users alice,bob,carol --rank-delta
+```
+
+```
+#  ±     Operative     2025   2024   2023
+1  new   alice         420    380    310
+2  +1    bob           200    195    180
+3  -1    carol         180    210    220
+```
+
+- `+N` — moved up N positions (green)
+- `-N` — moved down N positions (red)
+- `=` — unchanged (dim)
+- `new` — operative not present in the prior snapshot
+
+Enable persistently in your config:
+
+```toml
+[display]
+rank_delta = true
+```
+
+The `±` column is suppressed in `--delta` mode (rank changes are not meaningful when comparing contribution deltas).
+
 ## Totals and Percentage Breakdown
 
 Show a **Total column** (per-operative sum across all years) and a **Total footer row** (per-year sum across all operatives):

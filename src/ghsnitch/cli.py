@@ -89,6 +89,12 @@ logger = logging.getLogger(__name__)
     help="Show change since the last snapshot instead of the current-year count.",
 )
 @click.option(
+    "--rank-delta",
+    is_flag=True,
+    default=False,
+    help="Show the ± rank-delta column with position changes since last snapshot.",
+)
+@click.option(
     "--reset-snapshot",
     is_flag=True,
     default=False,
@@ -108,6 +114,7 @@ def gh_snitch(  # noqa: PLR0913
     totals,
     percent,
     delta,
+    rank_delta,
     reset_snapshot,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
@@ -160,6 +167,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
+    if rank_delta:
+        cfg["rank_delta"] = True
 
     operative_list = cfg["users"]
     logger.info(
@@ -252,9 +261,9 @@ def gh_snitch(  # noqa: PLR0913
             ranks=current_ranks,
         )
 
-    # Compute rank deltas if a previous run's ranks are available.
+    # Compute rank deltas only when the user opts in via --rank-delta (or config).
     rank_deltas = None
-    if prev_snapshot is not None:
+    if cfg.get("rank_delta") and prev_snapshot is not None:
         prev_ranks: dict[str, int] = prev_snapshot.get("ranks", {})
         if prev_ranks:
             rank_deltas = {}

@@ -548,3 +548,116 @@ def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     assert snap.exists()
     data = json.loads(snap.read_text())
     assert data["contributions"]["alice"] is not None
+
+
+def _make_snapshot_with_ranks(tmp_path, contributions, ranks):
+    """Write a snapshot JSON file with contributions and ranks."""
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-04T10:00:00+00:00",
+                "contributions": contributions,
+                "ranks": ranks,
+            }
+        )
+    )
+    return snap
+
+
+def test_rank_delta_column_hidden_by_default(runner, tmp_path, requests_mock):
+    """Without --rank-delta the ± column must not appear even if a snapshot exists."""
+    from datetime import date
+
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    current_year = str(date.today().year)
+    snap = _make_snapshot_with_ranks(
+        tmp_path,
+        contributions={"alice": {current_year: 40}},
+        ranks={"alice": 1},
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        ["--config", str(config_file), "--no-update-check"],
+                    )
+
+    assert result.exit_code == 0
+    assert "±" not in result.output
+
+
+def test_rank_delta_column_shown_with_flag(runner, tmp_path, requests_mock):
+    """With --rank-delta the ± column must appear when a ranked snapshot exists."""
+    from datetime import date
+
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    current_year = str(date.today().year)
+    snap = _make_snapshot_with_ranks(
+        tmp_path,
+        contributions={"alice": {current_year: 40}},
+        ranks={"alice": 2},
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--rank-delta",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "±" in result.output
+
+
+def test_rank_delta_column_shown_from_config(runner, tmp_path, requests_mock):
+    """rank_delta = true in config enables the ± column without the CLI flag."""
+    from datetime import date
+
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        "[operatives]\n"
+        'users = ["alice"]\n'
+        "[surveillance]\nyears = 0\n"
+        "[display]\nrank_delta = true\n"
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    current_year = str(date.today().year)
+    snap = _make_snapshot_with_ranks(
+        tmp_path,
+        contributions={"alice": {current_year: 40}},
+        ranks={"alice": 1},
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        ["--config", str(config_file), "--no-update-check"],
+                    )
+
+    assert result.exit_code == 0
+    assert "±" in result.output
