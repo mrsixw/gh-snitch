@@ -47,6 +47,7 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 ## Commit Messages
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`).
 - Keep the summary short and imperative.
+- Never include Claude session URLs in commit messages or PR descriptions.
 
 ## Tone and Personality
 - This project embraces spy theming. Operatives, surveillance, handlers, dossiers — lean into it.
