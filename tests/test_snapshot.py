@@ -72,9 +72,14 @@ def test_save_snapshot_persists_ranks(tmp_path):
         with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
             from ghsnitch.snapshot import save_snapshot
 
-            save_snapshot({"alice": {"2026": 100}}, ranks={"alice": 1})
+            save_snapshot(
+                {"alice": {"2026": 100}},
+                ranks={"alice": 1},
+                positions={"alice": 1},
+            )
     data = json.loads(snap.read_text())
     assert data["ranks"] == {"alice": 1}
+    assert data["positions"] == {"alice": 1}
 
 
 def test_save_snapshot_no_ranks_key_when_omitted(tmp_path):
@@ -86,6 +91,7 @@ def test_save_snapshot_no_ranks_key_when_omitted(tmp_path):
             save_snapshot({"alice": {"2026": 100}})
     data = json.loads(snap.read_text())
     assert "ranks" not in data
+    assert "positions" not in data
 
 
 def test_save_snapshot_silently_ignores_os_error(tmp_path):

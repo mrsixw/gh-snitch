@@ -23,12 +23,14 @@ def load_snapshot():
         return None
 
 
-def save_snapshot(contributions, ranks=None):
-    """Persist contributions (and optionally ranks) to the snapshot cache.
+def save_snapshot(contributions, ranks=None, positions=None):
+    """Persist contributions and optional leaderboard metadata to the cache.
 
     Args:
         contributions: dict[username, dict[year_label, int]]
         ranks: optional dict[username, int] mapping each operative to their rank
+        positions: optional dict[username, float | int] mapping each operative
+            to their tie-aware leaderboard movement position
     """
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,6 +40,8 @@ def save_snapshot(contributions, ranks=None):
         }
         if ranks is not None:
             data["ranks"] = ranks
+        if positions is not None:
+            data["positions"] = positions
         _SNAPSHOT_FILE.write_text(json.dumps(data))
     except OSError as e:
         logger.warning("failed to save snapshot: %s", e)

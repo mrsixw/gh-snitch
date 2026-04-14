@@ -548,3 +548,63 @@ def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     assert snap.exists()
     data = json.loads(snap.read_text())
     assert data["contributions"]["alice"] is not None
+    assert data["ranks"] == {"alice": 1}
+    assert data["positions"] == {"alice": 1}
+
+
+def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "bob", "carol"]\n'
+        "[surveillance]\nyears = 0\n"
+    )
+
+    from datetime import date
+
+    current_year = str(date.today().year)
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-04T10:00:00+00:00",
+                "contributions": {
+                    "alice": {current_year: 70},
+                    "bob": {current_year: 64},
+                    "carol": {current_year: 64},
+                },
+                "ranks": {"alice": 1, "bob": 2, "carol": 2},
+            }
+        )
+    )
+
+    current_data = {
+        "alice": {current_year: 70},
+        "bob": {current_year: 65},
+        "carol": {current_year: 63},
+    }
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    with patch(
+                        "ghsnitch.cli.fetch_contributions",
+                        return_value=(current_data, []),
+                    ):
+                        result = runner.invoke(
+                            gh_snitch,
+                            [
+                                "--config",
+                                str(config_file),
+                                "--no-update-check",
+                                "--no-trend",
+                            ],
+                        )
+
+    assert result.exit_code == 0
+    assert "alice" in result.output
+    assert "bob" in result.output
+    assert "carol" in result.output
+    assert "  1   =   alice" in result.output
+    assert "  2  +1   bob" in result.output
+    assert "  3  -1   carol" in result.output

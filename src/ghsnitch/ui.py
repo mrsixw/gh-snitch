@@ -290,8 +290,9 @@ def render_table(
         delta_col: label of the column whose values are deltas (rendered with +/- and
             green/red colouring instead of percentile-based grading)
         rank_deltas: optional dict[username, int | None] mapping each operative to their
-            rank change since the previous run (positive = moved up, None = new
-            operative). When provided, a ± column is shown after the # column.
+            leaderboard movement since the previous run (positive = moved up,
+            None = new operative). When provided, a ± column is shown after the
+            # column.
     """
     if not rows:
         return "(no operatives configured)"
