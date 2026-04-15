@@ -147,8 +147,91 @@ def _fetch_year(users, label, from_iso, to_iso, github_url):
     return label, data.get("data", {})
 
 
+def get_rolling_month_ranges(n: int) -> list[tuple[str, str, str]]:
+    """Return the last n calendar months as (label, from_iso, to_iso) tuples.
+
+    Most recent month first.  The current (partial) month is entry 0; prior
+    complete months follow.  Labels use the format 'Apr 2026'.
+    """
+    today = date.today()
+    ranges = []
+    year, month = today.year, today.month
+    for i in range(n):
+        from_dt = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
+        if i == 0:
+            end_day = today.day
+        else:
+            end_day = calendar.monthrange(year, month)[1]
+        to_dt = datetime(year, month, end_day, 23, 59, 59, tzinfo=timezone.utc)
+        label = from_dt.strftime("%b %Y")
+        ranges.append((label, from_dt.isoformat(), to_dt.isoformat()))
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    return ranges
+
+
+def get_rolling_week_ranges(n: int) -> list[tuple[str, str, str]]:
+    """Return the last n ISO weeks as (label, from_iso, to_iso) tuples.
+
+    Most recent week first.  The current (partial) week is entry 0; prior
+    complete weeks (Mon–Sun) follow.  Labels use the format '2026-W15'.
+    """
+    today = date.today()
+    current_monday = today - timedelta(days=today.weekday())
+    ranges = []
+    for i in range(n):
+        monday = current_monday - timedelta(weeks=i)
+        week_end = today if i == 0 else monday + timedelta(days=6)
+        from_dt = datetime(
+            monday.year, monday.month, monday.day, 0, 0, 0, tzinfo=timezone.utc
+        )
+        to_dt = datetime(
+            week_end.year, week_end.month, week_end.day, 23, 59, 59, tzinfo=timezone.utc
+        )
+        iso_year, iso_week, _ = monday.isocalendar()
+        label = f"{iso_year}-W{iso_week:02d}"
+        ranges.append((label, from_dt.isoformat(), to_dt.isoformat()))
+    return ranges
+
+
+def get_custom_range(since: str, until: str | None = None) -> tuple[str, str, str]:
+    """Return a (label, from_iso, to_iso) for an arbitrary date range.
+
+    since and until are YYYY-MM-DD strings; until defaults to today.
+    Raises ValueError for invalid or out-of-order dates.
+    """
+    try:
+        from_date = date.fromisoformat(since)
+    except ValueError:
+        raise ValueError(f"Invalid date '{since}'. Expected YYYY-MM-DD.")
+    to_date = date.today()
+    if until is not None:
+        try:
+            to_date = date.fromisoformat(until)
+        except ValueError:
+            raise ValueError(f"Invalid date '{until}'. Expected YYYY-MM-DD.")
+    if from_date > to_date:
+        raise ValueError(f"--since ({since}) must not be after --until ({to_date}).")
+    from_dt = datetime(
+        from_date.year, from_date.month, from_date.day, 0, 0, 0, tzinfo=timezone.utc
+    )
+    to_dt = datetime(
+        to_date.year, to_date.month, to_date.day, 23, 59, 59, tzinfo=timezone.utc
+    )
+    label = f"{since}–{to_date.isoformat()}" if until else f"Since {since}"
+    return label, from_dt.isoformat(), to_dt.isoformat()
+
+
 def fetch_contributions(
-    users, years, github_url: str = DEFAULT_GITHUB_URL, on_progress=None, *, period=None
+    users,
+    years,
+    github_url: str = DEFAULT_GITHUB_URL,
+    on_progress=None,
+    *,
+    period=None,
+    year_ranges=None,
 ):
     """Fetch contribution counts for all users across year ranges.
 
@@ -158,21 +241,24 @@ def fetch_contributions(
     with zero contributions in the result dict.
     on_progress, if provided, is called with (completed, total) after each year.
 
-    When period is set (one of VALID_PERIODS), a single range is fetched for
-    that named window and the years argument is ignored.
+    year_ranges (explicit list of (label, from_iso, to_iso) tuples) takes
+    highest precedence.  When period is set, a single named-window range is
+    used.  Otherwise get_year_ranges(years) is called.
     """
-    if period is not None:
-        year_ranges = [get_period_range(period)]
+    if year_ranges is not None:
+        ranges = year_ranges
+    elif period is not None:
+        ranges = [get_period_range(period)]
     else:
-        year_ranges = get_year_ranges(years)
-    total = len(year_ranges)
+        ranges = get_year_ranges(years)
+    total = len(ranges)
     result = {username: {} for username in users}
     null_counts: dict[str, int] = {username: 0 for username in users}
 
     with ThreadPoolExecutor() as executor:
         futures = {
             executor.submit(_fetch_year, users, label, from_iso, to_iso, github_url)
-            for label, from_iso, to_iso in year_ranges
+            for label, from_iso, to_iso in ranges
         }
 
         for completed, future in enumerate(as_completed(futures), start=1):

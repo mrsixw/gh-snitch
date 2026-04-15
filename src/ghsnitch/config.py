@@ -19,10 +19,14 @@ users = []
 [surveillance]
 # Number of prior complete years to include (in addition to the current year)
 years = 3
-# Report on a specific time window instead of full years.
+# Report on a named window instead of full years.
 # Valid values: "week" (Mon→today), "month" (1st→today), "year" (Jan 1→today).
 # When set, the 'years' option is ignored.
 # period = "month"
+# Show the last N calendar months as separate columns.
+# last_months = 6
+# Show the last N ISO weeks as separate columns.
+# last_weeks = 8
 
 [network]
 # GitHub base URL. Change this to target a GitHub Enterprise Server instance.
@@ -55,6 +59,8 @@ def load_config(config_path=None):
         "users": [],
         "years": 3,
         "period": None,
+        "last_months": None,
+        "last_weeks": None,
         "github_url": "https://github.com",
         "min_contributions": 0,
         "totals": False,
@@ -90,6 +96,10 @@ def load_config(config_path=None):
         config["years"] = surveillance["years"]
     if "period" in surveillance:
         config["period"] = surveillance["period"]
+    if "last_months" in surveillance:
+        config["last_months"] = int(surveillance["last_months"])
+    if "last_weeks" in surveillance:
+        config["last_weeks"] = int(surveillance["last_weeks"])
     if "github_url" in network:
         config["github_url"] = network["github_url"]
 

@@ -13,7 +13,10 @@ from .api import (
     VALID_PERIODS,
     current_year_fraction,
     fetch_contributions,
+    get_custom_range,
     get_period_range,
+    get_rolling_month_ranges,
+    get_rolling_week_ranges,
     get_year_ranges,
 )
 from .config import generate_default_config, load_config
@@ -118,6 +121,30 @@ def _movement_delta(previous_position, current_position):
     help="Report on a named window: week, month, or year. Overrides --years.",
 )
 @click.option(
+    "--last-months",
+    default=None,
+    type=int,
+    help="Show the last N calendar months as separate columns.",
+)
+@click.option(
+    "--last-weeks",
+    default=None,
+    type=int,
+    help="Show the last N ISO weeks as separate columns.",
+)
+@click.option(
+    "--since",
+    default=None,
+    metavar="DATE",
+    help="Start of a custom date range (YYYY-MM-DD). End defaults to today.",
+)
+@click.option(
+    "--until",
+    default=None,
+    metavar="DATE",
+    help="End of a custom date range (YYYY-MM-DD). Requires --since.",
+)
+@click.option(
     "--show-config",
     is_flag=True,
     default=False,
@@ -182,6 +209,10 @@ def gh_snitch(  # noqa: PLR0913
     users,
     years,
     period,
+    last_months,
+    last_weeks,
+    since,
+    until,
     github_url,
     show_config,
     init_config,
@@ -196,11 +227,16 @@ def gh_snitch(  # noqa: PLR0913
     """Spy-themed GitHub contribution surveillance tool."""
     setup_logging()
     logger.info(
-        "gh-snitch started config=%s users=%s years=%s period=%s github_url=%s",
+        "gh-snitch started config=%s users=%s years=%s period=%s "
+        "last_months=%s last_weeks=%s since=%s until=%s github_url=%s",
         config,
         users,
         years,
         period,
+        last_months,
+        last_weeks,
+        since,
+        until,
         github_url,
     )
 
@@ -219,6 +255,8 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"users = {cfg['users']}")
         click.echo(f"years = {cfg['years']}")
         click.echo(f"period = {cfg['period']}")
+        click.echo(f"last_months = {cfg['last_months']}")
+        click.echo(f"last_weeks = {cfg['last_weeks']}")
         click.echo(f"github_url = {cfg['github_url']}")
         return
 
@@ -232,6 +270,11 @@ def gh_snitch(  # noqa: PLR0913
 
     cfg = load_config(config)
 
+    # Validate --since / --until before touching config.
+    if until is not None and since is None:
+        click.echo("⚠️  --until requires --since to be set.", err=True)
+        sys.exit(1)
+
     # Merge CLI overrides
     if users is not None:
         cfg["users"] = [u.strip() for u in users.split(",") if u.strip()]
@@ -239,6 +282,10 @@ def gh_snitch(  # noqa: PLR0913
         cfg["years"] = years
     if period is not None:
         cfg["period"] = period.lower()
+    if last_months is not None:
+        cfg["last_months"] = last_months
+    if last_weeks is not None:
+        cfg["last_weeks"] = last_weeks
     if github_url is not None:
         cfg["github_url"] = github_url
     if min_contributions is not None:
@@ -249,16 +296,22 @@ def gh_snitch(  # noqa: PLR0913
         cfg["percent"] = True
 
     operative_list = cfg["users"]
-    active_period = cfg.get("period")
-    logger.info(
-        "effective config operatives=%s years=%s period=%s github_url=%s",
-        operative_list,
-        cfg["years"],
-        active_period,
-        cfg["github_url"],
-    )
     num_years = cfg["years"]
+    active_period = cfg.get("period")
+    active_last_months = cfg.get("last_months")
+    active_last_weeks = cfg.get("last_weeks")
     operative_github_url = cfg["github_url"]
+
+    logger.info(
+        "effective config operatives=%s years=%s period=%s "
+        "last_months=%s last_weeks=%s github_url=%s",
+        operative_list,
+        num_years,
+        active_period,
+        active_last_months,
+        active_last_weeks,
+        operative_github_url,
+    )
 
     if not operative_list:
         click.echo(
@@ -267,9 +320,31 @@ def gh_snitch(  # noqa: PLR0913
         )
         return
 
+    # Resolve the active date ranges (highest-precedence wins).
+    # suppress_trend: True when the columns are not comparable year-over-year.
+    suppress_trend = False
+    if since is not None:
+        try:
+            active_year_ranges = [get_custom_range(since, until)]
+        except ValueError as e:
+            click.echo(f"⚠️  {e}", err=True)
+            sys.exit(1)
+        suppress_trend = True
+    elif active_last_months is not None:
+        active_year_ranges = get_rolling_month_ranges(active_last_months)
+        suppress_trend = True
+    elif active_last_weeks is not None:
+        active_year_ranges = get_rolling_week_ranges(active_last_weeks)
+        suppress_trend = True
+    elif active_period is not None:
+        active_year_ranges = [get_period_range(active_period)]
+        # trend suppressed implicitly by len < 2 in render_table
+    else:
+        active_year_ranges = get_year_ranges(num_years)
+
     click.echo("🔍 Initiating surveillance sweep...")
 
-    num_ranges = 1 if active_period else num_years + 1
+    num_ranges = len(active_year_ranges)
     use_progress = sys.stdout.isatty()
 
     progress = Progress(
@@ -281,10 +356,9 @@ def gh_snitch(  # noqa: PLR0913
     )
 
     logger.info(
-        "sweep starting operatives=%s num_ranges=%d period=%s",
+        "sweep starting operatives=%s num_ranges=%d",
         operative_list,
         num_ranges,
-        active_period,
     )
     sweep_start = time.monotonic()
     try:
@@ -299,7 +373,7 @@ def gh_snitch(  # noqa: PLR0913
                 num_years,
                 operative_github_url,
                 on_progress,
-                period=active_period,
+                year_ranges=active_year_ranges,
             )
     except requests.exceptions.RequestException as e:
         duration = time.monotonic() - sweep_start
@@ -310,11 +384,7 @@ def gh_snitch(  # noqa: PLR0913
     duration = time.monotonic() - sweep_start
     logger.info("sweep complete duration=%.3fs", duration)
 
-    if active_period:
-        year_ranges = [get_period_range(active_period)]
-    else:
-        year_ranges = get_year_ranges(num_years)
-    year_labels = [label for label, _, _ in year_ranges]
+    year_labels = [label for label, _, _ in active_year_ranges]
 
     rows = []
     for username, year_data in data.items():
@@ -395,7 +465,7 @@ def gh_snitch(  # noqa: PLR0913
         rows,
         year_labels,
         year_fraction=current_year_fraction(),
-        show_trend=not no_trend and delta_col is None,
+        show_trend=not no_trend and delta_col is None and not suppress_trend,
         show_totals=cfg.get("totals", False),
         show_percent=cfg.get("percent", False),
         delta_col=delta_col,

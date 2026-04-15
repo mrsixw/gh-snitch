@@ -8,7 +8,10 @@ from ghsnitch.api import (
     build_contributions_query,
     current_year_fraction,
     fetch_contributions,
+    get_custom_range,
     get_period_range,
+    get_rolling_month_ranges,
+    get_rolling_week_ranges,
     get_year_ranges,
     graphql_url_for,
     make_github_graphql_request,
@@ -77,6 +80,126 @@ def test_get_period_range_year():
 def test_get_period_range_invalid():
     with pytest.raises(ValueError, match="Unknown period"):
         get_period_range("decade")
+
+
+# --- get_rolling_month_ranges ---
+
+
+def test_get_rolling_month_ranges_count():
+    ranges = get_rolling_month_ranges(4)
+    assert len(ranges) == 4
+
+
+def test_get_rolling_month_ranges_labels_descending():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        ranges = get_rolling_month_ranges(3)
+    labels = [r[0] for r in ranges]
+    assert labels == ["Apr 2026", "Mar 2026", "Feb 2026"]
+
+
+def test_get_rolling_month_ranges_current_month_ends_today():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        ranges = get_rolling_month_ranges(1)
+    _, _, to_iso = ranges[0]
+    to_dt = datetime.fromisoformat(to_iso)
+    assert to_dt.day == 15
+
+
+def test_get_rolling_month_ranges_prior_month_ends_on_last_day():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        ranges = get_rolling_month_ranges(2)
+    _, _, to_iso = ranges[1]  # March
+    to_dt = datetime.fromisoformat(to_iso)
+    assert to_dt.day == 31  # March has 31 days
+
+
+def test_get_rolling_month_ranges_crosses_year_boundary():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 2, 10)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        ranges = get_rolling_month_ranges(3)
+    labels = [r[0] for r in ranges]
+    assert labels == ["Feb 2026", "Jan 2026", "Dec 2025"]
+
+
+# --- get_rolling_week_ranges ---
+
+
+def test_get_rolling_week_ranges_count():
+    ranges = get_rolling_week_ranges(5)
+    assert len(ranges) == 5
+
+
+def test_get_rolling_week_ranges_labels_descending():
+    # 2026-04-15 is Wednesday; date(2026, 4, 15).isocalendar() == (2026, 16, 3)
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        ranges = get_rolling_week_ranges(3)
+    labels = [r[0] for r in ranges]
+    assert labels == ["2026-W16", "2026-W15", "2026-W14"]
+
+
+def test_get_rolling_week_ranges_current_week_ends_today():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)  # Wednesday
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        ranges = get_rolling_week_ranges(1)
+    _, _, to_iso = ranges[0]
+    to_dt = datetime.fromisoformat(to_iso)
+    assert to_dt.day == 15
+
+
+def test_get_rolling_week_ranges_prior_week_ends_sunday():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)  # Wed W15
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        ranges = get_rolling_week_ranges(2)
+    _, _, to_iso = ranges[1]  # prior week W14
+    to_dt = datetime.fromisoformat(to_iso)
+    assert to_dt.weekday() == 6  # Sunday
+
+
+# --- get_custom_range ---
+
+
+def test_get_custom_range_since_only():
+    from datetime import timezone as tz
+
+    today = date.today()
+    label, from_iso, to_iso = get_custom_range("2025-01-01")
+    assert label == "Since 2025-01-01"
+    expected = datetime(2025, 1, 1, 0, 0, 0, tzinfo=tz.utc)
+    assert datetime.fromisoformat(from_iso) == expected
+    assert datetime.fromisoformat(to_iso).date() == today
+
+
+def test_get_custom_range_since_and_until():
+    label, from_iso, to_iso = get_custom_range("2025-01-01", "2025-03-31")
+    assert label == "2025-01-01–2025-03-31"
+    assert datetime.fromisoformat(from_iso).month == 1
+    assert datetime.fromisoformat(to_iso).month == 3
+
+
+def test_get_custom_range_invalid_since():
+    with pytest.raises(ValueError, match="Invalid date"):
+        get_custom_range("not-a-date")
+
+
+def test_get_custom_range_invalid_until():
+    with pytest.raises(ValueError, match="Invalid date"):
+        get_custom_range("2025-01-01", "bad")
+
+
+def test_get_custom_range_since_after_until():
+    with pytest.raises(ValueError, match="must not be after"):
+        get_custom_range("2025-06-01", "2025-01-01")
 
 
 def test_fetch_contributions_with_period(requests_mock):

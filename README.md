@@ -50,7 +50,11 @@ make build
 |---|---|
 | `--users` | Comma-separated usernames (overrides config) |
 | `--years` | Number of prior years (overrides config) |
-| `--period` | Report on a specific window: `week`, `month`, or `year` (overrides `--years`) |
+| `--period` | Report on a named window: `week`, `month`, or `year` (overrides `--years`) |
+| `--last-months N` | Show last N calendar months as separate columns |
+| `--last-weeks N` | Show last N ISO weeks as separate columns |
+| `--since DATE` | Start of a custom date range (`YYYY-MM-DD`); end defaults to today |
+| `--until DATE` | End of a custom date range (`YYYY-MM-DD`); requires `--since` |
 | `--min-contributions` | Hide operatives below this contribution count |
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |

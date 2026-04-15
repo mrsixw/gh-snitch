@@ -6,6 +6,10 @@
 | `--users TEXT` | (from config) | Comma-separated GitHub usernames to surveil |
 | `--years INTEGER` | (from config, default 3) | Number of prior complete years to include |
 | `--period TEXT` | (from config, default none) | Report on a named window instead of full years: `week` (Mon→today), `month` (1st→today), `year` (Jan 1→today). Overrides `--years`. |
+| `--last-months INTEGER` | (from config, default none) | Show the last N calendar months as separate columns. Trend is suppressed. |
+| `--last-weeks INTEGER` | (from config, default none) | Show the last N ISO weeks as separate columns. Trend is suppressed. |
+| `--since DATE` | CLI only | Start of a custom date range (`YYYY-MM-DD`). End defaults to today. Produces a single column. |
+| `--until DATE` | CLI only | End of a custom date range (`YYYY-MM-DD`). Must be used with `--since`. |
 | `--github-url URL` | `https://github.com` | GitHub base URL — set to your GitHub Enterprise Server hostname |
 | `--min-contributions INTEGER` | `0` (show all) | Hide operatives with fewer than N contributions in the current year |
 | `--totals` | off | Add a `Total` column (per-operative sum across all years) and a `Total` footer row (per-year sum across all operatives) |
@@ -38,7 +42,9 @@ users = ["alice", "bob"]
 
 [surveillance]
 years = 3
-# period = "month"  # "week", "month", or "year" — overrides years when set
+# period = "month"      # "week", "month", or "year" — overrides years when set
+# last_months = 6       # last 6 calendar months as separate columns
+# last_weeks = 8        # last 8 ISO weeks as separate columns
 
 [network]
 # github_url = "https://github.example.com"  # omit for github.com
@@ -49,4 +55,4 @@ years = 3
 # percent = false          # annotate cells with (N%) share of year total
 ```
 
-CLI flags `--users`, `--years`, `--period`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.
+CLI flags `--users`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).
