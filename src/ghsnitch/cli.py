@@ -6,6 +6,7 @@ import time
 
 import click
 import requests
+from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 from .api import (
@@ -360,13 +361,14 @@ def gh_snitch(  # noqa: PLR0913
     click.echo("🔍 Initiating surveillance sweep...", err=active_format != "table")
 
     num_ranges = len(active_year_ranges)
-    use_progress = sys.stdout.isatty()
+    use_progress = sys.stderr.isatty()
 
     progress = Progress(
         TextColumn("[bold blue]📡 Sweeping field reports..."),
         BarColumn(),
         TaskProgressColumn(),
         TextColumn("[dim]{task.completed}/{task.total} ranges"),
+        console=Console(stderr=True),
         disable=not use_progress,
     )
 
