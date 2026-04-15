@@ -8,6 +8,7 @@ from ghsnitch.api import (
     build_contributions_query,
     current_year_fraction,
     fetch_contributions,
+    get_period_range,
     get_year_ranges,
     graphql_url_for,
     make_github_graphql_request,
@@ -34,6 +35,70 @@ def test_graphql_url_for_enterprise_trailing_slash():
         graphql_url_for("https://github.example.com/")
         == "https://github.example.com/api/graphql"
     )
+
+
+def test_get_period_range_month():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        label, from_iso, to_iso = get_period_range("month")
+    assert label == "This Month"
+    from_dt = datetime.fromisoformat(from_iso)
+    to_dt = datetime.fromisoformat(to_iso)
+    assert from_dt.month == 4 and from_dt.day == 1
+    assert to_dt.month == 4 and to_dt.day == 15
+
+
+def test_get_period_range_week():
+    # 2026-04-15 is a Wednesday; Monday is 2026-04-13
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        label, from_iso, to_iso = get_period_range("week")
+    assert label == "This Week"
+    from_dt = datetime.fromisoformat(from_iso)
+    to_dt = datetime.fromisoformat(to_iso)
+    assert from_dt.day == 13  # Monday
+    assert to_dt.day == 15  # today
+
+
+def test_get_period_range_year():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 4, 15)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+        label, from_iso, to_iso = get_period_range("year")
+    assert label == "This Year"
+    from_dt = datetime.fromisoformat(from_iso)
+    to_dt = datetime.fromisoformat(to_iso)
+    assert from_dt.month == 1 and from_dt.day == 1
+    assert to_dt.month == 4 and to_dt.day == 15
+
+
+def test_get_period_range_invalid():
+    with pytest.raises(ValueError, match="Unknown period"):
+        get_period_range("decade")
+
+
+def test_fetch_contributions_with_period(requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 7}
+                    },
+                }
+            }
+        },
+    )
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        result, not_found = fetch_contributions(["alice"], years=3, period="week")
+
+    assert result["alice"]["This Week"] == 7
+    assert not_found == set()
 
 
 def test_get_year_ranges_structure():

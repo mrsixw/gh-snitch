@@ -39,6 +39,22 @@ def test_load_config_defaults_for_missing_keys(tmp_path):
     cfg = load_config(str(config_file))
     assert cfg["users"] == []
     assert cfg["years"] == 3
+    assert cfg["period"] is None
+
+
+def test_load_config_period(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[surveillance]\nyears = 2\nperiod = "month"\n')
+    cfg = load_config(str(config_file))
+    assert cfg["period"] == "month"
+    assert cfg["years"] == 2
+
+
+def test_load_config_period_defaults_to_none(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[surveillance]\nyears = 1\n")
+    cfg = load_config(str(config_file))
+    assert cfg["period"] is None
 
 
 def test_generate_default_config_creates_dirs(tmp_path):

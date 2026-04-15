@@ -50,6 +50,7 @@ make build
 |---|---|
 | `--users` | Comma-separated usernames (overrides config) |
 | `--years` | Number of prior years (overrides config) |
+| `--period` | Report on a specific window: `week`, `month`, or `year` (overrides `--years`) |
 | `--min-contributions` | Hide operatives below this contribution count |
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
