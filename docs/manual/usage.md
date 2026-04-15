@@ -203,6 +203,46 @@ totals = true
 percent = true
 ```
 
+## Machine-Readable Output
+
+By default gh-snitch renders a coloured terminal table. Use `--format` to get clean, scriptable output instead:
+
+```bash
+# JSON array — one object per operative
+gh-snitch --users alice,bob --format json
+
+# CSV — header row + one row per operative
+gh-snitch --users alice,bob --format csv
+
+# GitHub-Flavoured Markdown table
+gh-snitch --users alice,bob --format markdown
+```
+
+All non-`table` formats:
+- Write **only data** to stdout (no ANSI codes, no emoji status lines)
+- Send status messages (`🔍 Initiating…`, `🗂️ Dossier compiled…`) to **stderr** so pipes stay clean
+- Skip the update-check footer
+
+Works with every time-period option:
+
+```bash
+# JSON for the last 6 months
+gh-snitch --users alice,bob --last-months 6 --format json
+
+# CSV for a custom date range
+gh-snitch --users alice,bob --since 2025-01-01 --until 2025-06-30 --format csv
+
+# Markdown for this week
+gh-snitch --users alice,bob --period week --format markdown
+```
+
+Set a permanent default in your config file:
+
+```toml
+[display]
+format = "json"
+```
+
 ## One-Shot Command
 
 Combine flags for a quick ad-hoc sweep without touching your config:

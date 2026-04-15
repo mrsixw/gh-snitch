@@ -94,3 +94,30 @@ def test_generate_default_config_default_path(monkeypatch, tmp_path):
     path = generate_default_config()
     assert path.exists()
     assert "gh-snitch" in str(path)
+
+
+def test_load_config_output_format(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[display]\nformat = "json"\n')
+    cfg = load_config(str(config_file))
+    assert cfg["output_format"] == "json"
+
+
+def test_load_config_output_format_csv(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[display]\nformat = "csv"\n')
+    cfg = load_config(str(config_file))
+    assert cfg["output_format"] == "csv"
+
+
+def test_load_config_output_format_defaults_to_table(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[operatives]\nusers = []\n")
+    cfg = load_config(str(config_file))
+    assert cfg["output_format"] == "table"
+
+
+def test_generate_default_config_contains_format_comment(tmp_path):
+    path = generate_default_config(str(tmp_path / "config.toml"))
+    content = path.read_text()
+    assert "format" in content

@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from ghsnitch.ui import (
@@ -6,6 +7,9 @@ from ghsnitch.ui import (
     _rank_delta_cell,
     _trend_indicator,
     make_hyperlink,
+    render_csv,
+    render_json,
+    render_markdown,
     render_table,
 )
 
@@ -541,3 +545,170 @@ def test_render_table_delta_col_non_delta_column_still_graded():
         output = render_table(rows, ["Δ Today", "2024"], delta_col="Δ Today")
     assert "412" in output
     assert "200" in output
+
+
+# ---------------------------------------------------------------------------
+# render_json
+# ---------------------------------------------------------------------------
+
+
+def test_render_json_empty():
+    assert render_json([], ["2025"]) == "[]"
+
+
+def test_render_json_basic():
+    rows = [
+        {"username": "alice", "2025": 100},
+        {"username": "bob", "2025": 200},
+    ]
+    output = render_json(rows, ["2025"])
+    data = json.loads(output)
+    assert len(data) == 2
+    # bob has more contributions so should be ranked 1
+    assert data[0]["operative"] == "bob"
+    assert data[0]["rank"] == 1
+    assert data[0]["2025"] == 200
+    assert data[1]["operative"] == "alice"
+    assert data[1]["rank"] == 2
+    assert "\033" not in output
+
+
+def test_render_json_with_totals():
+    rows = [
+        {"username": "alice", "2025": 100, "2024": 50},
+    ]
+    output = render_json(rows, ["2025", "2024"], show_totals=True)
+    data = json.loads(output)
+    assert data[0]["total"] == 150
+
+
+def test_render_json_without_totals_has_no_total_key():
+    rows = [{"username": "alice", "2025": 100}]
+    output = render_json(rows, ["2025"], show_totals=False)
+    data = json.loads(output)
+    assert "total" not in data[0]
+
+
+def test_render_json_tie_gives_same_rank():
+    rows = [
+        {"username": "alice", "2025": 100},
+        {"username": "bob", "2025": 100},
+    ]
+    output = render_json(rows, ["2025"])
+    data = json.loads(output)
+    assert data[0]["rank"] == 1
+    assert data[1]["rank"] == 1
+
+
+def test_render_json_no_ansi_codes():
+    rows = [{"username": "alice", "2025": 50}]
+    output = render_json(rows, ["2025"])
+    assert "\033[" not in output
+
+
+# ---------------------------------------------------------------------------
+# render_csv
+# ---------------------------------------------------------------------------
+
+
+def test_render_csv_empty():
+    assert render_csv([], ["2025"]) == ""
+
+
+def test_render_csv_basic():
+    rows = [
+        {"username": "alice", "2025": 100},
+        {"username": "bob", "2025": 200},
+    ]
+    output = render_csv(rows, ["2025"])
+    lines = output.strip().splitlines()
+    assert lines[0] == "rank,operative,2025"
+    # bob ranked first
+    assert lines[1].startswith("1,bob,")
+    assert lines[2].startswith("2,alice,")
+
+
+def test_render_csv_with_totals_column_and_footer():
+    rows = [
+        {"username": "alice", "2025": 100, "2024": 50},
+        {"username": "bob", "2025": 200, "2024": 80},
+    ]
+    output = render_csv(rows, ["2025", "2024"], show_totals=True)
+    lines = output.strip().splitlines()
+    assert "total" in lines[0]
+    # footer row
+    last = lines[-1]
+    assert last.startswith(",Total,")
+    # totals: 2025=300, 2024=130, grand=430
+    assert "300" in last
+    assert "130" in last
+    assert "430" in last
+
+
+def test_render_csv_no_ansi_codes():
+    rows = [{"username": "alice", "2025": 50}]
+    output = render_csv(rows, ["2025"])
+    assert "\033[" not in output
+
+
+def test_render_csv_multiple_labels():
+    rows = [{"username": "alice", "Apr 2026": 10, "Mar 2026": 20}]
+    output = render_csv(rows, ["Apr 2026", "Mar 2026"])
+    lines = output.strip().splitlines()
+    assert "Apr 2026" in lines[0]
+    assert "Mar 2026" in lines[0]
+
+
+# ---------------------------------------------------------------------------
+# render_markdown
+# ---------------------------------------------------------------------------
+
+
+def test_render_markdown_empty():
+    assert "(no operatives" in render_markdown([], ["2025"])
+
+
+def test_render_markdown_basic():
+    rows = [
+        {"username": "alice", "2025": 100},
+        {"username": "bob", "2025": 200},
+    ]
+    output = render_markdown(rows, ["2025"])
+    lines = output.splitlines()
+    # Header, separator, two data rows
+    assert len(lines) == 4
+    assert lines[0].startswith("|")
+    assert "Operative" in lines[0]
+    assert "2025" in lines[0]
+    # Separator uses :--- for Operative and ---: for numbers
+    assert ":---" in lines[1]
+    assert "---:" in lines[1]
+    # bob (200) should be first data row
+    assert "bob" in lines[2]
+    assert "alice" in lines[3]
+
+
+def test_render_markdown_with_totals():
+    rows = [
+        {"username": "alice", "2025": 100, "2024": 50},
+    ]
+    output = render_markdown(rows, ["2025", "2024"], show_totals=True)
+    assert "Total" in output
+    assert "**Total**" in output
+    lines = output.splitlines()
+    # header + separator + 1 data row + 1 footer
+    assert len(lines) == 4
+
+
+def test_render_markdown_no_ansi_codes():
+    rows = [{"username": "alice", "2025": 50}]
+    output = render_markdown(rows, ["2025"])
+    assert "\033[" not in output
+
+
+def test_render_markdown_pipe_structure():
+    rows = [{"username": "alice", "This Week": 7}]
+    output = render_markdown(rows, ["This Week"])
+    for line in output.splitlines():
+        assert line.startswith("|")
+        assert line.endswith("|")

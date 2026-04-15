@@ -22,8 +22,10 @@ from .api import (
 from .config import generate_default_config, load_config
 from .logger import setup_logging
 from .snapshot import clear_snapshot, load_snapshot, save_snapshot
-from .ui import render_table
+from .ui import render_csv, render_json, render_markdown, render_table
 from .updater import check_for_update
+
+VALID_FORMATS = ("table", "json", "csv", "markdown")
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +205,13 @@ def _movement_delta(previous_position, current_position):
     default=False,
     help="Clear the saved contribution snapshot and exit.",
 )
+@click.option(
+    "--format",
+    "output_format",
+    default=None,
+    type=click.Choice(list(VALID_FORMATS), case_sensitive=False),
+    help="Output format: table (default), json, csv, or markdown.",
+)
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
     config,
@@ -223,6 +232,7 @@ def gh_snitch(  # noqa: PLR0913
     percent,
     delta,
     reset_snapshot,
+    output_format,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     setup_logging()
@@ -257,6 +267,7 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"period = {cfg['period']}")
         click.echo(f"last_months = {cfg['last_months']}")
         click.echo(f"last_weeks = {cfg['last_weeks']}")
+        click.echo(f"output_format = {cfg.get('output_format', 'table')}")
         click.echo(f"github_url = {cfg['github_url']}")
         return
 
@@ -294,6 +305,10 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
+    if output_format is not None:
+        cfg["output_format"] = output_format.lower()
+
+    active_format = cfg.get("output_format", "table")
 
     operative_list = cfg["users"]
     num_years = cfg["years"]
@@ -342,7 +357,7 @@ def gh_snitch(  # noqa: PLR0913
     else:
         active_year_ranges = get_year_ranges(num_years)
 
-    click.echo("🔍 Initiating surveillance sweep...")
+    click.echo("🔍 Initiating surveillance sweep...", err=active_format != "table")
 
     num_ranges = len(active_year_ranges)
     use_progress = sys.stdout.isatty()
@@ -461,20 +476,32 @@ def gh_snitch(  # noqa: PLR0913
             # Rank deltas are not meaningful when showing contribution deltas
             rank_deltas = None
 
-    table = render_table(
-        rows,
-        year_labels,
-        year_fraction=current_year_fraction(),
-        show_trend=not no_trend and delta_col is None and not suppress_trend,
-        show_totals=cfg.get("totals", False),
-        show_percent=cfg.get("percent", False),
-        delta_col=delta_col,
-        rank_deltas=rank_deltas,
-    )
-    click.echo(table)
+    show_totals = cfg.get("totals", False)
+
+    if active_format == "json":
+        click.echo(render_json(rows, year_labels, show_totals=show_totals))
+    elif active_format == "csv":
+        click.echo(render_csv(rows, year_labels, show_totals=show_totals), nl=False)
+    elif active_format == "markdown":
+        click.echo(render_markdown(rows, year_labels, show_totals=show_totals))
+    else:
+        table = render_table(
+            rows,
+            year_labels,
+            year_fraction=current_year_fraction(),
+            show_trend=not no_trend and delta_col is None and not suppress_trend,
+            show_totals=show_totals,
+            show_percent=cfg.get("percent", False),
+            delta_col=delta_col,
+            rank_deltas=rank_deltas,
+        )
+        click.echo(table)
 
     if suppressed > 0:
-        click.echo(f"🔕 {suppressed} operative(s) below threshold suppressed.")
+        click.echo(
+            f"🔕 {suppressed} operative(s) below threshold suppressed.",
+            err=active_format != "table",
+        )
 
     if not_found:
         for username in sorted(not_found):
@@ -488,9 +515,12 @@ def gh_snitch(  # noqa: PLR0913
             err=True,
         )
 
-    click.echo("🗂️  Dossier compiled. Handler review recommended.")
+    click.echo(
+        "🗂️  Dossier compiled. Handler review recommended.",
+        err=active_format != "table",
+    )
 
-    if not no_update_check:
+    if active_format == "table" and not no_update_check:
         update_msg = check_for_update()
         if update_msg:
             click.echo(update_msg)
