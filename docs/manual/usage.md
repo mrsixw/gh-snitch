@@ -24,6 +24,30 @@ Control how many prior years are included alongside the current year:
 gh-snitch --years 5
 ```
 
+## Reporting on a Specific Time Window
+
+Instead of fetching full calendar years, use `--period` to focus on a named window:
+
+```bash
+# Contributions since the start of this week (Monday)
+gh-snitch --users alice,bob --period week
+
+# Contributions this month
+gh-snitch --users alice,bob --period month
+
+# Contributions this year (Jan 1 → today)
+gh-snitch --users alice,bob --period year
+```
+
+When `--period` is set the table shows a single column labelled `This Week`, `This Month`, or `This Year` and the `--years` option is ignored. The Trend column is also suppressed (there is no prior period to compare against).
+
+You can set a default period in your config file:
+
+```toml
+[surveillance]
+period = "month"
+```
+
 ## Initial Setup
 
 ```bash

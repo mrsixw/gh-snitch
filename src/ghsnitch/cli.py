@@ -10,8 +10,10 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 from .api import (
     SECRET_GITHUB_TOKEN,
+    VALID_PERIODS,
     current_year_fraction,
     fetch_contributions,
+    get_period_range,
     get_year_ranges,
 )
 from .config import generate_default_config, load_config
@@ -110,6 +112,12 @@ def _movement_delta(previous_position, current_position):
     help="Number of prior years to include (in addition to current year).",
 )
 @click.option(
+    "--period",
+    default=None,
+    type=click.Choice(list(VALID_PERIODS), case_sensitive=False),
+    help="Report on a named window: week, month, or year. Overrides --years.",
+)
+@click.option(
     "--show-config",
     is_flag=True,
     default=False,
@@ -173,6 +181,7 @@ def gh_snitch(  # noqa: PLR0913
     config,
     users,
     years,
+    period,
     github_url,
     show_config,
     init_config,
@@ -187,10 +196,11 @@ def gh_snitch(  # noqa: PLR0913
     """Spy-themed GitHub contribution surveillance tool."""
     setup_logging()
     logger.info(
-        "gh-snitch started config=%s users=%s years=%s github_url=%s",
+        "gh-snitch started config=%s users=%s years=%s period=%s github_url=%s",
         config,
         users,
         years,
+        period,
         github_url,
     )
 
@@ -208,6 +218,7 @@ def gh_snitch(  # noqa: PLR0913
         cfg = load_config(config)
         click.echo(f"users = {cfg['users']}")
         click.echo(f"years = {cfg['years']}")
+        click.echo(f"period = {cfg['period']}")
         click.echo(f"github_url = {cfg['github_url']}")
         return
 
@@ -226,6 +237,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["users"] = [u.strip() for u in users.split(",") if u.strip()]
     if years is not None:
         cfg["years"] = years
+    if period is not None:
+        cfg["period"] = period.lower()
     if github_url is not None:
         cfg["github_url"] = github_url
     if min_contributions is not None:
@@ -236,10 +249,12 @@ def gh_snitch(  # noqa: PLR0913
         cfg["percent"] = True
 
     operative_list = cfg["users"]
+    active_period = cfg.get("period")
     logger.info(
-        "effective config operatives=%s years=%s github_url=%s",
+        "effective config operatives=%s years=%s period=%s github_url=%s",
         operative_list,
         cfg["years"],
+        active_period,
         cfg["github_url"],
     )
     num_years = cfg["years"]
@@ -254,28 +269,37 @@ def gh_snitch(  # noqa: PLR0913
 
     click.echo("🔍 Initiating surveillance sweep...")
 
-    num_years_total = num_years + 1  # current year + prior years
+    num_ranges = 1 if active_period else num_years + 1
     use_progress = sys.stdout.isatty()
 
     progress = Progress(
         TextColumn("[bold blue]📡 Sweeping field reports..."),
         BarColumn(),
         TaskProgressColumn(),
-        TextColumn("[dim]{task.completed}/{task.total} years"),
+        TextColumn("[dim]{task.completed}/{task.total} ranges"),
         disable=not use_progress,
     )
 
-    logger.info("sweep starting operatives=%s num_years=%d", operative_list, num_years)
+    logger.info(
+        "sweep starting operatives=%s num_ranges=%d period=%s",
+        operative_list,
+        num_ranges,
+        active_period,
+    )
     sweep_start = time.monotonic()
     try:
         with progress:
-            task = progress.add_task("sweep", total=num_years_total)
+            task = progress.add_task("sweep", total=num_ranges)
 
             def on_progress(completed, total):  # noqa: ARG001
                 progress.update(task, completed=completed)
 
             data, not_found = fetch_contributions(
-                operative_list, num_years, operative_github_url, on_progress
+                operative_list,
+                num_years,
+                operative_github_url,
+                on_progress,
+                period=active_period,
             )
     except requests.exceptions.RequestException as e:
         duration = time.monotonic() - sweep_start
@@ -286,7 +310,10 @@ def gh_snitch(  # noqa: PLR0913
     duration = time.monotonic() - sweep_start
     logger.info("sweep complete duration=%.3fs", duration)
 
-    year_ranges = get_year_ranges(num_years)
+    if active_period:
+        year_ranges = [get_period_range(active_period)]
+    else:
+        year_ranges = get_year_ranges(num_years)
     year_labels = [label for label, _, _ in year_ranges]
 
     rows = []

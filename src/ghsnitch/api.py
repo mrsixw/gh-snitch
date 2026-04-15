@@ -2,7 +2,7 @@ import calendar
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -85,6 +85,40 @@ def get_year_ranges(years):
     return ranges
 
 
+VALID_PERIODS = ("week", "month", "year")
+
+
+def get_period_range(period: str) -> tuple[str, str, str]:
+    """Return a (label, from_iso, to_iso) tuple for a named time period.
+
+    Supported periods:
+      'week'  — Monday of the current ISO week → today
+      'month' — 1st of the current month → today
+      'year'  — January 1st of the current year → today
+    """
+    today = date.today()
+    to_dt = datetime(
+        today.year, today.month, today.day, 23, 59, 59, tzinfo=timezone.utc
+    )
+
+    if period == "week":
+        monday = today - timedelta(days=today.weekday())
+        from_dt = datetime(
+            monday.year, monday.month, monday.day, 0, 0, 0, tzinfo=timezone.utc
+        )
+        label = "This Week"
+    elif period == "month":
+        from_dt = datetime(today.year, today.month, 1, 0, 0, 0, tzinfo=timezone.utc)
+        label = "This Month"
+    elif period == "year":
+        from_dt = datetime(today.year, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        label = "This Year"
+    else:
+        raise ValueError(f"Unknown period '{period}'. Valid periods: {VALID_PERIODS}")
+
+    return label, from_dt.isoformat(), to_dt.isoformat()
+
+
 def build_contributions_query(users, from_iso, to_iso):
     """Build a GraphQL query with aliases for each user."""
     aliases = []
@@ -114,7 +148,7 @@ def _fetch_year(users, label, from_iso, to_iso, github_url):
 
 
 def fetch_contributions(
-    users, years, github_url: str = DEFAULT_GITHUB_URL, on_progress=None
+    users, years, github_url: str = DEFAULT_GITHUB_URL, on_progress=None, *, period=None
 ):
     """Fetch contribution counts for all users across year ranges.
 
@@ -123,8 +157,14 @@ def fetch_contributions(
     Usernames that could not be resolved on GitHub appear in the not_found set
     with zero contributions in the result dict.
     on_progress, if provided, is called with (completed, total) after each year.
+
+    When period is set (one of VALID_PERIODS), a single range is fetched for
+    that named window and the years argument is ignored.
     """
-    year_ranges = get_year_ranges(years)
+    if period is not None:
+        year_ranges = [get_period_range(period)]
+    else:
+        year_ranges = get_year_ranges(years)
     total = len(year_ranges)
     result = {username: {} for username in users}
     null_counts: dict[str, int] = {username: 0 for username in users}

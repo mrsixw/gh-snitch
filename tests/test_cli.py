@@ -608,3 +608,133 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
     assert "  1   =   alice" in result.output
     assert "  2  +1   bob" in result.output
     assert "  3  -1   carol" in result.output
+
+
+def test_period_week_renders_this_week_column(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 3\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--period",
+                            "week",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "This Week" in result.output
+    assert "alice" in result.output
+
+
+def test_period_month_renders_this_month_column(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 3\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--period",
+                            "month",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "This Month" in result.output
+    assert "alice" in result.output
+
+
+def test_period_year_renders_this_year_column(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 3\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--period",
+                            "year",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "This Year" in result.output
+    assert "alice" in result.output
+
+
+def test_period_from_config_file(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 3\nperiod = "month"\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        ["--config", str(config_file), "--no-update-check"],
+                    )
+
+    assert result.exit_code == 0
+    assert "This Month" in result.output
+
+
+def test_period_makes_single_api_call(runner, tmp_path, requests_mock):
+    """Period mode should issue exactly one GraphQL request (one range)."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 5\n'
+    )
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--period",
+                            "week",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert adapter.call_count == 1  # one range, not six
