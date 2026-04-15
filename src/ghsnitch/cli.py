@@ -1,5 +1,6 @@
 import importlib.metadata
 import logging
+import math
 import sys
 import time
 
@@ -20,6 +21,79 @@ from .ui import render_table
 from .updater import check_for_update
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_rank_metadata(rows, current_year_label):
+    """Return display ranks and tie-aware movement positions for the leaderboard.
+
+    Args:
+        rows: iterable of contribution rows with a ``username`` key
+        current_year_label: year label used to sort the leaderboard
+
+    Returns:
+        tuple[dict[str, int], dict[str, float]]: competition ranks for display
+        and average occupied positions for movement tracking
+    """
+    sorted_rows = sorted(
+        rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
+    )
+    ranks = {}
+    positions = {}
+    i = 0
+    while i < len(sorted_rows):
+        current_count = sorted_rows[i].get(current_year_label, 0)
+        group_end = i + 1
+        while (
+            group_end < len(sorted_rows)
+            and sorted_rows[group_end].get(current_year_label, 0) == current_count
+        ):
+            group_end += 1
+
+        competition_rank = i + 1
+        average_position = (competition_rank + group_end) / 2
+        for row in sorted_rows[i:group_end]:
+            username = row["username"]
+            ranks[username] = competition_rank
+            positions[username] = average_position
+
+        i = group_end
+    return ranks, positions
+
+
+def _get_snapshot_positions(snapshot, current_year_label):
+    """Return tie-aware movement positions for a previous snapshot if possible.
+
+    Newer snapshots persist explicit movement positions. Older snapshots can
+    still be upgraded in place by deriving tie-aware positions from their
+    contribution
+    counts for the current year. If that data is unavailable, fall back to the
+    legacy rank metadata so movement continues to work across year boundaries.
+    """
+    stored_positions = snapshot.get("positions", {})
+    if stored_positions:
+        return stored_positions
+
+    snapshot_contributions = snapshot.get("contributions", {})
+    if any(
+        current_year_label in year_data for year_data in snapshot_contributions.values()
+    ):
+        snapshot_rows = []
+        for username, year_data in snapshot_contributions.items():
+            row = {"username": username}
+            row.update(year_data)
+            snapshot_rows.append(row)
+        _, positions = _compute_rank_metadata(snapshot_rows, current_year_label)
+        return positions
+
+    return snapshot.get("ranks", {})
+
+
+def _movement_delta(previous_position, current_position):
+    """Return an integer movement delta from tie-aware position scores."""
+    raw_delta = previous_position - current_position
+    if raw_delta == 0:
+        return 0
+    return int(math.copysign(math.ceil(abs(raw_delta)), raw_delta))
 
 
 @click.command()
@@ -226,22 +300,9 @@ def gh_snitch(  # noqa: PLR0913
     # repeated --delta invocations compare against the same fixed point.
     prev_snapshot = load_snapshot()
 
-    # Compute current ranks (competition ranking, same sort order as render_table).
+    # Compute current rank metadata using the same sort order as render_table.
     current_year_label = year_labels[0]
-    sorted_for_ranks = sorted(
-        rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
-    )
-    current_ranks: dict[str, int] = {}
-    for i, row in enumerate(sorted_for_ranks):
-        if i == 0:
-            current_ranks[row["username"]] = 1
-        else:
-            prev_count = sorted_for_ranks[i - 1].get(current_year_label, 0)
-            curr_count = row.get(current_year_label, 0)
-            prev_rank = current_ranks[sorted_for_ranks[i - 1]["username"]]
-            current_ranks[row["username"]] = (
-                prev_rank if curr_count == prev_count else i + 1
-            )
+    current_ranks, current_positions = _compute_rank_metadata(rows, current_year_label)
 
     if not delta:
         save_snapshot(
@@ -250,19 +311,22 @@ def gh_snitch(  # noqa: PLR0913
                 for row in rows
             },
             ranks=current_ranks,
+            positions=current_positions,
         )
 
-    # Compute rank deltas if a previous run's ranks are available.
+    # Compute visible leaderboard movement from tie-aware position scores.
     rank_deltas = None
     if prev_snapshot is not None:
-        prev_ranks: dict[str, int] = prev_snapshot.get("ranks", {})
-        if prev_ranks:
+        prev_positions = _get_snapshot_positions(prev_snapshot, current_year_label)
+        if prev_positions:
             rank_deltas = {}
-            for username, curr_rank in current_ranks.items():
-                if username not in prev_ranks:
+            for username, curr_position in current_positions.items():
+                if username not in prev_positions:
                     rank_deltas[username] = None  # new operative
                 else:
-                    rank_deltas[username] = prev_ranks[username] - curr_rank
+                    rank_deltas[username] = _movement_delta(
+                        prev_positions[username], curr_position
+                    )
 
     threshold = cfg["min_contributions"]
     suppressed = 0
