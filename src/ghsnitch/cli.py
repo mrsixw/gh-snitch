@@ -253,12 +253,12 @@ def gh_snitch(  # noqa: PLR0913
 
     if reset_snapshot:
         clear_snapshot()
-        click.echo("🗑️  Snapshot cleared. Operative history wiped.")
+        click.echo("🗑️  Snapshot cleared. Operative history wiped.", err=True)
         return
 
     if init_config:
         path = generate_default_config(config)
-        click.echo(f"🗂️  Handler config established at: {path}")
+        click.echo(f"🗂️  Handler config established at: {path}", err=True)
         return
 
     if show_config:
@@ -358,7 +358,7 @@ def gh_snitch(  # noqa: PLR0913
     else:
         active_year_ranges = get_year_ranges(num_years)
 
-    click.echo("🔍 Initiating surveillance sweep...", err=active_format != "table")
+    click.echo("🔍 Initiating surveillance sweep...", err=True)
 
     num_ranges = len(active_year_ranges)
     use_progress = sys.stderr.isatty()
@@ -502,7 +502,7 @@ def gh_snitch(  # noqa: PLR0913
     if suppressed > 0:
         click.echo(
             f"🔕 {suppressed} operative(s) below threshold suppressed.",
-            err=active_format != "table",
+            err=True,
         )
 
     if not_found:
@@ -519,13 +519,13 @@ def gh_snitch(  # noqa: PLR0913
 
     click.echo(
         "🗂️  Dossier compiled. Handler review recommended.",
-        err=active_format != "table",
+        err=True,
     )
 
-    if active_format == "table" and not no_update_check:
+    if not no_update_check:
         update_msg = check_for_update()
         if update_msg:
-            click.echo(update_msg)
+            click.echo(update_msg, err=True)
 
     if not_found:
         sys.exit(1)
