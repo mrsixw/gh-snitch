@@ -48,6 +48,45 @@ You can set a default period in your config file:
 period = "month"
 ```
 
+## Rolling Monthly or Weekly Columns
+
+Use `--last-months N` or `--last-weeks N` to produce a multi-column view where each column is one calendar month or one ISO week:
+
+```bash
+# Last 6 calendar months as separate columns
+gh-snitch --users alice,bob --last-months 6
+
+# Last 8 ISO weeks as separate columns
+gh-snitch --users alice,bob --last-weeks 8
+```
+
+Month columns are labelled `Apr 2026`, `Mar 2026`, … most-recent first.
+Week columns are labelled `2026-W15`, `2026-W14`, … most-recent first.
+
+The current (partial) month or week is always the first column.  The Trend column is suppressed because month-to-month and week-to-week comparisons are not annualised.
+
+Set defaults in your config file:
+
+```toml
+[surveillance]
+last_months = 6
+last_weeks = 8
+```
+
+## Custom Date Range
+
+Use `--since` and optionally `--until` to query an arbitrary window:
+
+```bash
+# Q1 2025
+gh-snitch --users alice,bob --since 2025-01-01 --until 2025-03-31
+
+# Everything since a specific date up to today
+gh-snitch --users alice,bob --since 2025-06-01
+```
+
+The resulting table shows a single column labelled `2025-01-01–2025-03-31` (or `Since 2025-06-01` when no end date is given).  `--until` cannot be used without `--since`.
+
 ## Initial Setup
 
 ```bash

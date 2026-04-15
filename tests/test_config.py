@@ -57,6 +57,28 @@ def test_load_config_period_defaults_to_none(tmp_path):
     assert cfg["period"] is None
 
 
+def test_load_config_last_months(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[surveillance]\nlast_months = 6\n")
+    cfg = load_config(str(config_file))
+    assert cfg["last_months"] == 6
+
+
+def test_load_config_last_weeks(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[surveillance]\nlast_weeks = 8\n")
+    cfg = load_config(str(config_file))
+    assert cfg["last_weeks"] == 8
+
+
+def test_load_config_last_months_defaults_to_none(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[surveillance]\nyears = 1\n")
+    cfg = load_config(str(config_file))
+    assert cfg["last_months"] is None
+    assert cfg["last_weeks"] is None
+
+
 def test_generate_default_config_creates_dirs(tmp_path):
     path = tmp_path / "nested" / "dir" / "config.toml"
     result = generate_default_config(str(path))

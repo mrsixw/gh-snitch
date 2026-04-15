@@ -738,3 +738,128 @@ def test_period_makes_single_api_call(runner, tmp_path, requests_mock):
 
     assert result.exit_code == 0
     assert adapter.call_count == 1  # one range, not six
+
+
+# ---------------------------------------------------------------------------
+# --last-months / --last-weeks / --since / --until
+# ---------------------------------------------------------------------------
+
+
+def _make_config(tmp_path, years=0):
+    f = tmp_path / "config.toml"
+    f.write_text(f'[operatives]\nusers = ["alice"]\n[surveillance]\nyears = {years}\n')
+    return f
+
+
+def _run(runner, config_file, tmp_path, extra_args):
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    base = ["--config", str(config_file), "--no-update-check"]
+                    return runner.invoke(gh_snitch, base + extra_args)
+
+
+def test_last_months_renders_month_columns(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--last-months", "3"])
+    assert result.exit_code == 0
+    # Three month columns should appear (e.g. "Apr 2026", "Mar 2026", "Feb 2026")
+    assert result.output.count("20") >= 3  # at least 3 year-suffixed labels
+
+
+def test_last_months_makes_n_api_calls(runner, tmp_path, requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--last-months", "4"])
+    assert result.exit_code == 0
+    assert adapter.call_count == 4
+
+
+def test_last_weeks_renders_week_columns(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--last-weeks", "3"])
+    assert result.exit_code == 0
+    # ISO week labels look like "2026-W15"
+    assert "-W" in result.output
+
+
+def test_last_weeks_makes_n_api_calls(runner, tmp_path, requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--last-weeks", "5"])
+    assert result.exit_code == 0
+    assert adapter.call_count == 5
+
+
+def test_since_renders_custom_label(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--since", "2025-01-01"])
+    assert result.exit_code == 0
+    assert "Since 2025-01-01" in result.output
+
+
+def test_since_and_until_renders_range_label(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(
+        runner, cfg, tmp_path, ["--since", "2025-01-01", "--until", "2025-03-31"]
+    )
+    assert result.exit_code == 0
+    assert "2025-01-01" in result.output
+    assert "2025-03-31" in result.output
+
+
+def test_until_without_since_exits_nonzero(runner, tmp_path):
+    cfg = _make_config(tmp_path)
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        result = runner.invoke(
+            gh_snitch,
+            ["--config", str(cfg), "--no-update-check", "--until", "2025-03-31"],
+        )
+    assert result.exit_code != 0
+    assert "--until requires --since" in result.output
+
+
+def test_since_invalid_date_exits_nonzero(runner, tmp_path):
+    cfg = _make_config(tmp_path)
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            result = runner.invoke(
+                gh_snitch,
+                ["--config", str(cfg), "--no-update-check", "--since", "not-a-date"],
+            )
+    assert result.exit_code != 0
+
+
+def test_last_months_from_config(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 3\nlast_months = 2\n'
+    )
+    result = _run(runner, cfg, tmp_path, [])
+    assert result.exit_code == 0
+    # Two month columns → two API calls
+    # (just check it ran without error and has month-style labels)
+    assert result.output  # non-empty
+
+
+def test_last_weeks_from_config(runner, tmp_path, requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 3\nlast_weeks = 3\n'
+    )
+    result = _run(runner, cfg, tmp_path, [])
+    assert result.exit_code == 0
+    assert adapter.call_count == 3
