@@ -760,6 +760,37 @@ def _run(runner, config_file, tmp_path, extra_args):
                     return runner.invoke(gh_snitch, base + extra_args)
 
 
+def _run_separated(config_file, tmp_path, extra_args):
+    """Run gh_snitch and return the result (stdout/stderr mixed by CliRunner)."""
+    sep_runner = CliRunner()
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    base = ["--config", str(config_file), "--no-update-check"]
+                    return sep_runner.invoke(gh_snitch, base + extra_args)
+
+
+def _extract_json(output):
+    """Extract the JSON array from mixed CLI output."""
+    import re
+
+    m = re.search(r"\[[\s\S]*\]", output)
+    assert m, f"No JSON array found in output: {output!r}"
+    return json.loads(m.group())
+
+
+def _extract_csv_lines(output):
+    """Return only CSV data lines (header, data rows, or footer)."""
+    return [
+        line
+        for line in output.splitlines()
+        if line.startswith("rank,")
+        or (line and line[0].isdigit())
+        or line.startswith(",")
+    ]
+
+
 def test_last_months_renders_month_columns(runner, tmp_path, requests_mock):
     requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
     cfg = _make_config(tmp_path)
@@ -863,3 +894,106 @@ def test_last_weeks_from_config(runner, tmp_path, requests_mock):
     result = _run(runner, cfg, tmp_path, [])
     assert result.exit_code == 0
     assert adapter.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# --format flag
+# ---------------------------------------------------------------------------
+
+
+def test_format_json_outputs_valid_json(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "json"])
+    assert result.exit_code == 0
+    data = _extract_json(result.output)
+    assert isinstance(data, list)
+    assert data[0]["operative"] == "alice"
+    assert data[0]["rank"] == 1
+
+
+def test_format_csv_outputs_csv(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "csv"])
+    assert result.exit_code == 0
+    csv_lines = _extract_csv_lines(result.output)
+    assert csv_lines[0].startswith("rank,operative,")
+    assert any("alice" in line for line in csv_lines)
+
+
+def test_format_markdown_outputs_gfm_table(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "markdown"])
+    assert result.exit_code == 0
+    assert "| # |" in result.output or "|#|" in result.output
+    assert "Operative" in result.output
+    assert ":---" in result.output
+    assert "alice" in result.output
+
+
+def test_format_from_config_file(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+        '[display]\nformat = "json"\n'
+    )
+    result = _run(runner, cfg, tmp_path, [])
+    assert result.exit_code == 0
+    data = _extract_json(result.output)
+    assert data[0]["operative"] == "alice"
+
+
+def test_format_cli_overrides_config(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+        '[display]\nformat = "json"\n'
+    )
+    result = _run(runner, cfg, tmp_path, ["--format", "csv"])
+    assert result.exit_code == 0
+    csv_lines = _extract_csv_lines(result.output)
+    assert csv_lines[0].startswith("rank,operative,")
+
+
+def test_format_json_with_last_months(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "json", "--last-months", "2"])
+    assert result.exit_code == 0
+    data = _extract_json(result.output)
+    assert len(data) == 1
+    entry = data[0]
+    # Should have two month-labelled keys besides rank, operative
+    month_keys = [k for k in entry if k not in ("rank", "operative", "total")]
+    assert len(month_keys) == 2
+
+
+def test_format_json_with_period(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "json", "--period", "month"])
+    assert result.exit_code == 0
+    data = _extract_json(result.output)
+    assert data[0]["operative"] == "alice"
+    assert "This Month" in data[0]
+
+
+def test_format_csv_with_since(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "csv", "--since", "2025-01-01"])
+    assert result.exit_code == 0
+    assert "Since 2025-01-01" in result.output
+
+
+def test_format_table_is_default(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, [])
+    assert result.exit_code == 0
+    # Table format includes status messages in stdout
+    assert "Dossier" in result.output

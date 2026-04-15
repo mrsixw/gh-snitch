@@ -14,6 +14,7 @@
 | `--min-contributions INTEGER` | `0` (show all) | Hide operatives with fewer than N contributions in the current year |
 | `--totals` | off | Add a `Total` column (per-operative sum across all years) and a `Total` footer row (per-year sum across all operatives) |
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
+| `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, or `markdown`. Non-table formats write clean data to stdout and send status messages to stderr. |
 | `--delta` | off | Replace the current-year column with `Δ Today` showing the change since the last saved snapshot; green/red-coded |
 | `--reset-snapshot` | off | Clear the saved contribution snapshot and exit |
 | `--no-trend` | off | Hide the Trend column |
@@ -46,6 +47,9 @@ years = 3
 # last_months = 6       # last 6 calendar months as separate columns
 # last_weeks = 8        # last 8 ISO weeks as separate columns
 
+[display]
+# format = "table"      # table (default), json, csv, or markdown
+
 [network]
 # github_url = "https://github.example.com"  # omit for github.com
 
@@ -55,4 +59,4 @@ years = 3
 # percent = false          # annotate cells with (N%) share of year total
 ```
 
-CLI flags `--users`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).
+CLI flags `--users`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).

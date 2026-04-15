@@ -1,3 +1,6 @@
+import csv as _csv
+import io
+import json as _json
 import os
 import re
 import sys
@@ -265,6 +268,116 @@ def _trend_indicator(current, previous, year_fraction):
     else:
         sym = "→" if IS_TTY else "="
         return f"\033[2m{sym}\033[0m" if IS_TTY else sym
+
+
+def _sorted_rows_and_ranks(rows, year_labels):
+    """Return (sorted_rows, ranks) sorted descending by first label then alpha."""
+    current_label = year_labels[0]
+    sorted_rows = sorted(rows, key=lambda r: (-r.get(current_label, 0), r["username"]))
+    ranks = []
+    for i, row in enumerate(sorted_rows):
+        if i == 0:
+            ranks.append(1)
+        else:
+            prev = sorted_rows[i - 1].get(current_label, 0)
+            curr = row.get(current_label, 0)
+            ranks.append(ranks[-1] if curr == prev else i + 1)
+    return sorted_rows, ranks
+
+
+def render_json(rows, year_labels, show_totals=False):
+    """Render contribution data as a JSON array (no ANSI codes).
+
+    Each element is an object with "rank", "operative", one key per period
+    label, and optionally "total" when show_totals is True.
+    """
+    if not rows:
+        return "[]"
+    sorted_rows, ranks = _sorted_rows_and_ranks(rows, year_labels)
+    result = []
+    for rank, row in zip(ranks, sorted_rows):
+        entry = {"rank": rank, "operative": row["username"]}
+        for label in year_labels:
+            entry[label] = row.get(label, 0)
+        if show_totals:
+            entry["total"] = sum(row.get(label, 0) for label in year_labels)
+        result.append(entry)
+    return _json.dumps(result, indent=2, ensure_ascii=False)
+
+
+def render_csv(rows, year_labels, show_totals=False):
+    """Render contribution data as CSV (no ANSI codes).
+
+    Header row: rank, operative, <period labels…> [, total]
+    One data row per operative, and an optional totals footer row.
+    """
+    if not rows:
+        return ""
+    sorted_rows, ranks = _sorted_rows_and_ranks(rows, year_labels)
+    fieldnames = (
+        ["rank", "operative"] + year_labels + (["total"] if show_totals else [])
+    )
+    output = io.StringIO()
+    writer = _csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for rank, row in zip(ranks, sorted_rows):
+        record = {"rank": rank, "operative": row["username"]}
+        for label in year_labels:
+            record[label] = row.get(label, 0)
+        if show_totals:
+            record["total"] = sum(row.get(label, 0) for label in year_labels)
+        writer.writerow(record)
+    if show_totals:
+        year_totals = {
+            label: sum(r.get(label, 0) for r in rows) for label in year_labels
+        }
+        footer = {"rank": "", "operative": "Total"}
+        for label in year_labels:
+            footer[label] = year_totals[label]
+        footer["total"] = sum(year_totals.values())
+        writer.writerow(footer)
+    return output.getvalue()
+
+
+def render_markdown(rows, year_labels, show_totals=False):
+    """Render contribution data as a GitHub-Flavoured Markdown table (no ANSI).
+
+    Columns: # | Operative | <period labels…> [| Total]
+    Includes a totals footer row when show_totals is True.
+    """
+    if not rows:
+        return "(no operatives configured)"
+    sorted_rows, ranks = _sorted_rows_and_ranks(rows, year_labels)
+    headers = ["#", "Operative"] + year_labels + (["Total"] if show_totals else [])
+
+    def _row(cells):
+        return "| " + " | ".join(str(c) for c in cells) + " |"
+
+    sep_parts = []
+    for h in headers:
+        sep_parts.append(":---" if h == "Operative" else "---:")
+    separator = "| " + " | ".join(sep_parts) + " |"
+
+    lines = [_row(headers), separator]
+    for rank, row in zip(ranks, sorted_rows):
+        cells = [rank, row["username"]]
+        for label in year_labels:
+            cells.append(row.get(label, 0))
+        if show_totals:
+            cells.append(sum(row.get(label, 0) for label in year_labels))
+        lines.append(_row(cells))
+
+    if show_totals:
+        year_totals = {
+            label: sum(r.get(label, 0) for r in rows) for label in year_labels
+        }
+        footer = ["", "**Total**"]
+        for label in year_labels:
+            footer.append(year_totals[label])
+        footer.append(sum(year_totals.values()))
+        lines.append(_row(footer))
+
+    return "\n".join(lines)
 
 
 def render_table(

@@ -42,6 +42,9 @@ years = 3
 
 # Annotate each cell with the operative's percentage share of that year's total.
 # percent = false
+
+# Output format: table (default), json, csv, or markdown.
+# format = "table"
 """
 
 
@@ -65,6 +68,7 @@ def load_config(config_path=None):
         "min_contributions": 0,
         "totals": False,
         "percent": False,
+        "output_format": "table",
     }
     logger.debug("loading config from %s", path)
 
@@ -110,6 +114,8 @@ def load_config(config_path=None):
         config["totals"] = bool(display["totals"])
     if "percent" in display:
         config["percent"] = bool(display["percent"])
+    if "format" in display:
+        config["output_format"] = str(display["format"])
 
     logger.debug(
         "config loaded users=%s years=%s github_url=%s",
