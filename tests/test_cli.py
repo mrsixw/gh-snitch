@@ -997,3 +997,104 @@ def test_format_table_is_default(runner, tmp_path, requests_mock):
     assert result.exit_code == 0
     # Table format includes status messages in stdout
     assert "Dossier" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --team flag
+# ---------------------------------------------------------------------------
+
+
+def test_team_selects_users_from_config(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.platform]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 42}
+                    },
+                }
+            }
+        },
+    )
+    result = _run(runner, config_file, tmp_path, ["--team", "platform"])
+    assert result.exit_code == 0
+    assert "alice" in result.output
+
+
+def test_team_unknown_exits_nonzero_with_message(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.platform]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            result = runner.invoke(
+                gh_snitch,
+                [
+                    "--config",
+                    str(config_file),
+                    "--no-update-check",
+                    "--team",
+                    "discovery",
+                ],
+            )
+    assert result.exit_code != 0
+    assert "discovery" in result.output
+    assert "Known cells" in result.output
+
+
+def test_team_unknown_with_no_teams_defined(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[operatives]\nusers = []\n[surveillance]\nyears = 0\n")
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            result = runner.invoke(
+                gh_snitch,
+                ["--config", str(config_file), "--no-update-check", "--team", "alpha"],
+            )
+    assert result.exit_code != 0
+    assert "none" in result.output
+
+
+def test_users_overrides_team(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.platform]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_bob": {
+                    "login": "bob",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 7}
+                    },
+                }
+            }
+        },
+    )
+    result = _run(
+        runner, config_file, tmp_path, ["--users", "bob", "--team", "platform"]
+    )
+    assert result.exit_code == 0
+    assert "bob" in result.output
+    assert "alice" not in result.output
+
+
+def test_team_empty_users_shows_no_operatives_warning(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[teams.empty]\nusers = []\n[surveillance]\nyears = 0\n")
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            result = runner.invoke(
+                gh_snitch,
+                ["--config", str(config_file), "--no-update-check", "--team", "empty"],
+            )
+    assert "No operatives" in result.output
