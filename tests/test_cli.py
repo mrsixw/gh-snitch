@@ -170,6 +170,25 @@ def test_show_config_includes_github_url(runner, tmp_path):
     assert "github.example.com" in result.output
 
 
+def test_show_config_includes_teams(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = []\n[teams.backend]\nusers = ["alice", "bob"]\n'
+    )
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+    assert result.exit_code == 0
+    assert "teams.backend" in result.output
+    assert "alice" in result.output
+
+
+def test_show_config_no_teams_shows_empty(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = []\n')
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+    assert result.exit_code == 0
+    assert "teams = {}" in result.output
+
+
 def test_not_found_operative_shows_warning_and_exits_nonzero(
     runner, tmp_path, requests_mock
 ):

@@ -123,6 +123,12 @@ def test_generate_default_config_contains_format_comment(tmp_path):
     assert "format" in content
 
 
+def test_generate_default_config_contains_teams_comment(tmp_path):
+    path = generate_default_config(str(tmp_path / "config.toml"))
+    content = path.read_text()
+    assert "teams" in content
+
+
 def test_load_config_teams_single(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text('[teams.platform]\nusers = ["alice", "bob"]\n')
