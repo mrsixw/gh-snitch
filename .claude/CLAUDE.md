@@ -66,3 +66,7 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Never use bare `except Exception`.
 - Before committing, run `make test`, `make lint`.
 - Before committing a feature or fix, confirm docs have been updated if any CLI options or user-visible behaviour changed.
+
+## GitHub Workflow
+- **Always create a GitHub issue before writing code or opening a PR.** Confirm the diagnosis and fix scope with the user first.
+- Link the PR to the issue in the PR body.
