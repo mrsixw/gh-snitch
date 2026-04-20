@@ -1,4 +1,6 @@
-# Claude Instructions
+# Gemini Instructions: gh-snitch
+
+Instructions found in this file are foundational mandates. They take absolute precedence over general workflows and tool defaults.
 
 ## Project Overview
 - **gh-snitch** is a spy-themed CLI tool that surveys GitHub contribution counts for configured operatives (users) and renders a ranked, colour-graded table in the terminal.

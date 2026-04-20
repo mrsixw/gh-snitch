@@ -183,7 +183,7 @@ def test_show_config_includes_teams(runner, tmp_path):
 
 def test_show_config_no_teams_shows_empty(runner, tmp_path):
     config_file = tmp_path / "config.toml"
-    config_file.write_text('[operatives]\nusers = []\n')
+    config_file.write_text("[operatives]\nusers = []\n")
     result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
     assert result.exit_code == 0
     assert "teams = {}" in result.output
