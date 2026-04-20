@@ -121,3 +121,41 @@ def test_generate_default_config_contains_format_comment(tmp_path):
     path = generate_default_config(str(tmp_path / "config.toml"))
     content = path.read_text()
     assert "format" in content
+
+
+def test_load_config_teams_single(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[teams.platform]\nusers = ["alice", "bob"]\n')
+    cfg = load_config(str(config_file))
+    assert cfg["teams"] == {"platform": ["alice", "bob"]}
+
+
+def test_load_config_teams_multiple(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.platform]\nusers = ["alice"]\n\n[teams.backend]\nusers = ["bob"]\n'
+    )
+    cfg = load_config(str(config_file))
+    assert cfg["teams"] == {"platform": ["alice"], "backend": ["bob"]}
+
+
+def test_load_config_teams_defaults_to_empty_dict(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[operatives]\nusers = []\n")
+    cfg = load_config(str(config_file))
+    assert cfg["teams"] == {}
+
+
+def test_load_config_teams_empty_on_missing_file(tmp_path, capsys):
+    cfg = load_config(str(tmp_path / "nonexistent.toml"))
+    assert cfg["teams"] == {}
+
+
+def test_load_config_teams_alongside_operatives(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["carol"]\n\n[teams.alpha]\nusers = ["alice", "bob"]\n'
+    )
+    cfg = load_config(str(config_file))
+    assert cfg["users"] == ["carol"]
+    assert cfg["teams"] == {"alpha": ["alice", "bob"]}

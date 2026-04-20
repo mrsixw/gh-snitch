@@ -53,8 +53,9 @@ def _default_config_path():
 
 
 def load_config(config_path=None):
-    """Load config from TOML file. Returns dict with keys 'users' and 'years'.
+    """Load config from TOML file.
 
+    Returns dict with keys 'users', 'years', 'teams', and more.
     Warns (does not error) if the file is not found.
     """
     path = Path(config_path) if config_path else _default_config_path()
@@ -69,6 +70,7 @@ def load_config(config_path=None):
         "totals": False,
         "percent": False,
         "output_format": "table",
+        "teams": {},
     }
     logger.debug("loading config from %s", path)
 
@@ -116,6 +118,13 @@ def load_config(config_path=None):
         config["percent"] = bool(display["percent"])
     if "format" in display:
         config["output_format"] = str(display["format"])
+
+    teams_raw = data.get("teams", {})
+    config["teams"] = {
+        name: body["users"]
+        for name, body in teams_raw.items()
+        if isinstance(body, dict) and "users" in body
+    }
 
     logger.debug(
         "config loaded users=%s years=%s github_url=%s",

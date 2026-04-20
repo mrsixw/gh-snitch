@@ -4,6 +4,7 @@
 |---|---|---|
 | `--config PATH` | `~/.config/gh-snitch/config.toml` | Path to TOML config file |
 | `--users TEXT` | (from config) | Comma-separated GitHub usernames to surveil |
+| `--team TEXT` | (from config) | Select a named team defined under `[teams.<name>]`. Overridden by `--users`. |
 | `--years INTEGER` | (from config, default 3) | Number of prior complete years to include |
 | `--period TEXT` | (from config, default none) | Report on a named window instead of full years: `week` (Mon→today), `month` (1st→today), `year` (Jan 1→today). Overrides `--years`. |
 | `--last-months INTEGER` | (from config, default none) | Show the last N calendar months as separate columns. Trend is suppressed. |
@@ -57,6 +58,13 @@ years = 3
 # min_contributions = 10  # hide operatives below this threshold
 # totals = false           # show Total column and footer row
 # percent = false          # annotate cells with (N%) share of year total
+
+# Named teams — select one at runtime with --team <name>
+[teams.platform]
+users = ["alice", "bob"]
+
+[teams.backend]
+users = ["carol", "dave"]
 ```
 
-CLI flags `--users`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).
+CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).

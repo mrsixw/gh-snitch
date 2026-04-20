@@ -49,6 +49,7 @@ make build
 | Flag | Description |
 |---|---|
 | `--users` | Comma-separated usernames (overrides config) |
+| `--team` | Select a named team from config (see `[teams.*]` in config file); overridden by `--users` |
 | `--years` | Number of prior years (overrides config) |
 | `--period` | Report on a named window: `week`, `month`, or `year` (overrides `--years`) |
 | `--last-months N` | Show last N calendar months as separate columns |

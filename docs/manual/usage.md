@@ -16,6 +16,35 @@ Override or supplement your config file using `--users`:
 gh-snitch --users octocat,torvalds,gvanrossum
 ```
 
+## Surveilling a Named Team
+
+Define named teams in your config file under `[teams.<name>]`:
+
+```toml
+[teams.platform]
+users = ["alice", "bob"]
+
+[teams.backend]
+users = ["carol", "dave"]
+```
+
+Then select a team at runtime with `--team`:
+
+```bash
+gh-snitch --team platform
+gh-snitch --team backend
+```
+
+This is equivalent to passing `--users alice,bob` (or whichever users are listed under that team), but lets you switch between pre-defined groups without editing config or typing out usernames each time.
+
+If you pass both `--team` and `--users`, `--users` wins — the team is ignored.
+
+If the team name is not found, gh-snitch exits with an error listing the known cells:
+
+```
+🚨 Team 'discovery' not found in config. Known cells: backend, platform.
+```
+
 ## Specifying Year Range
 
 Control how many prior years are included alongside the current year:

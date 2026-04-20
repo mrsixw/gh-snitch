@@ -112,6 +112,11 @@ def _movement_delta(previous_position, current_position):
     help="Comma-separated list of GitHub usernames to surveil.",
 )
 @click.option(
+    "--team",
+    default=None,
+    help="Surveil a named team from config (see [teams.*] in config file).",
+)
+@click.option(
     "--years",
     default=None,
     type=int,
@@ -217,6 +222,7 @@ def _movement_delta(previous_position, current_position):
 def gh_snitch(  # noqa: PLR0913
     config,
     users,
+    team,
     years,
     period,
     last_months,
@@ -290,6 +296,16 @@ def gh_snitch(  # noqa: PLR0913
     # Merge CLI overrides
     if users is not None:
         cfg["users"] = [u.strip() for u in users.split(",") if u.strip()]
+    elif team is not None:
+        teams = cfg.get("teams", {})
+        if team not in teams:
+            available = ", ".join(sorted(teams.keys())) or "none"
+            click.echo(
+                f"🚨 Team '{team}' not found in config. Known cells: {available}.",
+                err=True,
+            )
+            sys.exit(1)
+        cfg["users"] = teams[team]
     if years is not None:
         cfg["years"] = years
     if period is not None:
