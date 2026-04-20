@@ -45,6 +45,13 @@ years = 3
 
 # Output format: table (default), json, csv, or markdown.
 # format = "table"
+
+# Named cells (teams) — use with --team <name> to surveil a specific group.
+# [teams.backend]
+# users = ["octocat", "torvalds"]
+#
+# [teams.frontend]
+# users = ["gvanrossum"]
 """
 
 

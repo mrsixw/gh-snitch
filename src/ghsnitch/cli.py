@@ -276,6 +276,12 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"last_weeks = {cfg['last_weeks']}")
         click.echo(f"output_format = {cfg.get('output_format', 'table')}")
         click.echo(f"github_url = {cfg['github_url']}")
+        teams = cfg.get("teams", {})
+        if teams:
+            for team_name, members in sorted(teams.items()):
+                click.echo(f"teams.{team_name} = {members}")
+        else:
+            click.echo("teams = {}")
         return
 
     if not SECRET_GITHUB_TOKEN:
