@@ -43,7 +43,7 @@ years = 3
 # Annotate each cell with the operative's percentage share of that year's total.
 # percent = false
 
-# Output format: table (default), json, csv, or markdown.
+# Output format: table (default), json, csv, markdown, or graph.
 # format = "table"
 
 # Named cells (teams) — use with --team <name> to surveil a specific group.

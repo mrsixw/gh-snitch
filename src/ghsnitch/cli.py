@@ -23,10 +23,10 @@ from .api import (
 from .config import generate_default_config, load_config
 from .logger import setup_logging
 from .snapshot import clear_snapshot, load_snapshot, save_snapshot
-from .ui import render_csv, render_json, render_markdown, render_table
+from .ui import render_csv, render_graph, render_json, render_markdown, render_table
 from .updater import check_for_update
 
-VALID_FORMATS = ("table", "json", "csv", "markdown")
+VALID_FORMATS = ("table", "json", "csv", "markdown", "graph")
 
 logger = logging.getLogger(__name__)
 
@@ -508,6 +508,22 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(render_csv(rows, year_labels, show_totals=show_totals), nl=False)
     elif active_format == "markdown":
         click.echo(render_markdown(rows, year_labels, show_totals=show_totals))
+    elif active_format == "graph":
+        if cfg.get("percent"):
+            click.echo(
+                "⚠️  --percent is ignored in graph format.",
+                err=True,
+            )
+        if show_totals:
+            click.echo(
+                "⚠️  --totals is ignored in graph format (no footer rows in charts).",
+                err=True,
+            )
+        click.echo(
+            render_graph(
+                rows, year_labels, show_totals=show_totals, delta_col=delta_col
+            )
+        )
     else:
         table = render_table(
             rows,
