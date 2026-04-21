@@ -1,3 +1,4 @@
+import hashlib
 import importlib.metadata
 import logging
 import math
@@ -257,18 +258,14 @@ def gh_snitch(  # noqa: PLR0913
         github_url,
     )
 
-    if reset_snapshot:
-        clear_snapshot()
-        click.echo("🗑️  Snapshot cleared. Operative history wiped.", err=True)
-        return
-
     if init_config:
         path = generate_default_config(config)
         click.echo(f"🗂️  Handler config established at: {path}", err=True)
         return
 
+    cfg = load_config(config)
+
     if show_config:
-        cfg = load_config(config)
         click.echo(f"users = {cfg['users']}")
         click.echo(f"years = {cfg['years']}")
         click.echo(f"period = {cfg['period']}")
@@ -283,16 +280,6 @@ def gh_snitch(  # noqa: PLR0913
         else:
             click.echo("teams = {}")
         return
-
-    if not SECRET_GITHUB_TOKEN:
-        click.echo(
-            "🚨 GITHUB_TOKEN not set. "
-            "Operatives cannot be surveilled without credentials.",
-            err=True,
-        )
-        sys.exit(1)
-
-    cfg = load_config(config)
 
     # Validate --since / --until before touching config.
     if until is not None and since is None:
@@ -312,6 +299,32 @@ def gh_snitch(  # noqa: PLR0913
             )
             sys.exit(1)
         cfg["users"] = teams[team]
+
+    operative_list = cfg["users"]
+
+    # Calculate context ID for partitioned snapshot caching.
+    context_id = None
+    if team:
+        context_id = f"team-{team}"
+    elif operative_list:
+        # For ad-hoc user lists, use a hash of the sorted members.
+        user_key = ",".join(sorted(operative_list))
+        user_hash = hashlib.sha256(user_key.encode()).hexdigest()[:12]
+        context_id = f"u-{user_hash}"
+
+    if reset_snapshot:
+        clear_snapshot(context_id)
+        click.echo("🗑️  Snapshot cleared. Operative history wiped.", err=True)
+        return
+
+    if not SECRET_GITHUB_TOKEN:
+        click.echo(
+            "🚨 GITHUB_TOKEN not set. "
+            "Operatives cannot be surveilled without credentials.",
+            err=True,
+        )
+        sys.exit(1)
+
     if years is not None:
         cfg["years"] = years
     if period is not None:
@@ -448,6 +461,7 @@ def gh_snitch(  # noqa: PLR0913
             },
             ranks=current_ranks,
             positions=current_positions,
+            context_id=context_id,
         )
 
     # Compute visible leaderboard movement from tie-aware position scores.
