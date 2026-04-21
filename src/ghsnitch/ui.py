@@ -538,6 +538,7 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
     x_indices = list(range(len(x_labels)))
 
     plt.clf()
+    plt.theme("clear")
 
     # Sort rows by current-year count (descending) to match table order
     current_year_label = year_labels[0]
