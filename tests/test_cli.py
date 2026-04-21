@@ -1216,3 +1216,67 @@ def test_team_snapshots_are_partitioned(runner, tmp_path, requests_mock):
     # Ad-hoc snapshots use a hash (u-...)
     hashed_snaps = list(tmp_path.glob("snapshot-u-*.json"))
     assert len(hashed_snaps) == 1
+
+
+def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
+    """Verify that running with --team loads the team-specific snapshot.
+
+    On the second run the operatives should show '=' (unchanged) not 'new',
+    proving that load_snapshot receives the correct context_id.
+    """
+    from datetime import date
+
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.alpha]\nusers = ["alice", "bob"]\n' "[surveillance]\nyears = 0\n"
+    )
+
+    current_year = str(date.today().year)
+    contributions = {
+        "alice": {current_year: 50},
+        "bob": {current_year: 30},
+    }
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                with patch(
+                    "ghsnitch.cli.fetch_contributions",
+                    return_value=(contributions, []),
+                ):
+                    # First run — creates the team snapshot.
+                    result1 = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--team",
+                            "alpha",
+                            "--no-update-check",
+                            "--no-trend",
+                        ],
+                    )
+                    assert result1.exit_code == 0
+
+                    # Snapshot file must exist for team-alpha.
+                    assert (tmp_path / "snapshot-team-alpha.json").exists()
+
+                    # Second run — should load the team snapshot, not the
+                    # default one. All operatives remain unchanged → "=".
+                    result2 = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--team",
+                            "alpha",
+                            "--no-update-check",
+                            "--no-trend",
+                        ],
+                    )
+
+    assert result2.exit_code == 0
+    # Both operatives should show "=" (rank unchanged), not "new".
+    assert "new" not in result2.output
+    assert "  1   =   alice" in result2.output
+    assert "  2   =   bob" in result2.output
