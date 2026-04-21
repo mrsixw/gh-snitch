@@ -1138,3 +1138,81 @@ def test_team_empty_users_shows_no_operatives_warning(runner, tmp_path):
                 ["--config", str(config_file), "--no-update-check", "--team", "empty"],
             )
     assert "No operatives" in result.output
+
+
+def test_team_snapshots_are_partitioned(runner, tmp_path, requests_mock):
+    """Verify that different teams and ad-hoc lists use distinct snapshot files."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.alpha]\nusers = ["alice"]\n'
+        '[teams.beta]\nusers = ["bob"]\n'
+        "[surveillance]\nyears = 0\n"
+    )
+
+    # Mock response for alice (alpha) and bob (beta)
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 10}
+                    },
+                },
+                "user_bob": {
+                    "login": "bob",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 20}
+                    },
+                },
+            }
+        },
+    )
+
+    # We patch CACHE_DIR but NOT _get_snapshot_path so we can see the real filenames
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                # 1. Run for team alpha
+                runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--team",
+                        "alpha",
+                        "--no-update-check",
+                    ],
+                )
+                # 2. Run for team beta
+                runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--team",
+                        "beta",
+                        "--no-update-check",
+                    ],
+                )
+                # 3. Run for ad-hoc user list
+                runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--users",
+                        "alice,bob",
+                        "--no-update-check",
+                    ],
+                )
+
+    # Verify three distinct files exist
+    # Team snapshots use the team name
+    assert (tmp_path / "snapshot-team-alpha.json").exists()
+    assert (tmp_path / "snapshot-team-beta.json").exists()
+
+    # Ad-hoc snapshots use a hash (u-...)
+    hashed_snaps = list(tmp_path.glob("snapshot-u-*.json"))
+    assert len(hashed_snaps) == 1
