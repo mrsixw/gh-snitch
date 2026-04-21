@@ -274,17 +274,17 @@ format = "json"
 
 ## Terminal Graph Output
 
-Render contribution data as a grouped horizontal bar chart directly in the terminal:
+Render contribution data as a time-series line graph directly in the terminal:
 
 ```bash
 gh-snitch --users alice,bob --years 3 --format graph
 ```
 
-This provides a visual alternative to the ranked table, using `plotext` to generate coloured bars.
+This provides a visual alternative to the ranked table, using `plotext` to generate coloured trend lines.
 
-- **Y-axis:** Operatives (ranked descending by current-period count)
-- **X-axis:** Contribution count
-- **Bars:** Grouped and colour-coded per time period
+- **X-axis:** Time Period (chronological)
+- **Y-axis:** Contribution count
+- **Lines:** One line per operative, colour-coded
 
 It supports all time-period options:
 

@@ -529,9 +529,15 @@ def render_table(
 
 
 def render_graph(rows, year_labels, show_totals=False, delta_col=None):
-    """Render contribution data as a grouped horizontal bar chart string."""
+    """Render contribution data as a time-series line graph string."""
     if not rows:
         return "(no operatives configured)"
+
+    # Time periods on X-axis, chronological order
+    x_labels = list(reversed(year_labels))
+    x_indices = list(range(len(x_labels)))
+
+    plt.clf()
 
     # Sort rows by current-year count (descending) to match table order
     current_year_label = year_labels[0]
@@ -539,38 +545,25 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
         rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
     )
 
-    # Operatives on Y-axis (plotext bar is usually vertical, so use hbar)
-    # Actually, plotext.bar(labels, values) is vertical.
-    # For horizontal, use plt.bar(labels, values, orientation="h") or plt.hbar
-
-    usernames = [r["username"] for r in sorted_rows]
-    # Reverse to have highest at the top of the horizontal chart
-    usernames.reverse()
-    sorted_rows_rev = list(reversed(sorted_rows))
-
-    plt.clf()
-
     # Adjust plot size based on terminal dimensions
     try:
         width, height = os.get_terminal_size()
-        # Ensure we don't exceed terminal height if too many operatives
-        # A good heuristic is 2-3 lines per operative for grouped bars
-        required_height = len(usernames) * (len(year_labels) + 1) + 5
-        plt.plot_size(width, max(20, min(height - 2, required_height)))
+        plt.plot_size(width, max(20, height - 2))
     except (OSError, AttributeError):
         plt.plot_size(80, 20)
 
     # plotext colors: 'green', 'blue', 'cyan', 'magenta', 'yellow', 'red', 'white'
-    colors = ["green", "blue", "cyan", "magenta", "yellow", "red"]
+    colors = ["green", "blue", "cyan", "magenta", "yellow", "red", "white"]
 
-    for i, label in enumerate(year_labels):
-        values = [r.get(label, 0) for r in sorted_rows_rev]
+    for i, row in enumerate(sorted_rows):
+        y = [row.get(label, 0) for label in x_labels]
         color = colors[i % len(colors)]
-        plt.bar(usernames, values, label=label, color=color, orientation="h")
+        plt.plot(x_indices, y, label=row["username"], color=color)
 
-    plt.title("📊 Surveillance Graph — Operative Activity")
-    plt.xlabel("Contribution Count")
-    plt.ylabel("Operative")
+    plt.xticks(x_indices, x_labels)
+    plt.title("📈 Surveillance Graph — Operative Trends")
+    plt.xlabel("Time Period")
+    plt.ylabel("Contribution Count")
 
     output = plt.build()
     if not IS_TTY:
