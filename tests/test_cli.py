@@ -638,7 +638,10 @@ def test_period_week_renders_this_week_column(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._get_snapshot_path", return_value=tmp_path / "snap.json"):
+            with patch(
+                "ghsnitch.snapshot._get_snapshot_path",
+                return_value=tmp_path / "snap.json",
+            ):
                 with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
                     result = runner.invoke(
                         gh_snitch,
@@ -665,7 +668,10 @@ def test_period_month_renders_this_month_column(runner, tmp_path, requests_mock)
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._get_snapshot_path", return_value=tmp_path / "snap.json"):
+            with patch(
+                "ghsnitch.snapshot._get_snapshot_path",
+                return_value=tmp_path / "snap.json",
+            ):
                 with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
                     result = runner.invoke(
                         gh_snitch,
@@ -692,7 +698,10 @@ def test_period_year_renders_this_year_column(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._get_snapshot_path", return_value=tmp_path / "snap.json"):
+            with patch(
+                "ghsnitch.snapshot._get_snapshot_path",
+                return_value=tmp_path / "snap.json",
+            ):
                 with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
                     result = runner.invoke(
                         gh_snitch,
@@ -719,7 +728,10 @@ def test_period_from_config_file(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._get_snapshot_path", return_value=tmp_path / "snap.json"):
+            with patch(
+                "ghsnitch.snapshot._get_snapshot_path",
+                return_value=tmp_path / "snap.json",
+            ):
                 with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
                     result = runner.invoke(
                         gh_snitch,
@@ -742,7 +754,10 @@ def test_period_makes_single_api_call(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._get_snapshot_path", return_value=tmp_path / "snap.json"):
+            with patch(
+                "ghsnitch.snapshot._get_snapshot_path",
+                return_value=tmp_path / "snap.json",
+            ):
                 with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
                     result = runner.invoke(
                         gh_snitch,
@@ -773,7 +788,10 @@ def _make_config(tmp_path, years=0):
 def _run(runner, config_file, tmp_path, extra_args):
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._get_snapshot_path", return_value=tmp_path / "snap.json"):
+            with patch(
+                "ghsnitch.snapshot._get_snapshot_path",
+                return_value=tmp_path / "snap.json",
+            ):
                 with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
                     base = ["--config", str(config_file), "--no-update-check"]
                     return runner.invoke(gh_snitch, base + extra_args)
@@ -784,7 +802,10 @@ def _run_separated(config_file, tmp_path, extra_args):
     sep_runner = CliRunner()
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._get_snapshot_path", return_value=tmp_path / "snap.json"):
+            with patch(
+                "ghsnitch.snapshot._get_snapshot_path",
+                return_value=tmp_path / "snap.json",
+            ):
                 with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
                     base = ["--config", str(config_file), "--no-update-check"]
                     return sep_runner.invoke(gh_snitch, base + extra_args)

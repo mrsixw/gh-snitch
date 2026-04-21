@@ -14,7 +14,9 @@ def _get_snapshot_path(context_id=None):
     if context_id is None:
         return _DEFAULT_SNAPSHOT_FILE
     # Sanitize context_id to prevent path traversal, though it's likely safe.
-    safe_id = "".join(c for c in str(context_id) if c.isalnum() or c in ("-", "_")).strip()
+    safe_id = "".join(
+        c for c in str(context_id) if c.isalnum() or c in ("-", "_")
+    ).strip()
     return CACHE_DIR / f"snapshot-{safe_id}.json"
 
 

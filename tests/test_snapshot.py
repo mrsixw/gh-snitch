@@ -86,8 +86,9 @@ def test_save_snapshot_creates_parent_dirs(tmp_path):
     with patch("ghsnitch.snapshot.CACHE_DIR", cache_dir):
         with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
             from ghsnitch.snapshot import save_snapshot
+
             save_snapshot({"bob": {"2026": 5}})
-    
+
     assert snap.exists()
 
 
@@ -143,7 +144,9 @@ def test_clear_snapshot_deletes_file(tmp_path):
 
 
 def test_clear_snapshot_partitioned(tmp_path):
-    snap = _make_snapshot_file(tmp_path, {"contributions": {}}, "snapshot-team-gamma.json")
+    snap = _make_snapshot_file(
+        tmp_path, {"contributions": {}}, "snapshot-team-gamma.json"
+    )
     with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
         from ghsnitch.snapshot import clear_snapshot
 
