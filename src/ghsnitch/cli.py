@@ -447,7 +447,7 @@ def gh_snitch(  # noqa: PLR0913
     # Load the previous snapshot before potentially overwriting it.
     # Snapshot is only saved on non-delta runs so the baseline stays pinned;
     # repeated --delta invocations compare against the same fixed point.
-    prev_snapshot = load_snapshot()
+    prev_snapshot = load_snapshot(context_id)
 
     # Compute current rank metadata using the same sort order as render_table.
     current_year_label = year_labels[0]
