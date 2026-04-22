@@ -1,4 +1,3 @@
-import hashlib
 import importlib.metadata
 import logging
 import math
@@ -23,7 +22,7 @@ from .api import (
 )
 from .config import generate_default_config, load_config
 from .logger import setup_logging
-from .snapshot import clear_snapshot, load_snapshot, save_snapshot
+from .snapshot import clear_snapshot, compute_scope, load_snapshot, save_snapshot
 from .ui import render_csv, render_json, render_markdown, render_table
 from .updater import check_for_update
 
@@ -302,19 +301,9 @@ def gh_snitch(  # noqa: PLR0913
 
     operative_list = cfg["users"]
 
-    # Calculate context ID for partitioned snapshot caching.
-    context_id = None
-    if team:
-        context_id = f"team-{team}"
-    elif operative_list:
-        # For ad-hoc user lists, use a hash of the sorted members.
-        user_key = ",".join(sorted(operative_list))
-        user_hash = hashlib.sha256(user_key.encode()).hexdigest()[:12]
-        context_id = f"u-{user_hash}"
-
     if reset_snapshot:
-        clear_snapshot(context_id)
-        click.echo("🗑️  Snapshot cleared. Operative history wiped.", err=True)
+        clear_snapshot()  # clears all scoped + legacy snapshots
+        click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
         return
 
     if not SECRET_GITHUB_TOKEN:
@@ -352,6 +341,10 @@ def gh_snitch(  # noqa: PLR0913
     active_last_months = cfg.get("last_months")
     active_last_weeks = cfg.get("last_weeks")
     operative_github_url = cfg["github_url"]
+
+    # Scope snapshots by the resolved user cohort + GitHub instance so rank
+    # movement only compares against the same group of operatives.
+    snapshot_scope = compute_scope(operative_list, operative_github_url)
 
     logger.info(
         "effective config operatives=%s years=%s period=%s "
@@ -447,7 +440,7 @@ def gh_snitch(  # noqa: PLR0913
     # Load the previous snapshot before potentially overwriting it.
     # Snapshot is only saved on non-delta runs so the baseline stays pinned;
     # repeated --delta invocations compare against the same fixed point.
-    prev_snapshot = load_snapshot(context_id)
+    prev_snapshot = load_snapshot(scope=snapshot_scope)
 
     # Compute current rank metadata using the same sort order as render_table.
     current_year_label = year_labels[0]
@@ -461,7 +454,7 @@ def gh_snitch(  # noqa: PLR0913
             },
             ranks=current_ranks,
             positions=current_positions,
-            context_id=context_id,
+            scope=snapshot_scope,
         )
 
     # Compute visible leaderboard movement from tie-aware position scores.
