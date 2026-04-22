@@ -55,7 +55,8 @@ years = 3
 """
 
 
-def _default_config_path():
+def get_config_path():
+    """Return the default path for the configuration file."""
     return CONFIG_DIR / "config.toml"
 
 
@@ -65,7 +66,7 @@ def load_config(config_path=None):
     Returns dict with keys 'users', 'years', 'teams', and more.
     Warns (does not error) if the file is not found.
     """
-    path = Path(config_path) if config_path else _default_config_path()
+    path = Path(config_path) if config_path else get_config_path()
     config = {
         "users": [],
         "years": 3,
@@ -144,7 +145,7 @@ def load_config(config_path=None):
 
 def generate_default_config(config_path=None):
     """Write default config template to disk. Returns the path used."""
-    path = Path(config_path) if config_path else _default_config_path()
+    path = Path(config_path) if config_path else get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_DEFAULT_CONFIG_TEMPLATE)
     return path

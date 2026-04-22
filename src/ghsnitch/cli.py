@@ -1,8 +1,10 @@
 import importlib.metadata
 import logging
 import math
+import shutil
 import sys
 import time
+from pathlib import Path
 
 import click
 import requests
@@ -20,7 +22,7 @@ from .api import (
     get_rolling_week_ranges,
     get_year_ranges,
 )
-from .config import generate_default_config, load_config
+from .config import generate_default_config, get_config_path, load_config
 from .logger import setup_logging
 from .snapshot import clear_snapshot, compute_scope, load_snapshot, save_snapshot
 from .ui import render_csv, render_json, render_markdown, render_table
@@ -258,6 +260,16 @@ def gh_snitch(  # noqa: PLR0913
     )
 
     if init_config:
+        path = Path(config) if config else get_config_path()
+        if path.exists():
+            click.confirm(
+                f"🚨 Operative config already exists at {path}. Overwrite and backup?",
+                abort=True,
+            )
+            backup = path.with_suffix(path.suffix + ".bak")
+            shutil.copy(path, backup)
+            click.echo(f"📦 Original dossier secured at: {backup}", err=True)
+
         path = generate_default_config(config)
         click.echo(f"🗂️  Handler config established at: {path}", err=True)
         return
