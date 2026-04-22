@@ -1280,3 +1280,51 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
     assert "new" not in result2.output
     assert "  1   =   alice" in result2.output
     assert "  2   =   bob" in result2.output
+
+
+def test_init_config_aborts_if_declined(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("original content")
+
+    # input="n" to decline confirmation
+    result = runner.invoke(
+        gh_snitch, ["--init-config", "--config", str(config_path)], input="n\n"
+    )
+
+    assert result.exit_code != 0  # click.confirm(abort=True) exits non-zero on "n"
+    assert config_path.read_text() == "original content"
+    assert not (tmp_path / "config.toml.bak").exists()
+
+
+def test_init_config_overwrites_and_backups_if_confirmed(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("original content")
+
+    # input="y" to confirm overwrite
+    result = runner.invoke(
+        gh_snitch, ["--init-config", "--config", str(config_path)], input="y\n"
+    )
+
+    assert result.exit_code == 0
+    assert "secured" in result.output
+    assert "established" in result.output
+
+    # Verify backup exists and has original content
+    backup_path = tmp_path / "config.toml.bak"
+    assert backup_path.exists()
+    assert backup_path.read_text() == "original content"
+
+    # Verify main file is now the template
+    assert "gh-snitch configuration" in config_path.read_text()
+
+
+def test_init_config_no_prompt_if_missing(runner, tmp_path):
+    config_path = tmp_path / "new_config.toml"
+
+    # Should not prompt if file does not exist
+    result = runner.invoke(gh_snitch, ["--init-config", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "established" in result.output
+    assert config_path.exists()
+    assert not (tmp_path / "new_config.toml.bak").exists()
