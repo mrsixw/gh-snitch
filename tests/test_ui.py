@@ -730,7 +730,7 @@ def test_render_graph_basic():
     assert len(output) > 0
     assert "alice" in output
     assert "bob" in output
-    assert "Surveillance Graph" in output
+    assert "OPERATIVE SURVEILLANCE DOSSIER" in output
 
 
 def test_render_graph_single_operative():

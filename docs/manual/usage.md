@@ -280,7 +280,7 @@ Render contribution data as a time-series line graph directly in the terminal:
 gh-snitch --users alice,bob --years 3 --format graph
 ```
 
-This provides a visual alternative to the ranked table, using `plotext` to generate coloured trend lines.
+This provides a visual alternative to the ranked table, using `asciichartpy` to generate coloured trend lines.
 
 - **X-axis:** Time Period (chronological)
 - **Y-axis:** Contribution count

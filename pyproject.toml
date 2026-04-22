@@ -15,7 +15,7 @@ dependencies = [
     "requests",
     "tabulate",
     "rich",
-    "plotext",
+    "asciichartpy",
 ]
 [project.scripts]
 gh-snitch = "ghsnitch.cli:gh_snitch"

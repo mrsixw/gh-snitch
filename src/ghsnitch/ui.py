@@ -6,7 +6,7 @@ import re
 import sys
 from datetime import datetime
 
-import plotext as plt
+import asciichartpy as ac
 import tabulate as _tabulate_module
 from tabulate import tabulate
 
@@ -535,10 +535,6 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
 
     # Time periods on X-axis, chronological order
     x_labels = list(reversed(year_labels))
-    x_indices = list(range(len(x_labels)))
-
-    plt.clf()
-    plt.theme("clear")
 
     # Sort rows by current-year count (descending) to match table order
     current_year_label = year_labels[0]
@@ -546,29 +542,50 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
         rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
     )
 
-    # Adjust plot size based on terminal dimensions
+    # Prepare data for asciichartpy (list of lists)
+    all_series = []
+    for row in sorted_rows:
+        series = [float(row.get(label, 0)) for label in x_labels]
+        all_series.append(series)
+
+    # Curate colors from asciichartpy
+    ac_colors = [
+        ac.lightcyan,
+        ac.lightmagenta,
+        ac.lightgreen,
+        ac.lightyellow,
+        ac.lightblue,
+        ac.lightred,
+        ac.white,
+    ]
+
+    # Adjust graph height based on terminal or defaults
     try:
-        width, height = os.get_terminal_size()
-        plt.plot_size(width, max(20, height - 2))
+        _, height = os.get_terminal_size()
+        graph_height = max(10, min(height - 10, 20))
     except (OSError, AttributeError):
-        plt.plot_size(80, 20)
+        graph_height = 10
 
-    # plotext colors: 'green', 'blue', 'cyan', 'magenta', 'yellow', 'red', 'white'
-    colors = ["green", "blue", "cyan", "magenta", "yellow", "red", "white"]
+    config = {
+        "height": graph_height,
+        "colors": [ac_colors[i % len(ac_colors)] for i in range(len(sorted_rows))],
+    }
 
+    # Generate the plot
+    plot_output = ac.plot(all_series, config)
+
+    # Construct the title and legend
+    title = f"\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — TREND ANALYSIS ({' – '.join(x_labels)})\n"
+    
+    legend_items = []
+    reset = "\033[0m"
     for i, row in enumerate(sorted_rows):
-        y = [row.get(label, 0) for label in x_labels]
-        color = colors[i % len(colors)]
-        plt.plot(x_indices, y, label=row["username"], color=color)
+        color_code = ac_colors[i % len(ac_colors)]
+        if not IS_TTY:
+            color_code = ""
+            reset = ""
+        legend_items.append(f"{color_code}{row['username']}{reset}")
 
-    plt.xticks(x_indices, x_labels)
-    plt.title("📈 Surveillance Graph — Operative Trends")
-    plt.xlabel("Time Period")
-    plt.ylabel("Contribution Count")
-
-    output = plt.build()
-    if not IS_TTY:
-        output = plt.uncolorize(output)
-
-    plt.clf()
-    return output
+    legend = "          " + ", ".join(legend_items) + "\n"
+    
+    return f"{title}\n{plot_output}\n\n{legend}"

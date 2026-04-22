@@ -69,4 +69,4 @@ users = ["carol", "dave"]
 
 CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).
 
-**Note on Graph Format:** The `graph` format uses `plotext` to render a line graph in the terminal. When using `graph`, the `--totals` and `--percent` flags are ignored.
+**Note on Graph Format:** The `graph` format uses `asciichartpy` to render a line graph in the terminal. When using `graph`, the `--totals` and `--percent` flags are ignored.
