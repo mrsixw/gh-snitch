@@ -26,7 +26,6 @@ from .api import (
 )
 from .config import generate_default_config, get_config_path, load_config
 from .logger import setup_logging
-<<<<<<< HEAD
 from .snapshot import (
     clear_all_snapshots,
     compute_scope,
@@ -34,10 +33,6 @@ from .snapshot import (
     save_snapshot,
 )
 from .ui import render_csv, render_graph, render_json, render_markdown, render_table
-=======
-from .snapshot import clear_snapshot, compute_scope, load_snapshot, save_snapshot
-from .ui import render_csv, render_json, render_markdown, render_table
->>>>>>> origin/main
 from .updater import check_for_update
 
 VALID_FORMATS = ("table", "json", "csv", "markdown", "graph")
@@ -230,17 +225,10 @@ def _backup_config(path: Path):
     help="Annotate each cell with the operative's (N%) share of that year's total.",
 )
 @click.option(
-<<<<<<< HEAD
     "--no-rank-delta",
     is_flag=True,
     default=False,
     help="Hide the ± column showing rank change since the last run.",
-=======
-    "--rank-delta",
-    is_flag=True,
-    default=False,
-    help="Show a ± column with each operative's rank change since the last run.",
->>>>>>> origin/main
 )
 @click.option(
     "--delta",
@@ -281,11 +269,7 @@ def gh_snitch(  # noqa: PLR0913
     min_contributions,
     totals,
     percent,
-<<<<<<< HEAD
     no_rank_delta,
-=======
-    rank_delta,
->>>>>>> origin/main
     delta,
     reset_snapshot,
     output_format,
@@ -381,7 +365,6 @@ def gh_snitch(  # noqa: PLR0913
 
     operative_list = cfg["users"]
 
-<<<<<<< HEAD
     # Calculate context ID for partitioned snapshot caching.
     context_id = None
     if team:
@@ -394,10 +377,6 @@ def gh_snitch(  # noqa: PLR0913
 
     if reset_snapshot:
         clear_all_snapshots()
-=======
-    if reset_snapshot:
-        clear_snapshot()  # clears all scoped + legacy snapshots
->>>>>>> origin/main
         click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
         return
 
@@ -425,19 +404,13 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
-<<<<<<< HEAD
     if no_rank_delta:
         cfg["rank_delta"] = False
-=======
-    if rank_delta:
-        cfg["rank_delta"] = True
->>>>>>> origin/main
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
 
     active_format = cfg.get("output_format", "table")
 
-    operative_list = cfg["users"]
     num_years = cfg["years"]
     active_period = cfg.get("period")
     active_last_months = cfg.get("last_months")
@@ -542,11 +515,7 @@ def gh_snitch(  # noqa: PLR0913
     # Load the previous snapshot before potentially overwriting it.
     # Snapshot is only saved on non-delta runs so the baseline stays pinned;
     # repeated --delta invocations compare against the same fixed point.
-<<<<<<< HEAD
     prev_snapshot = load_snapshot(scope=snapshot_scope, context_id=context_id)
-=======
-    prev_snapshot = load_snapshot(scope=snapshot_scope)
->>>>>>> origin/main
 
     # Compute current rank metadata using the same sort order as render_table.
     current_year_label = year_labels[0]
@@ -561,10 +530,7 @@ def gh_snitch(  # noqa: PLR0913
             ranks=current_ranks,
             positions=current_positions,
             scope=snapshot_scope,
-<<<<<<< HEAD
             context_id=context_id,
-=======
->>>>>>> origin/main
         )
 
     # Compute visible leaderboard movement from tie-aware position scores.
@@ -649,11 +615,7 @@ def gh_snitch(  # noqa: PLR0913
             show_trend=not no_trend and delta_col is None and not suppress_trend,
             show_totals=show_totals,
             show_percent=cfg.get("percent", False),
-<<<<<<< HEAD
             show_rank_delta=cfg.get("rank_delta", True),
-=======
-            show_rank_delta=cfg.get("rank_delta", False),
->>>>>>> origin/main
             delta_col=delta_col,
             rank_deltas=rank_deltas,
         )
