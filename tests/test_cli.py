@@ -616,11 +616,11 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
                         [
                             "--config",
                             str(config_file),
+                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
                     )
-
     assert result.exit_code == 0
     assert "alice" in result.output
     assert "bob" in result.output
@@ -1229,6 +1229,7 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
                             str(config_file),
                             "--team",
                             "alpha",
+                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
@@ -1247,11 +1248,11 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
                             str(config_file),
                             "--team",
                             "alpha",
+                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
                     )
-
     assert result2.exit_code == 0
     # Both operatives should show "=" (rank unchanged), not "new".
     assert "new" not in result2.output
@@ -1305,3 +1306,98 @@ def test_init_config_no_prompt_if_missing(runner, tmp_path):
     assert "established" in result.output
     assert config_path.exists()
     assert not (tmp_path / "new_config.toml.bak").exists()
+
+
+def test_update_config_appends_missing_key(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    # Create config missing rank_delta
+    config_path.write_text("[display]\ntotals = false\n")
+
+    result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Added" in result.output
+    assert "display.rank_delta" in result.output
+
+    content = config_path.read_text()
+    assert "[display]" in content
+    assert "totals = false" in content
+    assert "# rank_delta =" in content
+    assert "(added by --update-config)" in content
+
+
+def test_update_config_no_op_if_up_to_date(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    # Write full template
+    from ghsnitch.config import generate_default_config
+
+    generate_default_config(str(config_path))
+
+    # Manually uncomment rank_delta so it exists
+    content = config_path.read_text().replace(
+        "# rank_delta = false", "rank_delta = true"
+    )
+    config_path.write_text(content)
+
+    result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "already up to date" in result.output
+
+
+def test_update_config_backups_existing(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("old content")
+
+    runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    backup = tmp_path / "config.toml.bak"
+    assert backup.exists()
+    assert backup.read_text() == "old content"
+
+
+def test_update_config_missing_file_errors(runner, tmp_path):
+    config_path = tmp_path / "missing.toml"
+    result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    assert result.exit_code != 0
+    assert "No config file found" in result.output
+
+
+def test_rank_delta_column_hidden_by_default(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    # Mock response
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 10}
+                    },
+                }
+            }
+        },
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            # Run once to create snapshot
+            runner.invoke(
+                gh_snitch, ["--config", str(config_file), "--no-update-check"]
+            )
+            # Run again — should NOT show ± by default
+            result = runner.invoke(
+                gh_snitch, ["--config", str(config_file), "--no-update-check"]
+            )
+            assert "±" not in result.output
+
+            # Run with --rank-delta — SHOULD show ±
+            result_with_delta = runner.invoke(
+                gh_snitch,
+                ["--config", str(config_file), "--rank-delta", "--no-update-check"],
+            )
+            assert "±" in result_with_delta.output
