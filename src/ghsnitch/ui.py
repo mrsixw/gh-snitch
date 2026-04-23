@@ -6,6 +6,7 @@ import re
 import sys
 from datetime import datetime
 
+import asciichartpy as ac
 import tabulate as _tabulate_module
 from tabulate import tabulate
 
@@ -387,6 +388,7 @@ def render_table(
     show_trend=True,
     show_totals=False,
     show_percent=False,
+    show_rank_delta=True,
     delta_col=None,
     rank_deltas=None,
 ):
@@ -400,6 +402,7 @@ def render_table(
         show_trend: whether to include the Trend column (requires >= 2 year labels)
         show_totals: whether to add a Total column per operative and a Total footer row
         show_percent: whether to annotate each cell with (N%) share of that year's total
+        show_rank_delta: whether to show the ± column (default: True)
         delta_col: label of the column whose values are deltas (rendered with +/- and
             green/red colouring instead of percentile-based grading)
         rank_deltas: optional dict[username, int | None] mapping each operative to their
@@ -439,7 +442,7 @@ def render_table(
                 for r in sorted_rows
             ]
 
-    show_rank_delta = rank_deltas is not None
+    show_rank_delta = show_rank_delta and rank_deltas is not None
     headers = (
         ["#"]
         + (["±"] if show_rank_delta else [])
@@ -525,3 +528,70 @@ def render_table(
         tablefmt="simple",
         colalign=colalign,
     )
+
+
+def render_graph(rows, year_labels, show_totals=False, delta_col=None):
+    """Render contribution data as a time-series line graph string."""
+    if not rows:
+        return "(no operatives configured)"
+
+    # Time periods on X-axis, chronological order
+    x_labels = list(reversed(year_labels))
+
+    # Sort rows by current-year count (descending) to match table order
+    current_year_label = year_labels[0]
+    sorted_rows = sorted(
+        rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
+    )
+
+    # Prepare data for asciichartpy (list of lists)
+    all_series = []
+    for row in sorted_rows:
+        series = [float(row.get(label, 0)) for label in x_labels]
+        all_series.append(series)
+
+    # Curate colors from asciichartpy
+    ac_colors = [
+        ac.lightcyan,
+        ac.lightmagenta,
+        ac.lightgreen,
+        ac.lightyellow,
+        ac.lightblue,
+        ac.lightred,
+        ac.white,
+    ]
+
+    # Adjust graph height based on terminal or defaults
+    try:
+        _, height = os.get_terminal_size()
+        graph_height = max(10, min(height - 10, 20))
+    except (OSError, AttributeError):
+        graph_height = 10
+
+    config = {
+        "height": graph_height,
+        "colors": [ac_colors[i % len(ac_colors)] for i in range(len(sorted_rows))],
+    }
+
+    # Generate the plot
+    plot_output = ac.plot(all_series, config)
+
+    # Construct the title and legend
+    labels_str = " – ".join(x_labels)
+    title = (
+        "\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — "
+        f"TREND ANALYSIS ({labels_str})\n"
+    )
+
+    legend_items = []
+    reset = "\033[0m"
+    for i, row in enumerate(sorted_rows):
+        color_code = ac_colors[i % len(ac_colors)]
+        if not IS_TTY:
+            color_code = ""
+            reset = ""
+        legend_items.append(f"{color_code}{row['username']}{reset}")
+
+    legend = "          " + ", ".join(legend_items) + "\n"
+
+    return f"{title}\n{plot_output}\n\n{legend}"

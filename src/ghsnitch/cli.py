@@ -2,14 +2,17 @@ import hashlib
 import importlib.metadata
 import logging
 import math
+import shutil
 import sys
 import time
+from pathlib import Path
 
 import click
 import requests
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
+from . import config as config_module
 from .api import (
     SECRET_GITHUB_TOKEN,
     VALID_PERIODS,
@@ -21,13 +24,18 @@ from .api import (
     get_rolling_week_ranges,
     get_year_ranges,
 )
-from .config import generate_default_config, load_config
+from .config import generate_default_config, get_config_path, load_config
 from .logger import setup_logging
-from .snapshot import clear_snapshot, load_snapshot, save_snapshot
-from .ui import render_csv, render_json, render_markdown, render_table
+from .snapshot import (
+    clear_all_snapshots,
+    compute_scope,
+    load_snapshot,
+    save_snapshot,
+)
+from .ui import render_csv, render_graph, render_json, render_markdown, render_table
 from .updater import check_for_update
 
-VALID_FORMATS = ("table", "json", "csv", "markdown")
+VALID_FORMATS = ("table", "json", "csv", "markdown", "graph")
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +113,16 @@ def _movement_delta(previous_position, current_position):
     return int(math.copysign(math.ceil(abs(raw_delta)), raw_delta))
 
 
+def _backup_config(path: Path):
+    """Create a backup of the config file, with timestamping if .bak exists."""
+    backup = path.with_suffix(path.suffix + ".bak")
+    if backup.exists():
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = path.with_suffix(f"{path.suffix}.{timestamp}.bak")
+    shutil.copy(path, backup)
+    return backup
+
+
 @click.command()
 @click.option("--config", default=None, help="Path to config file.")
 @click.option(
@@ -166,6 +184,12 @@ def _movement_delta(previous_position, current_position):
     help="Write a default config file and exit.",
 )
 @click.option(
+    "--update-config",
+    is_flag=True,
+    default=False,
+    help="Add missing keys from template to existing config and exit.",
+)
+@click.option(
     "--github-url",
     default=None,
     help="GitHub base URL (default: https://github.com). For GitHub Enterprise Server.",
@@ -201,6 +225,12 @@ def _movement_delta(previous_position, current_position):
     help="Annotate each cell with the operative's (N%) share of that year's total.",
 )
 @click.option(
+    "--no-rank-delta",
+    is_flag=True,
+    default=False,
+    help="Hide the ± column showing rank change since the last run.",
+)
+@click.option(
     "--delta",
     is_flag=True,
     default=False,
@@ -217,7 +247,7 @@ def _movement_delta(previous_position, current_position):
     "output_format",
     default=None,
     type=click.Choice(list(VALID_FORMATS), case_sensitive=False),
-    help="Output format: table (default), json, csv, or markdown.",
+    help="Output format: table (default), json, csv, markdown, or graph.",
 )
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
@@ -233,11 +263,13 @@ def gh_snitch(  # noqa: PLR0913
     github_url,
     show_config,
     init_config,
+    update_config,
     no_update_check,
     no_trend,
     min_contributions,
     totals,
     percent,
+    no_rank_delta,
     delta,
     reset_snapshot,
     output_format,
@@ -259,8 +291,39 @@ def gh_snitch(  # noqa: PLR0913
     )
 
     if init_config:
+        path = Path(config) if config else get_config_path()
+        if path.exists():
+            click.confirm(
+                f"🚨 Operative config already exists at {path}. Overwrite and backup?",
+                abort=True,
+            )
+            backup = _backup_config(path)
+            click.echo(f"📦 Original dossier secured at: {backup}", err=True)
+
         path = generate_default_config(config)
         click.echo(f"🗂️  Handler config established at: {path}", err=True)
+        return
+
+    if update_config:
+        path = Path(config) if config else get_config_path()
+        if not path.exists():
+            click.echo(
+                f"🚨 No config file found at {path} to update. "
+                "Run with --init-config to create one.",
+                err=True,
+            )
+            sys.exit(1)
+
+        backup = _backup_config(path)
+        click.echo(f"🗂️  Backed up current dossier to {backup}", err=True)
+
+        added = config_module.update_config(config)
+        if added:
+            click.echo(f"✅  Added {len(added)} new keys to your config:", err=True)
+            for key in sorted(added):
+                click.echo(f"    {key}", err=True)
+        else:
+            click.echo("✅  Config is already up to date.", err=True)
         return
 
     cfg = load_config(config)
@@ -313,8 +376,8 @@ def gh_snitch(  # noqa: PLR0913
         context_id = f"u-{user_hash}"
 
     if reset_snapshot:
-        clear_snapshot(context_id)
-        click.echo("🗑️  Snapshot cleared. Operative history wiped.", err=True)
+        clear_all_snapshots()
+        click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
         return
 
     if not SECRET_GITHUB_TOKEN:
@@ -341,6 +404,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
+    if no_rank_delta:
+        cfg["rank_delta"] = False
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
 
@@ -352,6 +417,10 @@ def gh_snitch(  # noqa: PLR0913
     active_last_months = cfg.get("last_months")
     active_last_weeks = cfg.get("last_weeks")
     operative_github_url = cfg["github_url"]
+
+    # Scope snapshots by the resolved user cohort + GitHub instance so rank
+    # movement only compares against the same group of operatives.
+    snapshot_scope = compute_scope(operative_list, operative_github_url)
 
     logger.info(
         "effective config operatives=%s years=%s period=%s "
@@ -447,7 +516,7 @@ def gh_snitch(  # noqa: PLR0913
     # Load the previous snapshot before potentially overwriting it.
     # Snapshot is only saved on non-delta runs so the baseline stays pinned;
     # repeated --delta invocations compare against the same fixed point.
-    prev_snapshot = load_snapshot()
+    prev_snapshot = load_snapshot(scope=snapshot_scope, context_id=context_id)
 
     # Compute current rank metadata using the same sort order as render_table.
     current_year_label = year_labels[0]
@@ -461,6 +530,7 @@ def gh_snitch(  # noqa: PLR0913
             },
             ranks=current_ranks,
             positions=current_positions,
+            scope=snapshot_scope,
             context_id=context_id,
         )
 
@@ -522,6 +592,22 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(render_csv(rows, year_labels, show_totals=show_totals), nl=False)
     elif active_format == "markdown":
         click.echo(render_markdown(rows, year_labels, show_totals=show_totals))
+    elif active_format == "graph":
+        if cfg.get("percent"):
+            click.echo(
+                "⚠️  --percent is ignored in graph format.",
+                err=True,
+            )
+        if show_totals:
+            click.echo(
+                "⚠️  --totals is ignored in graph format (no footer rows in charts).",
+                err=True,
+            )
+        click.echo(
+            render_graph(
+                rows, year_labels, show_totals=show_totals, delta_col=delta_col
+            )
+        )
     else:
         table = render_table(
             rows,
@@ -530,6 +616,7 @@ def gh_snitch(  # noqa: PLR0913
             show_trend=not no_trend and delta_col is None and not suppress_trend,
             show_totals=show_totals,
             show_percent=cfg.get("percent", False),
+            show_rank_delta=cfg.get("rank_delta", True),
             delta_col=delta_col,
             rank_deltas=rank_deltas,
         )

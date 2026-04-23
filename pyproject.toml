@@ -15,6 +15,7 @@ dependencies = [
   "requests",
   "tabulate",
   "rich",
+  "asciichartpy",
 ]
 
 [project.scripts]

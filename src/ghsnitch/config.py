@@ -43,7 +43,10 @@ years = 3
 # Annotate each cell with the operative's percentage share of that year's total.
 # percent = false
 
-# Output format: table (default), json, csv, or markdown.
+# Show a ± column with each operative's rank change since the last run.
+# rank_delta = true
+
+# Output format: table (default), json, csv, markdown, or graph.
 # format = "table"
 
 # Named cells (teams) — use with --team <name> to surveil a specific group.
@@ -55,7 +58,8 @@ years = 3
 """
 
 
-def _default_config_path():
+def get_config_path():
+    """Return the default path for the configuration file."""
     return CONFIG_DIR / "config.toml"
 
 
@@ -65,7 +69,7 @@ def load_config(config_path=None):
     Returns dict with keys 'users', 'years', 'teams', and more.
     Warns (does not error) if the file is not found.
     """
-    path = Path(config_path) if config_path else _default_config_path()
+    path = Path(config_path) if config_path else get_config_path()
     config = {
         "users": [],
         "years": 3,
@@ -76,6 +80,7 @@ def load_config(config_path=None):
         "min_contributions": 0,
         "totals": False,
         "percent": False,
+        "rank_delta": True,
         "output_format": "table",
         "teams": {},
     }
@@ -123,6 +128,8 @@ def load_config(config_path=None):
         config["totals"] = bool(display["totals"])
     if "percent" in display:
         config["percent"] = bool(display["percent"])
+    if "rank_delta" in display:
+        config["rank_delta"] = bool(display["rank_delta"])
     if "format" in display:
         config["output_format"] = str(display["format"])
 
@@ -144,7 +151,113 @@ def load_config(config_path=None):
 
 def generate_default_config(config_path=None):
     """Write default config template to disk. Returns the path used."""
-    path = Path(config_path) if config_path else _default_config_path()
+    path = Path(config_path) if config_path else get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_DEFAULT_CONFIG_TEMPLATE)
     return path
+
+
+def update_config(config_path=None):
+    """Add missing keys from template to existing config.
+
+    Returns a list of keys added.
+    """
+    import re
+
+    path = Path(config_path) if config_path else get_config_path()
+    if not path.exists():
+        return []
+
+    # Use tomllib to find what's actually ACTIVE in current config
+    try:
+        with open(path, "rb") as f:
+            active_data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        active_data = {}
+
+    def get_all_keys(data, prefix=""):
+        keys = set()
+        for k, v in data.items():
+            full_key = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict) and k != "teams":
+                keys.update(get_all_keys(v, full_key))
+            else:
+                keys.add(full_key)
+        return keys
+
+    active_keys = get_all_keys(active_data)
+    current_text = path.read_text()
+
+    # Also detect commented-out keys so we don't re-add them
+    commented_keys = set()
+    current_section = None
+    for line in current_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        section_match = re.match(r"^\[([\w.]+)\]", line)
+        if section_match:
+            current_section = section_match.group(1)
+            continue
+        # Match # key = or key =
+        key_match = re.match(r"^(?:#\s*)?([\w-]+)\s*=", line)
+        if key_match and current_section:
+            commented_keys.add(f"{current_section}.{key_match.group(1)}")
+
+    existing_keys = active_keys | commented_keys
+
+    # Parse template to find all keys and their help blocks
+    added_keys = []
+    new_text = current_text
+
+    template_sections = re.split(r"\n(?=\[[\w.]+\])", _DEFAULT_CONFIG_TEMPLATE)
+    for section_block in template_sections:
+        section_match = re.search(r"^\[([\w.]+)\]", section_block, re.MULTILINE)
+        if not section_match:
+            continue
+        section_name = section_match.group(1)
+
+        # Find all keys in this template section
+        # Look for: # help text\n# key = value  OR  key = value
+        # This regex catches:
+        # 1. Any number of help/comment lines (Group 1)
+        # 2. An optional '# ' prefix for the key (Group 2)
+        # 3. The key name (Group 3)
+        # 4. The value (Group 4)
+        key_pattern = r"((?:# .*\n)*)(# )?([\w-]+)\s*=\s*(.*)"
+        for match in re.finditer(key_pattern, section_block):
+            help_text, _, key_name, default_val = match.groups()
+            full_key = f"{section_name}.{key_name}"
+
+            if full_key not in existing_keys:
+                # Add to existing config as a comment
+                addition = (
+                    f"\n# {help_text.strip()}\n# {key_name} = {default_val} "
+                    "(added by --update-config)\n"
+                )
+
+                section_header = f"[{section_name}]"
+                if section_header in new_text:
+                    # Append within section
+                    parts = re.split(rf"(\[{section_name}\])", new_text)
+                    # parts[2] is everything after [section]
+                    next_section_match = re.search(r"\n\[[\w.]+\]", parts[2])
+                    if next_section_match:
+                        pos = next_section_match.start()
+                        head = parts[2][:pos]
+                        tail = parts[2][pos:]
+                        parts[2] = head + addition + tail
+                    else:
+                        parts[2] = parts[2].rstrip() + "\n" + addition
+                    new_text = "".join(parts)
+                else:
+                    # Section missing
+                    new_text = new_text.rstrip() + f"\n\n[{section_name}]\n" + addition
+
+                added_keys.append(full_key)
+                existing_keys.add(full_key)
+
+    if added_keys:
+        path.write_text(new_text)
+
+    return added_keys

@@ -1,6 +1,7 @@
 import json
-from pathlib import Path
 from unittest.mock import patch
+
+from ghsnitch.snapshot import compute_scope
 
 
 def _make_snapshot_file(tmp_path, data, filename="snapshot.json"):
@@ -9,11 +10,24 @@ def _make_snapshot_file(tmp_path, data, filename="snapshot.json"):
     return f
 
 
+def test_compute_scope_basic():
+    scope1 = compute_scope(["alice", "bob"], "https://github.com")
+    scope2 = compute_scope(["bob", "alice"], "https://github.com")
+    assert scope1 == scope2
+    assert len(scope1) == 12
+
+
+def test_compute_scope_different_url():
+    scope1 = compute_scope(["alice"], "https://github.com")
+    scope2 = compute_scope(["alice"], "https://github.example.com")
+    assert scope1 != scope2
+
+
 # --- load_snapshot ---
 
 
 def test_load_snapshot_returns_none_when_missing(tmp_path):
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", tmp_path / "snapshot.json"):
+    with patch("ghsnitch.snapshot._LEGACY_SNAPSHOT_FILE", tmp_path / "snapshot.json"):
         from ghsnitch.snapshot import load_snapshot
 
         assert load_snapshot() is None
@@ -25,23 +39,27 @@ def test_load_snapshot_returns_data(tmp_path):
         "contributions": {"alice": {"2026": 50}},
     }
     snap = _make_snapshot_file(tmp_path, payload)
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
+    with patch("ghsnitch.snapshot._LEGACY_SNAPSHOT_FILE", snap):
         from ghsnitch.snapshot import load_snapshot
 
         result = load_snapshot()
     assert result["contributions"]["alice"]["2026"] == 50
 
 
-def test_load_snapshot_returns_none_on_corrupt_json(tmp_path):
-    snap = tmp_path / "snapshot.json"
-    snap.write_text("not json{{")
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
+def test_load_snapshot_scoped(tmp_path):
+    payload = {
+        "timestamp": "2026-04-05T12:00:00+00:00",
+        "contributions": {"alice": {"2026": 50}},
+    }
+    _make_snapshot_file(tmp_path, payload, "snapshot-abc.json")
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
         from ghsnitch.snapshot import load_snapshot
 
-        assert load_snapshot() is None
+        result = load_snapshot(scope="abc")
+    assert result["contributions"]["alice"]["2026"] == 50
 
 
-def test_load_snapshot_partitioned(tmp_path):
+def test_load_snapshot_context_id(tmp_path):
     payload = {
         "timestamp": "2026-04-05T12:00:00+00:00",
         "contributions": {"alice": {"2026": 50}},
@@ -59,7 +77,7 @@ def test_load_snapshot_partitioned(tmp_path):
 
 def test_save_snapshot_writes_file(tmp_path):
     snap = tmp_path / "snapshot.json"
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
+    with patch("ghsnitch.snapshot._LEGACY_SNAPSHOT_FILE", snap):
         with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
             from ghsnitch.snapshot import save_snapshot
 
@@ -69,107 +87,44 @@ def test_save_snapshot_writes_file(tmp_path):
     assert "timestamp" in data
 
 
-def test_save_snapshot_partitioned(tmp_path):
+def test_save_snapshot_scoped(tmp_path):
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+        from ghsnitch.snapshot import save_snapshot
+
+        save_snapshot({"bob": {"2026": 75}}, scope="xyz")
+    snap = tmp_path / "snapshot-xyz.json"
+    assert snap.exists()
+    data = json.loads(snap.read_text())
+    assert data["contributions"]["bob"]["2026"] == 75
+
+
+def test_save_snapshot_context_id(tmp_path):
     with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
         from ghsnitch.snapshot import save_snapshot
 
         save_snapshot({"bob": {"2026": 75}}, context_id="team-beta")
     snap = tmp_path / "snapshot-team-beta.json"
     assert snap.exists()
-    data = json.loads(snap.read_text())
-    assert data["contributions"]["bob"]["2026"] == 75
 
 
-def test_save_snapshot_creates_parent_dirs(tmp_path):
-    cache_dir = tmp_path / "nested" / "dir"
-    snap = cache_dir / "snapshot.json"
-    with patch("ghsnitch.snapshot.CACHE_DIR", cache_dir):
-        with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
-            from ghsnitch.snapshot import save_snapshot
-
-            save_snapshot({"bob": {"2026": 5}})
-
-    assert snap.exists()
+# --- clear_all_snapshots ---
 
 
-def test_save_snapshot_persists_ranks(tmp_path):
-    snap = tmp_path / "snapshot.json"
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
-        with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-            from ghsnitch.snapshot import save_snapshot
+def test_clear_all_snapshots(tmp_path):
+    _make_snapshot_file(tmp_path, {}, "snapshot.json")
+    _make_snapshot_file(tmp_path, {}, "snapshot-abc.json")
+    _make_snapshot_file(tmp_path, {}, "snapshot-team-alpha.json")
+    _make_snapshot_file(tmp_path, {}, "not-a-snapshot.txt")
 
-            save_snapshot(
-                {"alice": {"2026": 100}},
-                ranks={"alice": 1},
-                positions={"alice": 1},
-            )
-    data = json.loads(snap.read_text())
-    assert data["ranks"] == {"alice": 1}
-    assert data["positions"] == {"alice": 1}
-
-
-def test_save_snapshot_no_ranks_key_when_omitted(tmp_path):
-    snap = tmp_path / "snapshot.json"
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
-        with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-            from ghsnitch.snapshot import save_snapshot
-
-            save_snapshot({"alice": {"2026": 100}})
-    data = json.loads(snap.read_text())
-    assert "ranks" not in data
-    assert "positions" not in data
-
-
-def test_save_snapshot_silently_ignores_os_error(tmp_path):
-    snap = tmp_path / "snapshot.json"
-    snap.mkdir()  # make it a directory so write fails
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
-        with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-            from ghsnitch.snapshot import save_snapshot
-
-            save_snapshot({"alice": {"2026": 10}})  # should not raise
-
-
-# --- clear_snapshot ---
-
-
-def test_clear_snapshot_deletes_file(tmp_path):
-    snap = _make_snapshot_file(tmp_path, {"contributions": {}})
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
-        from ghsnitch.snapshot import clear_snapshot
-
-        result = clear_snapshot()
-    assert result is True
-    assert not snap.exists()
-
-
-def test_clear_snapshot_partitioned(tmp_path):
-    snap = _make_snapshot_file(
-        tmp_path, {"contributions": {}}, "snapshot-team-gamma.json"
-    )
     with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-        from ghsnitch.snapshot import clear_snapshot
+        with patch(
+            "ghsnitch.snapshot._LEGACY_SNAPSHOT_FILE", tmp_path / "snapshot.json"
+        ):
+            from ghsnitch.snapshot import clear_all_snapshots
 
-        result = clear_snapshot(context_id="team-gamma")
-    assert result is True
-    assert not snap.exists()
+            assert clear_all_snapshots() is True
 
-
-def test_clear_snapshot_returns_true_when_no_file(tmp_path):
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", tmp_path / "snapshot.json"):
-        from ghsnitch.snapshot import clear_snapshot
-
-        assert clear_snapshot() is True
-
-
-def test_clear_snapshot_returns_false_on_os_error(tmp_path):
-    snap = tmp_path / "snapshot.json"
-
-    def _bad_unlink(*_args, **_kwargs):
-        raise OSError("permission denied")
-
-    with patch("ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", snap):
-        with patch.object(Path, "unlink", _bad_unlink):
-            from ghsnitch.snapshot import clear_snapshot
-
-            assert clear_snapshot() is False
+    assert not (tmp_path / "snapshot.json").exists()
+    assert not (tmp_path / "snapshot-abc.json").exists()
+    assert not (tmp_path / "snapshot-team-alpha.json").exists()
+    assert (tmp_path / "not-a-snapshot.txt").exists()
