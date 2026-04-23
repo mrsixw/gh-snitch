@@ -576,8 +576,12 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
     plot_output = ac.plot(all_series, config)
 
     # Construct the title and legend
-    title = f"\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — TREND ANALYSIS ({' – '.join(x_labels)})\n"
-    
+    labels_str = " – ".join(x_labels)
+    title = (
+        "\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — "
+        f"TREND ANALYSIS ({labels_str})\n"
+    )
+
     legend_items = []
     reset = "\033[0m"
     for i, row in enumerate(sorted_rows):
@@ -588,5 +592,5 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
         legend_items.append(f"{color_code}{row['username']}{reset}")
 
     legend = "          " + ", ".join(legend_items) + "\n"
-    
+
     return f"{title}\n{plot_output}\n\n{legend}"

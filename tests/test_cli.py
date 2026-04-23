@@ -616,7 +616,6 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
                         [
                             "--config",
                             str(config_file),
-                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
@@ -1229,7 +1228,6 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
                             str(config_file),
                             "--team",
                             "alpha",
-                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
@@ -1248,7 +1246,6 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
                             str(config_file),
                             "--team",
                             "alpha",
-                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
