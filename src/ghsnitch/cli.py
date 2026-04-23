@@ -11,6 +11,7 @@ import requests
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
+from . import config as config_module
 from .api import (
     SECRET_GITHUB_TOKEN,
     VALID_PERIODS,
@@ -106,6 +107,16 @@ def _movement_delta(previous_position, current_position):
     return int(math.copysign(math.ceil(abs(raw_delta)), raw_delta))
 
 
+def _backup_config(path: Path):
+    """Create a backup of the config file, with timestamping if .bak exists."""
+    backup = path.with_suffix(path.suffix + ".bak")
+    if backup.exists():
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = path.with_suffix(f"{path.suffix}.{timestamp}.bak")
+    shutil.copy(path, backup)
+    return backup
+
+
 @click.command()
 @click.option("--config", default=None, help="Path to config file.")
 @click.option(
@@ -167,6 +178,12 @@ def _movement_delta(previous_position, current_position):
     help="Write a default config file and exit.",
 )
 @click.option(
+    "--update-config",
+    is_flag=True,
+    default=False,
+    help="Add missing keys from template to existing config and exit.",
+)
+@click.option(
     "--github-url",
     default=None,
     help="GitHub base URL (default: https://github.com). For GitHub Enterprise Server.",
@@ -202,6 +219,12 @@ def _movement_delta(previous_position, current_position):
     help="Annotate each cell with the operative's (N%) share of that year's total.",
 )
 @click.option(
+    "--rank-delta",
+    is_flag=True,
+    default=False,
+    help="Show a ± column with each operative's rank change since the last run.",
+)
+@click.option(
     "--delta",
     is_flag=True,
     default=False,
@@ -234,11 +257,13 @@ def gh_snitch(  # noqa: PLR0913
     github_url,
     show_config,
     init_config,
+    update_config,
     no_update_check,
     no_trend,
     min_contributions,
     totals,
     percent,
+    rank_delta,
     delta,
     reset_snapshot,
     output_format,
@@ -266,12 +291,33 @@ def gh_snitch(  # noqa: PLR0913
                 f"🚨 Operative config already exists at {path}. Overwrite and backup?",
                 abort=True,
             )
-            backup = path.with_suffix(path.suffix + ".bak")
-            shutil.copy(path, backup)
+            backup = _backup_config(path)
             click.echo(f"📦 Original dossier secured at: {backup}", err=True)
 
         path = generate_default_config(config)
         click.echo(f"🗂️  Handler config established at: {path}", err=True)
+        return
+
+    if update_config:
+        path = Path(config) if config else get_config_path()
+        if not path.exists():
+            click.echo(
+                f"🚨 No config file found at {path} to update. "
+                "Run with --init-config to create one.",
+                err=True,
+            )
+            sys.exit(1)
+
+        backup = _backup_config(path)
+        click.echo(f"🗂️  Backed up current dossier to {backup}", err=True)
+
+        added = config_module.update_config(config)
+        if added:
+            click.echo(f"✅  Added {len(added)} new keys to your config:", err=True)
+            for key in sorted(added):
+                click.echo(f"    {key}", err=True)
+        else:
+            click.echo("✅  Config is already up to date.", err=True)
         return
 
     cfg = load_config(config)
@@ -342,6 +388,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
+    if rank_delta:
+        cfg["rank_delta"] = True
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
 
@@ -535,6 +583,7 @@ def gh_snitch(  # noqa: PLR0913
             show_trend=not no_trend and delta_col is None and not suppress_trend,
             show_totals=show_totals,
             show_percent=cfg.get("percent", False),
+            show_rank_delta=cfg.get("rank_delta", False),
             delta_col=delta_col,
             rank_deltas=rank_deltas,
         )
