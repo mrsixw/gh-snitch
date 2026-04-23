@@ -543,11 +543,36 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
         rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
     )
 
-    # Prepare data for asciichartpy (list of lists)
+    # Adjust graph size based on terminal or defaults
+    try:
+        width, height = os.get_terminal_size()
+        graph_height = max(10, min(height - 10, 20))
+        # Leave room for Y-axis labels and some margin
+        target_width = max(len(x_labels) * 4, width - 15)
+    except (OSError, AttributeError):
+        graph_height = 10
+        target_width = len(x_labels) * 4
+
+    # Interpolate data to stretch it horizontally
     all_series = []
-    for row in sorted_rows:
-        series = [float(row.get(label, 0)) for label in x_labels]
-        all_series.append(series)
+    num_steps = len(x_labels)
+    if num_steps > 1 and target_width > num_steps:
+        for row in sorted_rows:
+            raw_series = [float(row.get(label, 0)) for label in x_labels]
+            interpolated = []
+            for j in range(target_width):
+                # Map j [0, target_width-1] to fractional index [0, num_steps-1]
+                idx = j * (num_steps - 1) / (target_width - 1)
+                left = int(idx)
+                right = min(left + 1, num_steps - 1)
+                frac = idx - left
+                val = raw_series[left] + frac * (raw_series[right] - raw_series[left])
+                interpolated.append(val)
+            all_series.append(interpolated)
+    else:
+        for row in sorted_rows:
+            series = [float(row.get(label, 0)) for label in x_labels]
+            all_series.append(series)
 
     # Curate colors from asciichartpy
     ac_colors = [
@@ -560,16 +585,10 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
         ac.white,
     ]
 
-    # Adjust graph height based on terminal or defaults
-    try:
-        _, height = os.get_terminal_size()
-        graph_height = max(10, min(height - 10, 20))
-    except (OSError, AttributeError):
-        graph_height = 10
-
     config = {
         "height": graph_height,
         "colors": [ac_colors[i % len(ac_colors)] for i in range(len(sorted_rows))],
+        "offset": 2,
     }
 
     # Generate the plot
