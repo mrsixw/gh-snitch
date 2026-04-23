@@ -44,9 +44,15 @@ years = 3
 # percent = false
 
 # Show a ± column with each operative's rank change since the last run.
+<<<<<<< HEAD
 # rank_delta = true
 
 # Output format: table (default), json, csv, markdown, or graph.
+=======
+# rank_delta = false
+
+# Output format: table (default), json, csv, or markdown.
+>>>>>>> origin/main
 # format = "table"
 
 # Named cells (teams) — use with --team <name> to surveil a specific group.
@@ -80,7 +86,11 @@ def load_config(config_path=None):
         "min_contributions": 0,
         "totals": False,
         "percent": False,
+<<<<<<< HEAD
         "rank_delta": True,
+=======
+        "rank_delta": False,
+>>>>>>> origin/main
         "output_format": "table",
         "teams": {},
     }
@@ -244,9 +254,13 @@ def update_config(config_path=None):
                     next_section_match = re.search(r"\n\[[\w.]+\]", parts[2])
                     if next_section_match:
                         pos = next_section_match.start()
+<<<<<<< HEAD
                         head = parts[2][:pos]
                         tail = parts[2][pos:]
                         parts[2] = head + addition + tail
+=======
+                        parts[2] = parts[2][:pos] + addition + parts[2][pos:]
+>>>>>>> origin/main
                     else:
                         parts[2] = parts[2].rstrip() + "\n" + addition
                     new_text = "".join(parts)

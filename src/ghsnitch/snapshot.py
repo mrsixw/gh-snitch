@@ -7,15 +7,19 @@ from .xdg import CACHE_DIR
 
 logger = logging.getLogger(__name__)
 
-_LEGACY_SNAPSHOT_FILE = CACHE_DIR / "snapshot.json"
+_DEFAULT_SNAPSHOT_FILE = CACHE_DIR / "snapshot.json"
+_SCOPE_HASH_LENGTH = 12
 
 
-def compute_scope(usernames, github_url):
-    """Return a short hash of the user cohort + instance for snapshot scoping."""
-    user_key = ",".join(sorted(usernames or []))
-    url_key = github_url.lower().rstrip("/")
-    combined = f"{user_key}|{url_key}"
-    return hashlib.sha256(combined.encode()).hexdigest()[:12]
+def compute_scope(users, github_url="https://github.com"):
+    """Derive a snapshot scope key from the resolved operative list.
+
+    The scope is a short hex digest of the normalised usernames and GitHub URL,
+    ensuring each unique cohort + instance combination gets its own snapshot.
+    """
+    normalised = sorted(u.lower() for u in users)
+    payload = f"{','.join(normalised)}|{github_url}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:_SCOPE_HASH_LENGTH]
 
 
 def _get_snapshot_path(scope=None, context_id=None):
@@ -26,7 +30,7 @@ def _get_snapshot_path(scope=None, context_id=None):
         return CACHE_DIR / f"snapshot-{safe_id}.json"
     if scope:
         return CACHE_DIR / f"snapshot-{scope}.json"
-    return _LEGACY_SNAPSHOT_FILE
+    return _DEFAULT_SNAPSHOT_FILE
 
 
 def load_snapshot(scope=None, context_id=None):
@@ -54,7 +58,7 @@ def save_snapshot(
         ranks: optional dict[username, int] mapping each operative to their rank
         positions: optional dict[username, float | int] mapping each operative
             to their tie-aware leaderboard movement position
-        scope: optional cohort scope hash
+        scope: optional scope key from :func:`compute_scope`
         context_id: optional explicit ID (e.g. team name)
     """
     try:
@@ -74,10 +78,18 @@ def save_snapshot(
 
 
 def clear_snapshot(scope=None, context_id=None):
-    """Delete the specific snapshot file. Returns True if cleared."""
+    """Delete snapshot files. Returns True if cleared, False on error.
+
+    When *context_id* or *scope* is given, only that specific snapshot is removed.
+    When both are ``None``, **all** snapshot files (scoped and legacy) are
+    removed — this is the behaviour behind ``--reset-snapshot``.
+    """
     try:
-        path = _get_snapshot_path(scope, context_id)
-        path.unlink(missing_ok=True)
+        if scope is not None or context_id is not None:
+            _get_snapshot_path(scope, context_id).unlink(missing_ok=True)
+        else:
+            for path in CACHE_DIR.glob("snapshot*.json"):
+                path.unlink(missing_ok=True)
         return True
     except OSError as e:
         logger.warning("failed to clear snapshot: %s", e)
@@ -86,17 +98,4 @@ def clear_snapshot(scope=None, context_id=None):
 
 def clear_all_snapshots():
     """Delete ALL snapshot files (legacy, scoped, and team-specific)."""
-    count = 0
-    try:
-        # Legacy
-        if _LEGACY_SNAPSHOT_FILE.exists():
-            _LEGACY_SNAPSHOT_FILE.unlink()
-            count += 1
-        # New pattern
-        for p in CACHE_DIR.glob("snapshot-*.json"):
-            p.unlink()
-            count += 1
-        return True
-    except OSError as e:
-        logger.warning("failed to clear all snapshots: %s", e)
-        return False
+    return clear_snapshot(scope=None, context_id=None)

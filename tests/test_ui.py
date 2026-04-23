@@ -489,7 +489,9 @@ def test_rank_delta_cell_new_tty():
 def test_render_table_rank_delta_column_shown():
     rows = [{"username": "alice", "2025": 100}]
     with patch("ghsnitch.ui.IS_TTY", False):
-        output = render_table(rows, ["2025"], rank_deltas={"alice": 0})
+        output = render_table(
+            rows, ["2025"], show_rank_delta=True, rank_deltas={"alice": 0}
+        )
     assert "±" in output
 
 
@@ -506,7 +508,9 @@ def test_render_table_rank_delta_up_non_tty():
         {"username": "bob", "2025": 100},
     ]
     with patch("ghsnitch.ui.IS_TTY", False):
-        output = render_table(rows, ["2025"], rank_deltas={"alice": 2, "bob": -1})
+        output = render_table(
+            rows, ["2025"], show_rank_delta=True, rank_deltas={"alice": 2, "bob": -1}
+        )
     assert "+2" in output
     assert "-1" in output
 
@@ -514,14 +518,18 @@ def test_render_table_rank_delta_up_non_tty():
 def test_render_table_rank_delta_flat_non_tty():
     rows = [{"username": "alice", "2025": 100}]
     with patch("ghsnitch.ui.IS_TTY", False):
-        output = render_table(rows, ["2025"], rank_deltas={"alice": 0})
+        output = render_table(
+            rows, ["2025"], show_rank_delta=True, rank_deltas={"alice": 0}
+        )
     assert "=" in output
 
 
 def test_render_table_rank_delta_new_operative_non_tty():
     rows = [{"username": "alice", "2025": 100}]
     with patch("ghsnitch.ui.IS_TTY", False):
-        output = render_table(rows, ["2025"], rank_deltas={"alice": None})
+        output = render_table(
+            rows, ["2025"], show_rank_delta=True, rank_deltas={"alice": None}
+        )
     assert "new" in output
 
 
@@ -529,7 +537,11 @@ def test_render_table_rank_delta_with_totals():
     rows = [{"username": "alice", "2025": 100}]
     with patch("ghsnitch.ui.IS_TTY", False):
         output = render_table(
-            rows, ["2025"], show_totals=True, rank_deltas={"alice": 1}
+            rows,
+            ["2025"],
+            show_totals=True,
+            show_rank_delta=True,
+            rank_deltas={"alice": 1},
         )
     assert "±" in output
     assert "Total" in output
