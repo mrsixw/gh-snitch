@@ -582,7 +582,12 @@ def render_graph(rows, year_labels, show_totals=False, delta_col=None):
         ac.lightyellow,
         ac.lightblue,
         ac.lightred,
-        ac.white,
+        ac.cyan,
+        ac.magenta,
+        ac.green,
+        ac.yellow,
+        ac.blue,
+        ac.red,
     ]
 
     config = {
