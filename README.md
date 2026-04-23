@@ -59,7 +59,7 @@ make build
 | `--min-contributions` | Hide operatives below this contribution count |
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
-| `--format` | Output format: `table` (default), `json`, `csv`, `markdown` |
+| `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph` |
 | `--delta` | Show change since last snapshot instead of current-year count |
 | `--reset-snapshot` | Clear the saved contribution snapshot and exit |
 | `--config` | Path to config file |

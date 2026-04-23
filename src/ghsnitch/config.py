@@ -44,9 +44,9 @@ years = 3
 # percent = false
 
 # Show a ± column with each operative's rank change since the last run.
-# rank_delta = false
+# rank_delta = true
 
-# Output format: table (default), json, csv, or markdown.
+# Output format: table (default), json, csv, markdown, or graph.
 # format = "table"
 
 # Named cells (teams) — use with --team <name> to surveil a specific group.
@@ -80,7 +80,7 @@ def load_config(config_path=None):
         "min_contributions": 0,
         "totals": False,
         "percent": False,
-        "rank_delta": False,
+        "rank_delta": True,
         "output_format": "table",
         "teams": {},
     }

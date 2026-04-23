@@ -1,4 +1,5 @@
 import json
+import os
 from unittest.mock import patch
 
 from ghsnitch.ui import (
@@ -8,6 +9,7 @@ from ghsnitch.ui import (
     _trend_indicator,
     make_hyperlink,
     render_csv,
+    render_graph,
     render_json,
     render_markdown,
     render_table,
@@ -724,3 +726,63 @@ def test_render_markdown_pipe_structure():
     for line in output.splitlines():
         assert line.startswith("|")
         assert line.endswith("|")
+
+
+# --- render_graph ---
+
+
+def test_render_graph_basic():
+    rows = [
+        {"username": "alice", "2026": 100, "2025": 80},
+        {"username": "bob", "2026": 50, "2025": 60},
+    ]
+    with patch("os.get_terminal_size", return_value=os.terminal_size((80, 24))):
+        output = render_graph(rows, ["2026", "2025"])
+    assert isinstance(output, str)
+    assert len(output) > 0
+    assert "alice" in output
+    assert "bob" in output
+    assert "OPERATIVE SURVEILLANCE DOSSIER" in output
+
+
+def test_render_graph_single_operative():
+    rows = [{"username": "alice", "2026": 100}]
+    with patch("os.get_terminal_size", return_value=os.terminal_size((80, 24))):
+        output = render_graph(rows, ["2026"])
+    assert "alice" in output
+
+
+def test_render_graph_single_period():
+    rows = [
+        {"username": "alice", "This Week": 10},
+        {"username": "bob", "This Week": 5},
+    ]
+    with patch("os.get_terminal_size", return_value=os.terminal_size((80, 24))):
+        output = render_graph(rows, ["This Week"])
+    assert "This Week" in output
+
+
+def test_render_graph_empty_rows():
+    output = render_graph([], ["2026"])
+    assert "no operatives configured" in output
+
+
+def test_render_graph_all_zeros():
+    rows = [
+        {"username": "alice", "2026": 0},
+        {"username": "bob", "2026": 0},
+    ]
+    with patch("os.get_terminal_size", return_value=os.terminal_size((80, 24))):
+        output = render_graph(rows, ["2026"])
+    assert "alice" in output
+    assert "bob" in output
+
+
+def test_render_graph_no_color():
+    rows = [{"username": "alice", "2026": 100}]
+    # IS_TTY is used in render_graph to decide whether to call colorless()
+    with patch("ghsnitch.ui.IS_TTY", False):
+        with patch("os.get_terminal_size", return_value=os.terminal_size((80, 24))):
+            output = render_graph(rows, ["2026"])
+    # ANSI escape sequences start with \033[
+    assert "\033[" not in output

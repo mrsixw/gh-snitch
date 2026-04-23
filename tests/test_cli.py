@@ -616,7 +616,6 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
                         [
                             "--config",
                             str(config_file),
-                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
@@ -1229,7 +1228,6 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
                             str(config_file),
                             "--team",
                             "alpha",
-                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
@@ -1248,7 +1246,6 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
                             str(config_file),
                             "--team",
                             "alpha",
-                            "--rank-delta",
                             "--no-update-check",
                             "--no-trend",
                         ],
@@ -1364,7 +1361,7 @@ def test_update_config_missing_file_errors(runner, tmp_path):
     assert "No config file found" in result.output
 
 
-def test_rank_delta_column_hidden_by_default(runner, tmp_path, requests_mock):
+def test_rank_delta_column_visible_by_default(runner, tmp_path, requests_mock):
     config_file = tmp_path / "config.toml"
     config_file.write_text('[operatives]\nusers = ["alice"]\n')
 
@@ -1385,19 +1382,25 @@ def test_rank_delta_column_hidden_by_default(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            # Run once to create snapshot
-            runner.invoke(
-                gh_snitch, ["--config", str(config_file), "--no-update-check"]
-            )
-            # Run again — should NOT show ± by default
-            result = runner.invoke(
-                gh_snitch, ["--config", str(config_file), "--no-update-check"]
-            )
-            assert "±" not in result.output
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                # Run once to create snapshot
+                runner.invoke(
+                    gh_snitch, ["--config", str(config_file), "--no-update-check"]
+                )
+                # Run again — SHOULD show ± by default
+                result = runner.invoke(
+                    gh_snitch, ["--config", str(config_file), "--no-update-check"]
+                )
+                assert "±" in result.output
 
-            # Run with --rank-delta — SHOULD show ±
-            result_with_delta = runner.invoke(
-                gh_snitch,
-                ["--config", str(config_file), "--rank-delta", "--no-update-check"],
-            )
-            assert "±" in result_with_delta.output
+                # Run with --no-rank-delta — SHOULD hide ±
+                result_no_delta = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-rank-delta",
+                        "--no-update-check",
+                    ],
+                )
+                assert "±" not in result_no_delta.output

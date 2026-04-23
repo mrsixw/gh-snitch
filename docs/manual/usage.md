@@ -272,6 +272,32 @@ Set a permanent default in your config file:
 format = "json"
 ```
 
+## Terminal Graph Output
+
+Render contribution data as a time-series line graph directly in the terminal:
+
+```bash
+gh-snitch --users alice,bob --years 3 --format graph
+```
+
+This provides a visual alternative to the ranked table, using `asciichartpy` to generate coloured trend lines.
+
+- **X-axis:** Time Period (chronological)
+- **Y-axis:** Contribution count
+- **Lines:** One line per operative, colour-coded
+
+It supports all time-period options:
+
+```bash
+# Graph of the last 6 months
+gh-snitch --users alice,bob --last-months 6 --format graph
+
+# Comparison of named teams
+gh-snitch --team platform --delta --format graph
+```
+
+**Note:** The `--totals` and `--percent` flags are ignored in graph mode.
+
 ## One-Shot Command
 
 Combine flags for a quick ad-hoc sweep without touching your config:

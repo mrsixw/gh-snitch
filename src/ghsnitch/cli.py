@@ -26,10 +26,10 @@ from .api import (
 from .config import generate_default_config, get_config_path, load_config
 from .logger import setup_logging
 from .snapshot import clear_snapshot, compute_scope, load_snapshot, save_snapshot
-from .ui import render_csv, render_json, render_markdown, render_table
+from .ui import render_csv, render_graph, render_json, render_markdown, render_table
 from .updater import check_for_update
 
-VALID_FORMATS = ("table", "json", "csv", "markdown")
+VALID_FORMATS = ("table", "json", "csv", "markdown", "graph")
 
 logger = logging.getLogger(__name__)
 
@@ -219,10 +219,10 @@ def _backup_config(path: Path):
     help="Annotate each cell with the operative's (N%) share of that year's total.",
 )
 @click.option(
-    "--rank-delta",
+    "--no-rank-delta",
     is_flag=True,
     default=False,
-    help="Show a ± column with each operative's rank change since the last run.",
+    help="Hide the ± column showing rank change since the last run.",
 )
 @click.option(
     "--delta",
@@ -241,7 +241,7 @@ def _backup_config(path: Path):
     "output_format",
     default=None,
     type=click.Choice(list(VALID_FORMATS), case_sensitive=False),
-    help="Output format: table (default), json, csv, or markdown.",
+    help="Output format: table (default), json, csv, markdown, or graph.",
 )
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
@@ -263,7 +263,7 @@ def gh_snitch(  # noqa: PLR0913
     min_contributions,
     totals,
     percent,
-    rank_delta,
+    no_rank_delta,
     delta,
     reset_snapshot,
     output_format,
@@ -388,8 +388,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
-    if rank_delta:
-        cfg["rank_delta"] = True
+    if no_rank_delta:
+        cfg["rank_delta"] = False
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
 
@@ -575,6 +575,22 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(render_csv(rows, year_labels, show_totals=show_totals), nl=False)
     elif active_format == "markdown":
         click.echo(render_markdown(rows, year_labels, show_totals=show_totals))
+    elif active_format == "graph":
+        if cfg.get("percent"):
+            click.echo(
+                "⚠️  --percent is ignored in graph format.",
+                err=True,
+            )
+        if show_totals:
+            click.echo(
+                "⚠️  --totals is ignored in graph format (no footer rows in charts).",
+                err=True,
+            )
+        click.echo(
+            render_graph(
+                rows, year_labels, show_totals=show_totals, delta_col=delta_col
+            )
+        )
     else:
         table = render_table(
             rows,
@@ -583,7 +599,7 @@ def gh_snitch(  # noqa: PLR0913
             show_trend=not no_trend and delta_col is None and not suppress_trend,
             show_totals=show_totals,
             show_percent=cfg.get("percent", False),
-            show_rank_delta=cfg.get("rank_delta", False),
+            show_rank_delta=cfg.get("rank_delta", True),
             delta_col=delta_col,
             rank_deltas=rank_deltas,
         )
