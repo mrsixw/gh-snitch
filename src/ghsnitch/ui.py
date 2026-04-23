@@ -388,6 +388,7 @@ def render_table(
     show_trend=True,
     show_totals=False,
     show_percent=False,
+    show_rank_delta=False,
     delta_col=None,
     rank_deltas=None,
 ):
@@ -440,7 +441,7 @@ def render_table(
                 for r in sorted_rows
             ]
 
-    show_rank_delta = rank_deltas is not None
+    show_rank_delta = show_rank_delta and rank_deltas is not None
     headers = (
         ["#"]
         + (["±"] if show_rank_delta else [])

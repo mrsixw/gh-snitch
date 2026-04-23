@@ -71,4 +71,5 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 
 ## GitHub Workflow
 - **MANDATORY: Always create a GitHub issue before writing code or opening a PR.** This is a non-negotiable first step to confirm diagnosis and scope.
+- **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
 - Link the PR to the issue in the PR body.

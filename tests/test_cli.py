@@ -5,6 +5,7 @@ import pytest
 from click.testing import CliRunner
 
 from ghsnitch.cli import gh_snitch
+from ghsnitch.snapshot import compute_scope
 
 
 @pytest.fixture
@@ -398,7 +399,7 @@ _GRAPHQL_RESPONSE = {
 def test_reset_snapshot_clears_and_exits(runner, tmp_path):
     snap = tmp_path / "snapshot.json"
     snap.write_text('{"timestamp": "t", "contributions": {}}')
-    with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
         result = runner.invoke(gh_snitch, ["--reset-snapshot"])
     assert result.exit_code == 0
     assert "cleared" in result.output.lower()
@@ -412,20 +413,20 @@ def test_delta_no_prior_snapshot_shows_absolute(runner, tmp_path, requests_mock)
     )
     requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
 
-    snap = tmp_path / "snapshot.json"
+    scope = compute_scope(["alice"], "https://github.com")
+    snap = tmp_path / f"snapshot-{scope}.json"
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        [
-                            "--config",
-                            str(config_file),
-                            "--no-update-check",
-                            "--delta",
-                        ],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-update-check",
+                        "--delta",
+                    ],
+                )
 
     assert result.exit_code == 0
     assert "No prior snapshot" in result.output
@@ -444,7 +445,8 @@ def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
     from datetime import date
 
     current_year = str(date.today().year)
-    snap = tmp_path / "snapshot.json"
+    scope = compute_scope(["alice"], "https://github.com")
+    snap = tmp_path / f"snapshot-{scope}.json"
     snap.write_text(
         json.dumps(
             {
@@ -456,17 +458,16 @@ def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        [
-                            "--config",
-                            str(config_file),
-                            "--no-update-check",
-                            "--delta",
-                        ],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-update-check",
+                        "--delta",
+                    ],
+                )
 
     assert result.exit_code == 0
     # alice: 50 - 36 = +14
@@ -491,17 +492,17 @@ def test_delta_does_not_overwrite_snapshot(runner, tmp_path, requests_mock):
             "contributions": {"alice": {current_year: 36}},
         }
     )
-    snap = tmp_path / "snapshot.json"
+    scope = compute_scope(["alice"], "https://github.com")
+    snap = tmp_path / f"snapshot-{scope}.json"
     snap.write_text(original_snapshot)
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    runner.invoke(
-                        gh_snitch,
-                        ["--config", str(config_file), "--no-update-check", "--delta"],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                runner.invoke(
+                    gh_snitch,
+                    ["--config", str(config_file), "--no-update-check", "--delta"],
+                )
 
     assert snap.read_text() == original_snapshot
 
@@ -517,7 +518,8 @@ def test_delta_with_years_hides_prior_year_columns(runner, tmp_path, requests_mo
 
     current_year = str(date.today().year)
     prior_year = str(date.today().year - 1)
-    snap = tmp_path / "snapshot.json"
+    scope = compute_scope(["alice"], "https://github.com")
+    snap = tmp_path / f"snapshot-{scope}.json"
     snap.write_text(
         json.dumps(
             {
@@ -529,17 +531,16 @@ def test_delta_with_years_hides_prior_year_columns(runner, tmp_path, requests_mo
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        [
-                            "--config",
-                            str(config_file),
-                            "--no-update-check",
-                            "--delta",
-                        ],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-update-check",
+                        "--delta",
+                    ],
+                )
 
     assert result.exit_code == 0
     assert "Δ Today" in result.output
@@ -553,15 +554,15 @@ def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     )
     requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
 
-    snap = tmp_path / "snapshot.json"
+    scope = compute_scope(["alice"], "https://github.com")
+    snap = tmp_path / f"snapshot-{scope}.json"
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        ["--config", str(config_file), "--no-update-check"],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    ["--config", str(config_file), "--no-update-check"],
+                )
 
     assert result.exit_code == 0
     assert snap.exists()
@@ -581,7 +582,8 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
     from datetime import date
 
     current_year = str(date.today().year)
-    snap = tmp_path / "snapshot.json"
+    scope = compute_scope(["alice", "bob", "carol"], "https://github.com")
+    snap = tmp_path / f"snapshot-{scope}.json"
     snap.write_text(
         json.dumps(
             {
@@ -604,22 +606,21 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", snap):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    with patch(
-                        "ghsnitch.cli.fetch_contributions",
-                        return_value=(current_data, []),
-                    ):
-                        result = runner.invoke(
-                            gh_snitch,
-                            [
-                                "--config",
-                                str(config_file),
-                                "--no-update-check",
-                                "--no-trend",
-                            ],
-                        )
-
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                with patch(
+                    "ghsnitch.cli.fetch_contributions",
+                    return_value=(current_data, []),
+                ):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--rank-delta",
+                            "--no-update-check",
+                            "--no-trend",
+                        ],
+                    )
     assert result.exit_code == 0
     assert "alice" in result.output
     assert "bob" in result.output
@@ -638,18 +639,17 @@ def test_period_week_renders_this_week_column(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        [
-                            "--config",
-                            str(config_file),
-                            "--no-update-check",
-                            "--period",
-                            "week",
-                        ],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-update-check",
+                        "--period",
+                        "week",
+                    ],
+                )
 
     assert result.exit_code == 0
     assert "This Week" in result.output
@@ -665,18 +665,17 @@ def test_period_month_renders_this_month_column(runner, tmp_path, requests_mock)
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        [
-                            "--config",
-                            str(config_file),
-                            "--no-update-check",
-                            "--period",
-                            "month",
-                        ],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-update-check",
+                        "--period",
+                        "month",
+                    ],
+                )
 
     assert result.exit_code == 0
     assert "This Month" in result.output
@@ -692,18 +691,17 @@ def test_period_year_renders_this_year_column(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        [
-                            "--config",
-                            str(config_file),
-                            "--no-update-check",
-                            "--period",
-                            "year",
-                        ],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-update-check",
+                        "--period",
+                        "year",
+                    ],
+                )
 
     assert result.exit_code == 0
     assert "This Year" in result.output
@@ -719,12 +717,11 @@ def test_period_from_config_file(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        ["--config", str(config_file), "--no-update-check"],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    ["--config", str(config_file), "--no-update-check"],
+                )
 
     assert result.exit_code == 0
     assert "This Month" in result.output
@@ -742,18 +739,17 @@ def test_period_makes_single_api_call(runner, tmp_path, requests_mock):
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    result = runner.invoke(
-                        gh_snitch,
-                        [
-                            "--config",
-                            str(config_file),
-                            "--no-update-check",
-                            "--period",
-                            "week",
-                        ],
-                    )
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--no-update-check",
+                        "--period",
+                        "week",
+                    ],
+                )
 
     assert result.exit_code == 0
     assert adapter.call_count == 1  # one range, not six
@@ -773,10 +769,9 @@ def _make_config(tmp_path, years=0):
 def _run(runner, config_file, tmp_path, extra_args):
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    base = ["--config", str(config_file), "--no-update-check"]
-                    return runner.invoke(gh_snitch, base + extra_args)
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                base = ["--config", str(config_file), "--no-update-check"]
+                return runner.invoke(gh_snitch, base + extra_args)
 
 
 def _run_separated(config_file, tmp_path, extra_args):
@@ -784,10 +779,9 @@ def _run_separated(config_file, tmp_path, extra_args):
     sep_runner = CliRunner()
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-            with patch("ghsnitch.snapshot._SNAPSHOT_FILE", tmp_path / "snap.json"):
-                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
-                    base = ["--config", str(config_file), "--no-update-check"]
-                    return sep_runner.invoke(gh_snitch, base + extra_args)
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                base = ["--config", str(config_file), "--no-update-check"]
+                return sep_runner.invoke(gh_snitch, base + extra_args)
 
 
 def _extract_json(output):
@@ -1117,3 +1111,293 @@ def test_team_empty_users_shows_no_operatives_warning(runner, tmp_path):
                 ["--config", str(config_file), "--no-update-check", "--team", "empty"],
             )
     assert "No operatives" in result.output
+
+
+def test_team_snapshots_are_partitioned(runner, tmp_path, requests_mock):
+    """Verify that different teams and ad-hoc lists use distinct snapshot files."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.alpha]\nusers = ["alice"]\n'
+        '[teams.beta]\nusers = ["bob"]\n'
+        "[surveillance]\nyears = 0\n"
+    )
+
+    # Mock response for alice (alpha) and bob (beta)
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 10}
+                    },
+                },
+                "user_bob": {
+                    "login": "bob",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 20}
+                    },
+                },
+            }
+        },
+    )
+
+    # We patch CACHE_DIR so we can see the real filenames
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                # 1. Run for team alpha
+                runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--team",
+                        "alpha",
+                        "--no-update-check",
+                    ],
+                )
+                # 2. Run for team beta
+                runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--team",
+                        "beta",
+                        "--no-update-check",
+                    ],
+                )
+                # 3. Run for ad-hoc user list
+                runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(config_file),
+                        "--users",
+                        "alice,bob",
+                        "--no-update-check",
+                    ],
+                )
+
+    # Verify three distinct snapshot files exist (one per unique cohort).
+    # alpha=["alice"], beta=["bob"], ad-hoc=["alice","bob"] → different scopes
+    alpha_scope = compute_scope(["alice"], "https://github.com")
+    beta_scope = compute_scope(["bob"], "https://github.com")
+    adhoc_scope = compute_scope(["alice", "bob"], "https://github.com")
+    assert (tmp_path / f"snapshot-{alpha_scope}.json").exists()
+    assert (tmp_path / f"snapshot-{beta_scope}.json").exists()
+    assert (tmp_path / f"snapshot-{adhoc_scope}.json").exists()
+    # All scopes are different
+    assert len({alpha_scope, beta_scope, adhoc_scope}) == 3
+
+
+def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
+    """Verify that running with --team loads the team-specific snapshot.
+
+    On the second run the operatives should show '=' (unchanged) not 'new',
+    proving that load_snapshot receives the correct scope.
+    """
+    from datetime import date
+
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[teams.alpha]\nusers = ["alice", "bob"]\n' "[surveillance]\nyears = 0\n"
+    )
+
+    current_year = str(date.today().year)
+    contributions = {
+        "alice": {current_year: 50},
+        "bob": {current_year: 30},
+    }
+
+    scope = compute_scope(["alice", "bob"], "https://github.com")
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                with patch(
+                    "ghsnitch.cli.fetch_contributions",
+                    return_value=(contributions, []),
+                ):
+                    # First run — creates the team snapshot.
+                    result1 = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--team",
+                            "alpha",
+                            "--rank-delta",
+                            "--no-update-check",
+                            "--no-trend",
+                        ],
+                    )
+                    assert result1.exit_code == 0
+
+                    # Snapshot file must exist for this scope.
+                    assert (tmp_path / f"snapshot-{scope}.json").exists()
+
+                    # Second run — should load the same scope's snapshot.
+                    # All operatives remain unchanged → "=".
+                    result2 = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--team",
+                            "alpha",
+                            "--rank-delta",
+                            "--no-update-check",
+                            "--no-trend",
+                        ],
+                    )
+    assert result2.exit_code == 0
+    # Both operatives should show "=" (rank unchanged), not "new".
+    assert "new" not in result2.output
+    assert "  1   =   alice" in result2.output
+    assert "  2   =   bob" in result2.output
+
+
+def test_init_config_aborts_if_declined(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("original content")
+
+    # input="n" to decline confirmation
+    result = runner.invoke(
+        gh_snitch, ["--init-config", "--config", str(config_path)], input="n\n"
+    )
+
+    assert result.exit_code != 0  # click.confirm(abort=True) exits non-zero on "n"
+    assert config_path.read_text() == "original content"
+    assert not (tmp_path / "config.toml.bak").exists()
+
+
+def test_init_config_overwrites_and_backups_if_confirmed(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("original content")
+
+    # input="y" to confirm overwrite
+    result = runner.invoke(
+        gh_snitch, ["--init-config", "--config", str(config_path)], input="y\n"
+    )
+
+    assert result.exit_code == 0
+    assert "secured" in result.output
+    assert "established" in result.output
+
+    # Verify backup exists and has original content
+    backup_path = tmp_path / "config.toml.bak"
+    assert backup_path.exists()
+    assert backup_path.read_text() == "original content"
+
+    # Verify main file is now the template
+    assert "gh-snitch configuration" in config_path.read_text()
+
+
+def test_init_config_no_prompt_if_missing(runner, tmp_path):
+    config_path = tmp_path / "new_config.toml"
+
+    # Should not prompt if file does not exist
+    result = runner.invoke(gh_snitch, ["--init-config", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "established" in result.output
+    assert config_path.exists()
+    assert not (tmp_path / "new_config.toml.bak").exists()
+
+
+def test_update_config_appends_missing_key(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    # Create config missing rank_delta
+    config_path.write_text("[display]\ntotals = false\n")
+
+    result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Added" in result.output
+    assert "display.rank_delta" in result.output
+
+    content = config_path.read_text()
+    assert "[display]" in content
+    assert "totals = false" in content
+    assert "# rank_delta =" in content
+    assert "(added by --update-config)" in content
+
+
+def test_update_config_no_op_if_up_to_date(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    # Write full template
+    from ghsnitch.config import generate_default_config
+
+    generate_default_config(str(config_path))
+
+    # Manually uncomment rank_delta so it exists
+    content = config_path.read_text().replace(
+        "# rank_delta = false", "rank_delta = true"
+    )
+    config_path.write_text(content)
+
+    result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "already up to date" in result.output
+
+
+def test_update_config_backups_existing(runner, tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("old content")
+
+    runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    backup = tmp_path / "config.toml.bak"
+    assert backup.exists()
+    assert backup.read_text() == "old content"
+
+
+def test_update_config_missing_file_errors(runner, tmp_path):
+    config_path = tmp_path / "missing.toml"
+    result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
+
+    assert result.exit_code != 0
+    assert "No config file found" in result.output
+
+
+def test_rank_delta_column_hidden_by_default(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    # Mock response
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {
+                "user_alice": {
+                    "login": "alice",
+                    "contributionsCollection": {
+                        "contributionCalendar": {"totalContributions": 10}
+                    },
+                }
+            }
+        },
+    )
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            # Run once to create snapshot
+            runner.invoke(
+                gh_snitch, ["--config", str(config_file), "--no-update-check"]
+            )
+            # Run again — should NOT show ± by default
+            result = runner.invoke(
+                gh_snitch, ["--config", str(config_file), "--no-update-check"]
+            )
+            assert "±" not in result.output
+
+            # Run with --rank-delta — SHOULD show ±
+            result_with_delta = runner.invoke(
+                gh_snitch,
+                ["--config", str(config_file), "--rank-delta", "--no-update-check"],
+            )
+            assert "±" in result_with_delta.output
