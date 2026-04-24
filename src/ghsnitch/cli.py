@@ -602,11 +602,7 @@ def gh_snitch(  # noqa: PLR0913
                 "⚠️  --totals is ignored in graph format (no footer rows in charts).",
                 err=True,
             )
-        click.echo(
-            render_graph(
-                rows, year_labels, show_totals=show_totals, delta_col=delta_col
-            )
-        )
+        click.echo(render_graph(rows, year_labels, show_totals=show_totals))
     else:
         table = render_table(
             rows,

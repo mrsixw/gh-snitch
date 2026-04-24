@@ -231,10 +231,10 @@ def test_clear_snapshot_returns_false_on_os_error(tmp_path):
 
 
 def test_clear_all_snapshots(tmp_path):
-    _make_snapshot_file(tmp_path, {}, "snapshot.json")
-    _make_snapshot_file(tmp_path, {}, "snapshot-abc.json")
-    _make_snapshot_file(tmp_path, {}, "snapshot-team-alpha.json")
-    _make_snapshot_file(tmp_path, {}, "not-a-snapshot.txt")
+    _make_snapshot_file(tmp_path, {})  # legacy: snapshot.json
+    _make_snapshot_file(tmp_path, {}, scope="abc")  # snapshot-abc.json
+    _make_snapshot_file(tmp_path, {}, context_id="team-alpha")  # snapshot-team-alpha
+    (tmp_path / "not-a-snapshot.txt").write_text("")
 
     with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
         with patch(

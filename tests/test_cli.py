@@ -1,3 +1,4 @@
+import hashlib
 import json
 from unittest.mock import patch
 
@@ -5,7 +6,12 @@ import pytest
 from click.testing import CliRunner
 
 from ghsnitch.cli import gh_snitch
-from ghsnitch.snapshot import compute_scope
+
+
+def _context_id(users):
+    """Mirror cli.py's ad-hoc context_id computation for use in tests."""
+    key = ",".join(sorted(users))
+    return f"u-{hashlib.sha256(key.encode()).hexdigest()[:12]}"
 
 
 @pytest.fixture
@@ -413,8 +419,7 @@ def test_delta_no_prior_snapshot_shows_absolute(runner, tmp_path, requests_mock)
     )
     requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
 
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
             with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
@@ -445,8 +450,7 @@ def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
     from datetime import date
 
     current_year = str(date.today().year)
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     snap.write_text(
         json.dumps(
             {
@@ -492,8 +496,7 @@ def test_delta_does_not_overwrite_snapshot(runner, tmp_path, requests_mock):
             "contributions": {"alice": {current_year: 36}},
         }
     )
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     snap.write_text(original_snapshot)
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
@@ -518,8 +521,7 @@ def test_delta_with_years_hides_prior_year_columns(runner, tmp_path, requests_mo
 
     current_year = str(date.today().year)
     prior_year = str(date.today().year - 1)
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     snap.write_text(
         json.dumps(
             {
@@ -554,8 +556,7 @@ def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     )
     requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
 
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
             with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
@@ -582,8 +583,7 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
     from datetime import date
 
     current_year = str(date.today().year)
-    scope = compute_scope(["alice", "bob", "carol"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice', 'bob', 'carol'])}.json"
     snap.write_text(
         json.dumps(
             {

@@ -530,7 +530,7 @@ def render_table(
     )
 
 
-def render_graph(rows, year_labels, show_totals=False, delta_col=None):
+def render_graph(rows, year_labels, show_totals=False):
     """Render contribution data as a time-series line graph string."""
     if not rows:
         return "(no operatives configured)"
