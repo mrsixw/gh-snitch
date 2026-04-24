@@ -6,7 +6,6 @@ import re
 import sys
 from datetime import datetime
 
-import asciichartpy as ac
 import tabulate as _tabulate_module
 from tabulate import tabulate
 
@@ -531,91 +530,75 @@ def render_table(
 
 
 def render_graph(rows, year_labels, show_totals=False):
-    """Render contribution data as a time-series line graph string."""
+    """Render contribution data as sparklines using Unicode block characters."""
     if not rows:
         return "(no operatives configured)"
 
-    # Time periods on X-axis, chronological order
     x_labels = list(reversed(year_labels))
-
-    # Sort rows by current-year count (descending) to match table order
     current_year_label = year_labels[0]
     sorted_rows = sorted(
         rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
     )
 
-    # Adjust graph size based on terminal or defaults
-    try:
-        width, height = os.get_terminal_size()
-        graph_height = max(10, min(height - 10, 20))
-        # Leave room for Y-axis labels and some margin
-        target_width = max(len(x_labels) * 4, width - 15)
-    except (OSError, AttributeError):
-        graph_height = 10
-        target_width = len(x_labels) * 4
-
-    # Interpolate data to stretch it horizontally
-    all_series = []
-    num_steps = len(x_labels)
-    if num_steps > 1 and target_width > num_steps:
-        for row in sorted_rows:
-            raw_series = [float(row.get(label, 0)) for label in x_labels]
-            interpolated = []
-            for j in range(target_width):
-                # Map j [0, target_width-1] to fractional index [0, num_steps-1]
-                idx = j * (num_steps - 1) / (target_width - 1)
-                left = int(idx)
-                right = min(left + 1, num_steps - 1)
-                frac = idx - left
-                val = raw_series[left] + frac * (raw_series[right] - raw_series[left])
-                interpolated.append(val)
-            all_series.append(interpolated)
-    else:
-        for row in sorted_rows:
-            series = [float(row.get(label, 0)) for label in x_labels]
-            all_series.append(series)
-
-    # Curate colors from asciichartpy
-    ac_colors = [
-        ac.lightcyan,
-        ac.lightmagenta,
-        ac.lightgreen,
-        ac.lightyellow,
-        ac.lightblue,
-        ac.lightred,
-        ac.cyan,
-        ac.magenta,
-        ac.green,
-        ac.yellow,
-        ac.blue,
-        ac.red,
+    ansi_colors = [
+        "\033[96m",  # bright cyan
+        "\033[95m",  # bright magenta
+        "\033[92m",  # bright green
+        "\033[93m",  # bright yellow
+        "\033[94m",  # bright blue
+        "\033[91m",  # bright red
+        "\033[36m",  # cyan
+        "\033[35m",  # magenta
+        "\033[32m",  # green
+        "\033[33m",  # yellow
+        "\033[34m",  # blue
+        "\033[31m",  # red
     ]
+    RESET = "\033[0m"
+    BLOCKS = " ▁▂▃▄▅▆▇█"
 
-    config = {
-        "height": graph_height,
-        "colors": [ac_colors[i % len(ac_colors)] for i in range(len(sorted_rows))],
-        "offset": 2,
-    }
+    all_values = [float(row.get(label, 0)) for row in sorted_rows for label in x_labels]
+    max_val = max(all_values) if all_values else 1.0
+    if max_val == 0.0:
+        max_val = 1.0
 
-    # Generate the plot
-    plot_output = ac.plot(all_series, config)
+    try:
+        term_width, _ = os.get_terminal_size()
+    except (OSError, AttributeError):
+        term_width = 80
 
-    # Construct the title and legend
+    num_periods = len(x_labels)
+    max_name_len = max(len(row["username"]) for row in sorted_rows)
+    vals_width = num_periods * 7
+    available = term_width - 2 - max_name_len - 4 - 2 - vals_width
+    chars_per_period = max(2, min(available // max(num_periods, 1), 12))
+    sparkline_width = chars_per_period * num_periods
+
     labels_str = " – ".join(x_labels)
     title = (
         "\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — "
         f"TREND ANALYSIS ({labels_str})\n"
     )
 
-    legend_items = []
-    reset = "\033[0m"
+    name_hdr = "Operative".ljust(max_name_len)
+    period_hdrs = "  ".join(lbl.rjust(6) for lbl in x_labels)
+    divider = "─" * (2 + max_name_len + 4 + sparkline_width + 2 + len(period_hdrs))
+    header = f"  {name_hdr}    {'':{sparkline_width}}  {period_hdrs}"
+
+    row_lines = []
     for i, row in enumerate(sorted_rows):
-        color_code = ac_colors[i % len(ac_colors)]
-        if not IS_TTY:
-            color_code = ""
-            reset = ""
-        legend_items.append(f"{color_code}{row['username']}{reset}")
+        name = row["username"].ljust(max_name_len)
+        bar = ""
+        for label in x_labels:
+            val = float(row.get(label, 0))
+            block_idx = round(val / max_val * 8)
+            bar += BLOCKS[block_idx] * chars_per_period
+        vals = "  ".join(str(int(row.get(label, 0))).rjust(6) for label in x_labels)
+        if IS_TTY:
+            c = ansi_colors[i % len(ansi_colors)]
+            row_lines.append(f"  {name}    {c}{bar}{RESET}  {vals}")
+        else:
+            row_lines.append(f"  {name}    {bar}  {vals}")
 
-    legend = "          " + ", ".join(legend_items) + "\n"
-
-    return f"{title}\n{plot_output}\n\n{legend}"
+    body = "\n".join(row_lines)
+    return f"{title}\n{header}\n  {divider}\n{body}\n"

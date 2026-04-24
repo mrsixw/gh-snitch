@@ -302,11 +302,11 @@ Render contribution data as a time-series line graph directly in the terminal:
 gh-snitch --users alice,bob --years 3 --format graph
 ```
 
-This provides a visual alternative to the ranked table, using `asciichartpy` to generate coloured trend lines.
+This provides a visual alternative to the ranked table. Each operative gets a colour-coded sparkline built from Unicode block characters (`▁▂▃▄▅▆▇█`), scaled relative to the top contributor, with numerical counts alongside.
 
-- **X-axis:** Time Period (chronological)
-- **Y-axis:** Contribution count
-- **Lines:** One line per operative, colour-coded
+- **Rows:** One sparkline row per operative, sorted by current-period activity
+- **Bars:** Block height reflects contribution level relative to the group maximum
+- **Colours:** Each operative's bar is colour-coded for quick identification
 
 It supports all time-period options:
 
