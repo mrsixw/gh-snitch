@@ -244,7 +244,9 @@ def update_config(config_path=None):
                     next_section_match = re.search(r"\n\[[\w.]+\]", parts[2])
                     if next_section_match:
                         pos = next_section_match.start()
-                        parts[2] = parts[2][:pos] + addition + parts[2][pos:]
+                        head = parts[2][:pos]
+                        tail = parts[2][pos:]
+                        parts[2] = head + addition + tail
                     else:
                         parts[2] = parts[2].rstrip() + "\n" + addition
                     new_text = "".join(parts)

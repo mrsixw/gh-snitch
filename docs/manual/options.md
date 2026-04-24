@@ -16,6 +16,7 @@
 | `--totals` | off | Add a `Total` column (per-operative sum across all years) and a `Total` footer row (per-year sum across all operatives) |
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
 | `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, `markdown`, or `graph`. Non-table formats write clean data to stdout and send status messages to stderr. |
+| `--no-rank-delta` | off | Hide the `±` rank-change column (rank delta is shown by default) |
 | `--delta` | off | Replace the current-year column with `Δ Today` showing the change since the last saved snapshot; green/red-coded |
 | `--reset-snapshot` | off | Clear the saved contribution snapshot and exit |
 | `--no-trend` | off | Hide the Trend column |
@@ -48,16 +49,15 @@ years = 3
 # last_months = 6       # last 6 calendar months as separate columns
 # last_weeks = 8        # last 8 ISO weeks as separate columns
 
-[display]
-# format = "table"      # table (default), json, csv, markdown, or graph
-
 [network]
 # github_url = "https://github.example.com"  # omit for github.com
 
 [display]
+# format = "table"      # table (default), json, csv, markdown, or graph
 # min_contributions = 10  # hide operatives below this threshold
 # totals = false           # show Total column and footer row
 # percent = false          # annotate cells with (N%) share of year total
+# rank_delta = true        # show ± rank-change column (set to false to hide)
 
 # Named teams — select one at runtime with --team <name>
 [teams.platform]
@@ -67,6 +67,4 @@ users = ["alice", "bob"]
 users = ["carol", "dave"]
 ```
 
-CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, and `--percent` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).
-
-**Note on Graph Format:** The `graph` format uses `asciichartpy` to render a line graph in the terminal. When using `graph`, the `--totals` and `--percent` flags are ignored.
+CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, and `--no-rank-delta` always override config file values.  `--since` and `--until` are command-line only (they encode specific calendar dates and don't belong in a persistent config).

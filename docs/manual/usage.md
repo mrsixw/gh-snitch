@@ -194,6 +194,21 @@ To clear the snapshot:
 gh-snitch --reset-snapshot
 ```
 
+## Rank Change Column
+
+By default, gh-snitch shows a `±` column indicating each operative's rank movement since the previous run (once a snapshot exists). To suppress it:
+
+```bash
+gh-snitch --no-rank-delta
+```
+
+You can also disable it permanently in your config file:
+
+```toml
+[display]
+rank_delta = false
+```
+
 ## Totals and Percentage Breakdown
 
 Show a **Total column** (per-operative sum across all years) and a **Total footer row** (per-year sum across all operatives):
@@ -245,7 +260,14 @@ gh-snitch --users alice,bob --format csv
 
 # GitHub-Flavoured Markdown table
 gh-snitch --users alice,bob --format markdown
+
+# Terminal line graph — contribution trend over time
+gh-snitch --users alice,bob --years 4 --format graph
 ```
+
+The `graph` format renders a colour-coded time-series chart in the terminal showing each operative's contribution trend. The X-axis spans the requested years in chronological order and the Y-axis scales to the data. The chart is sized to your terminal width and height automatically.
+
+Note: `--percent` and `--totals` are not applicable in graph format and are silently ignored.
 
 All non-`table` formats:
 - Write **only data** to stdout (no ANSI codes, no emoji status lines)

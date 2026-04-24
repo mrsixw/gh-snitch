@@ -388,7 +388,7 @@ def render_table(
     show_trend=True,
     show_totals=False,
     show_percent=False,
-    show_rank_delta=False,
+    show_rank_delta=True,
     delta_col=None,
     rank_deltas=None,
 ):
@@ -402,6 +402,7 @@ def render_table(
         show_trend: whether to include the Trend column (requires >= 2 year labels)
         show_totals: whether to add a Total column per operative and a Total footer row
         show_percent: whether to annotate each cell with (N%) share of that year's total
+        show_rank_delta: whether to show the ± column (default: True)
         delta_col: label of the column whose values are deltas (rendered with +/- and
             green/red colouring instead of percentile-based grading)
         rank_deltas: optional dict[username, int | None] mapping each operative to their
@@ -529,7 +530,7 @@ def render_table(
     )
 
 
-def render_graph(rows, year_labels, show_totals=False, delta_col=None):
+def render_graph(rows, year_labels, show_totals=False):
     """Render contribution data as a time-series line graph string."""
     if not rows:
         return "(no operatives configured)"

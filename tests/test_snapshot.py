@@ -2,9 +2,16 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+from ghsnitch.snapshot import compute_scope
 
-def _make_snapshot_file(tmp_path, data, scope=None):
-    name = f"snapshot-{scope}.json" if scope else "snapshot.json"
+
+def _make_snapshot_file(tmp_path, data, scope=None, context_id=None):
+    if context_id:
+        name = f"snapshot-{context_id}.json"
+    elif scope:
+        name = f"snapshot-{scope}.json"
+    else:
+        name = "snapshot.json"
     f = tmp_path / name
     f.write_text(json.dumps(data))
     return f
@@ -14,40 +21,30 @@ def _make_snapshot_file(tmp_path, data, scope=None):
 
 
 def test_compute_scope_deterministic():
-    from ghsnitch.snapshot import compute_scope
-
     s1 = compute_scope(["alice", "bob"], "https://github.com")
     s2 = compute_scope(["alice", "bob"], "https://github.com")
     assert s1 == s2
 
 
 def test_compute_scope_order_independent():
-    from ghsnitch.snapshot import compute_scope
-
     s1 = compute_scope(["bob", "alice"], "https://github.com")
     s2 = compute_scope(["alice", "bob"], "https://github.com")
     assert s1 == s2
 
 
 def test_compute_scope_case_insensitive():
-    from ghsnitch.snapshot import compute_scope
-
     s1 = compute_scope(["Alice", "Bob"], "https://github.com")
     s2 = compute_scope(["alice", "bob"], "https://github.com")
     assert s1 == s2
 
 
 def test_compute_scope_differs_by_github_url():
-    from ghsnitch.snapshot import compute_scope
-
     s1 = compute_scope(["alice"], "https://github.com")
     s2 = compute_scope(["alice"], "https://github.example.com")
     assert s1 != s2
 
 
 def test_compute_scope_differs_by_users():
-    from ghsnitch.snapshot import compute_scope
-
     s1 = compute_scope(["alice", "bob"], "https://github.com")
     s2 = compute_scope(["alice", "charlie"], "https://github.com")
     assert s1 != s2
@@ -73,6 +70,19 @@ def test_load_snapshot_returns_data(tmp_path):
         from ghsnitch.snapshot import load_snapshot
 
         result = load_snapshot(scope="abc123")
+    assert result["contributions"]["alice"]["2026"] == 50
+
+
+def test_load_snapshot_context_id(tmp_path):
+    payload = {
+        "timestamp": "2026-04-05T12:00:00+00:00",
+        "contributions": {"alice": {"2026": 50}},
+    }
+    _make_snapshot_file(tmp_path, payload, context_id="team-alpha")
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+        from ghsnitch.snapshot import load_snapshot
+
+        result = load_snapshot(context_id="team-alpha")
     assert result["contributions"]["alice"]["2026"] == 50
 
 
@@ -111,6 +121,15 @@ def test_save_snapshot_writes_file(tmp_path):
     data = json.loads(snap.read_text())
     assert data["contributions"]["alice"]["2026"] == 100
     assert "timestamp" in data
+
+
+def test_save_snapshot_context_id(tmp_path):
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+        from ghsnitch.snapshot import save_snapshot
+
+        save_snapshot({"bob": {"2026": 75}}, context_id="team-beta")
+    snap = tmp_path / "snapshot-team-beta.json"
+    assert snap.exists()
 
 
 def test_save_snapshot_creates_parent_dirs(tmp_path):
@@ -206,3 +225,26 @@ def test_clear_snapshot_returns_false_on_os_error(tmp_path):
             from ghsnitch.snapshot import clear_snapshot
 
             assert clear_snapshot(scope="abc123") is False
+
+
+# --- clear_all_snapshots ---
+
+
+def test_clear_all_snapshots(tmp_path):
+    _make_snapshot_file(tmp_path, {})  # legacy: snapshot.json
+    _make_snapshot_file(tmp_path, {}, scope="abc")  # snapshot-abc.json
+    _make_snapshot_file(tmp_path, {}, context_id="team-alpha")  # snapshot-team-alpha
+    (tmp_path / "not-a-snapshot.txt").write_text("")
+
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+        with patch(
+            "ghsnitch.snapshot._DEFAULT_SNAPSHOT_FILE", tmp_path / "snapshot.json"
+        ):
+            from ghsnitch.snapshot import clear_all_snapshots
+
+            assert clear_all_snapshots() is True
+
+    assert not (tmp_path / "snapshot.json").exists()
+    assert not (tmp_path / "snapshot-abc.json").exists()
+    assert not (tmp_path / "snapshot-team-alpha.json").exists()
+    assert (tmp_path / "not-a-snapshot.txt").exists()

@@ -11,12 +11,13 @@ requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Steve Williams" }]
 dependencies = [
-    "click",
-    "requests",
-    "tabulate",
-    "rich",
-    "asciichartpy",
+  "click",
+  "requests",
+  "tabulate",
+  "rich",
+  "asciichartpy",
 ]
+
 [project.scripts]
 gh-snitch = "ghsnitch.cli:gh_snitch"
 

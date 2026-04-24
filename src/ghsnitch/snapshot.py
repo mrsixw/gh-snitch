@@ -8,7 +8,6 @@ from .xdg import CACHE_DIR
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SNAPSHOT_FILE = CACHE_DIR / "snapshot.json"
-
 _SCOPE_HASH_LENGTH = 12
 
 
@@ -23,21 +22,25 @@ def compute_scope(users, github_url="https://github.com"):
     return hashlib.sha256(payload.encode()).hexdigest()[:_SCOPE_HASH_LENGTH]
 
 
-def _get_snapshot_path(scope=None):
-    """Return the snapshot Path for a given scope."""
-    if scope is None:
-        return _DEFAULT_SNAPSHOT_FILE
-    return CACHE_DIR / f"snapshot-{scope}.json"
+def _get_snapshot_path(scope=None, context_id=None):
+    """Return the snapshot Path for a given scope and/or context_id."""
+    if context_id:
+        # Sanitize context_id (e.g. team name)
+        safe_id = "".join(c for c in str(context_id) if c.isalnum() or c in ("-", "_"))
+        return CACHE_DIR / f"snapshot-{safe_id}.json"
+    if scope:
+        return CACHE_DIR / f"snapshot-{scope}.json"
+    return _DEFAULT_SNAPSHOT_FILE
 
 
-def load_snapshot(scope=None):
+def load_snapshot(scope=None, context_id=None):
     """Load the saved contribution snapshot for a scope.
 
     Returns the full data dict (with keys "timestamp" and "contributions") or
     None if no snapshot exists or it cannot be read.
     """
     try:
-        path = _get_snapshot_path(scope)
+        path = _get_snapshot_path(scope, context_id)
         if not path.exists():
             return None
         return json.loads(path.read_text())
@@ -45,7 +48,9 @@ def load_snapshot(scope=None):
         return None
 
 
-def save_snapshot(contributions, ranks=None, positions=None, scope=None):
+def save_snapshot(
+    contributions, ranks=None, positions=None, scope=None, context_id=None
+):
     """Persist contributions and optional leaderboard metadata to the cache.
 
     Args:
@@ -54,6 +59,7 @@ def save_snapshot(contributions, ranks=None, positions=None, scope=None):
         positions: optional dict[username, float | int] mapping each operative
             to their tie-aware leaderboard movement position
         scope: optional scope key from :func:`compute_scope`
+        context_id: optional explicit ID (e.g. team name)
     """
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -65,22 +71,22 @@ def save_snapshot(contributions, ranks=None, positions=None, scope=None):
             data["ranks"] = ranks
         if positions is not None:
             data["positions"] = positions
-        path = _get_snapshot_path(scope)
+        path = _get_snapshot_path(scope, context_id)
         path.write_text(json.dumps(data))
     except OSError as e:
         logger.warning("failed to save snapshot: %s", e)
 
 
-def clear_snapshot(scope=None):
+def clear_snapshot(scope=None, context_id=None):
     """Delete snapshot files. Returns True if cleared, False on error.
 
-    When *scope* is given, only that scope's snapshot is removed.
-    When *scope* is ``None``, **all** snapshot files (scoped and legacy) are
+    When *context_id* or *scope* is given, only that specific snapshot is removed.
+    When both are ``None``, **all** snapshot files (scoped and legacy) are
     removed — this is the behaviour behind ``--reset-snapshot``.
     """
     try:
-        if scope is not None:
-            _get_snapshot_path(scope).unlink(missing_ok=True)
+        if scope is not None or context_id is not None:
+            _get_snapshot_path(scope, context_id).unlink(missing_ok=True)
         else:
             for path in CACHE_DIR.glob("snapshot*.json"):
                 path.unlink(missing_ok=True)
@@ -88,3 +94,8 @@ def clear_snapshot(scope=None):
     except OSError as e:
         logger.warning("failed to clear snapshot: %s", e)
         return False
+
+
+def clear_all_snapshots():
+    """Delete ALL snapshot files (legacy, scoped, and team-specific)."""
+    return clear_snapshot(scope=None, context_id=None)

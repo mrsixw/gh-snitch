@@ -1,3 +1,4 @@
+import hashlib
 import json
 from unittest.mock import patch
 
@@ -5,7 +6,12 @@ import pytest
 from click.testing import CliRunner
 
 from ghsnitch.cli import gh_snitch
-from ghsnitch.snapshot import compute_scope
+
+
+def _context_id(users):
+    """Mirror cli.py's ad-hoc context_id computation for use in tests."""
+    key = ",".join(sorted(users))
+    return f"u-{hashlib.sha256(key.encode()).hexdigest()[:12]}"
 
 
 @pytest.fixture
@@ -397,7 +403,7 @@ _GRAPHQL_RESPONSE = {
 
 
 def test_reset_snapshot_clears_and_exits(runner, tmp_path):
-    snap = tmp_path / "snapshot.json"
+    snap = tmp_path / "snapshot-abc.json"
     snap.write_text('{"timestamp": "t", "contributions": {}}')
     with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
         result = runner.invoke(gh_snitch, ["--reset-snapshot"])
@@ -413,8 +419,7 @@ def test_delta_no_prior_snapshot_shows_absolute(runner, tmp_path, requests_mock)
     )
     requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
 
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
             with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
@@ -445,8 +450,7 @@ def test_delta_shows_change_since_snapshot(runner, tmp_path, requests_mock):
     from datetime import date
 
     current_year = str(date.today().year)
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     snap.write_text(
         json.dumps(
             {
@@ -492,8 +496,7 @@ def test_delta_does_not_overwrite_snapshot(runner, tmp_path, requests_mock):
             "contributions": {"alice": {current_year: 36}},
         }
     )
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     snap.write_text(original_snapshot)
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
@@ -518,8 +521,7 @@ def test_delta_with_years_hides_prior_year_columns(runner, tmp_path, requests_mo
 
     current_year = str(date.today().year)
     prior_year = str(date.today().year - 1)
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     snap.write_text(
         json.dumps(
             {
@@ -554,8 +556,7 @@ def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     )
     requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
 
-    scope = compute_scope(["alice"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice'])}.json"
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
             with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
@@ -582,8 +583,7 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
     from datetime import date
 
     current_year = str(date.today().year)
-    scope = compute_scope(["alice", "bob", "carol"], "https://github.com")
-    snap = tmp_path / f"snapshot-{scope}.json"
+    snap = tmp_path / f"snapshot-{_context_id(['alice', 'bob', 'carol'])}.json"
     snap.write_text(
         json.dumps(
             {
@@ -1180,16 +1180,14 @@ def test_team_snapshots_are_partitioned(runner, tmp_path, requests_mock):
                     ],
                 )
 
-    # Verify three distinct snapshot files exist (one per unique cohort).
-    # alpha=["alice"], beta=["bob"], ad-hoc=["alice","bob"] → different scopes
-    alpha_scope = compute_scope(["alice"], "https://github.com")
-    beta_scope = compute_scope(["bob"], "https://github.com")
-    adhoc_scope = compute_scope(["alice", "bob"], "https://github.com")
-    assert (tmp_path / f"snapshot-{alpha_scope}.json").exists()
-    assert (tmp_path / f"snapshot-{beta_scope}.json").exists()
-    assert (tmp_path / f"snapshot-{adhoc_scope}.json").exists()
-    # All scopes are different
-    assert len({alpha_scope, beta_scope, adhoc_scope}) == 3
+    # Verify three distinct files exist
+    # Team snapshots use the team name
+    assert (tmp_path / "snapshot-team-alpha.json").exists()
+    assert (tmp_path / "snapshot-team-beta.json").exists()
+
+    # Ad-hoc snapshots use a hash (u-...)
+    hashed_snaps = list(tmp_path.glob("snapshot-u-*.json"))
+    assert len(hashed_snaps) == 1
 
 
 def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
@@ -1210,8 +1208,6 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
         "alice": {current_year: 50},
         "bob": {current_year: 30},
     }
-
-    scope = compute_scope(["alice", "bob"], "https://github.com")
 
     with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
         with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
@@ -1234,8 +1230,8 @@ def test_team_snapshot_loaded_on_second_run(runner, tmp_path):
                     )
                     assert result1.exit_code == 0
 
-                    # Snapshot file must exist for this scope.
-                    assert (tmp_path / f"snapshot-{scope}.json").exists()
+                    # Snapshot file must exist for this team.
+                    assert (tmp_path / "snapshot-team-alpha.json").exists()
 
                     # Second run — should load the same scope's snapshot.
                     # All operatives remain unchanged → "=".
@@ -1332,7 +1328,7 @@ def test_update_config_no_op_if_up_to_date(runner, tmp_path):
 
     # Manually uncomment rank_delta so it exists
     content = config_path.read_text().replace(
-        "# rank_delta = false", "rank_delta = true"
+        "# rank_delta = true", "rank_delta = true"
     )
     config_path.write_text(content)
 
