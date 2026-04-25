@@ -79,6 +79,7 @@ The table shows contribution counts per operative per year, colour-graded:
 - 🟢 Third quartile
 - 💚 Top quartile (bright green)
 - ⚪ Zero contributions (dim grey)
+- 👻 Ghost operative — zero contributions across all surveilled periods
 
 Operative names and counts are clickable hyperlinks in supporting terminals.
 
