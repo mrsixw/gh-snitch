@@ -83,10 +83,14 @@ def make_coloured_hyperlink_cell(count, url, column_values):
     return str(count)
 
 
-def make_operative_cell(username):
-    """Return a hyperlinked username cell."""
+def make_operative_cell(username, is_ghost=False):
+    """Return a hyperlinked username cell, with a ghost indicator if zero activity."""
     url = f"https://github.com/{username}"
-    return make_hyperlink(url, username)
+    link = make_hyperlink(url, username)
+    if not is_ghost:
+        return link
+    ghost_mark = " 👻" if IS_TTY else " [ghost]"
+    return link + ghost_mark
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +395,7 @@ def render_table(
     show_rank_delta=True,
     delta_col=None,
     rank_deltas=None,
+    ghost_usernames=None,
 ):
     """Render contribution data as a formatted table string.
 
@@ -409,6 +414,9 @@ def render_table(
             leaderboard movement since the previous run (positive = moved up,
             None = new operative). When provided, a ± column is shown after the
             # column.
+        ghost_usernames: optional set of usernames with zero contributions across all
+            surveilled periods. These operatives receive a 👻 (TTY) or [ghost]
+            (non-TTY) indicator appended to their name cell.
     """
     if not rows:
         return "(no operatives configured)"
@@ -465,11 +473,11 @@ def render_table(
     table_data = []
     for rank, row in zip(ranks, sorted_rows):
         username = row["username"]
-        profile_url = f"https://github.com/{username}"
         cells = [rank]
         if show_rank_delta:
             cells.append(_rank_delta_cell(rank_deltas.get(username)))
-        cells.append(make_hyperlink(profile_url, username))
+        is_ghost = ghost_usernames is not None and username in ghost_usernames
+        cells.append(make_operative_cell(username, is_ghost=is_ghost))
         if show_trend:
             current = row.get(year_labels[0], 0)
             previous = row.get(year_labels[1], 0)
