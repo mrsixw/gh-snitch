@@ -559,6 +559,13 @@ def gh_snitch(  # noqa: PLR0913
                 suppressed += 1
         rows = filtered_rows
 
+    # Detect ghost operatives: zero contributions across every surveilled window.
+    ghost_usernames = {
+        row["username"]
+        for row in rows
+        if all(row.get(lbl, 0) == 0 for lbl in year_labels)
+    }
+
     # Apply delta transformation if requested.
     delta_col = None
     if delta:
@@ -614,12 +621,20 @@ def gh_snitch(  # noqa: PLR0913
             show_rank_delta=cfg.get("rank_delta", True),
             delta_col=delta_col,
             rank_deltas=rank_deltas,
+            ghost_usernames=ghost_usernames if not delta else None,
         )
         click.echo(table)
 
     if suppressed > 0:
         click.echo(
             f"🔕 {suppressed} operative(s) below threshold suppressed.",
+            err=True,
+        )
+
+    if ghost_usernames:
+        click.echo(
+            f"👻 {len(ghost_usernames)} ghost operative(s) detected — "
+            "zero activity across all surveilled windows.",
             err=True,
         )
 

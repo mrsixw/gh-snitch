@@ -8,6 +8,7 @@ from ghsnitch.ui import (
     _rank_delta_cell,
     _trend_indicator,
     make_hyperlink,
+    make_operative_cell,
     render_csv,
     render_graph,
     render_json,
@@ -786,3 +787,72 @@ def test_render_graph_no_color():
             output = render_graph(rows, ["2026"])
     # ANSI escape sequences start with \033[
     assert "\033[" not in output
+
+
+# ---------------------------------------------------------------------------
+# Ghost operative indicator
+# ---------------------------------------------------------------------------
+
+
+def test_make_operative_cell_no_ghost():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        result = make_operative_cell("alice", is_ghost=False)
+    assert result == "alice"
+    assert "ghost" not in result
+
+
+def test_make_operative_cell_ghost_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        result = make_operative_cell("alice", is_ghost=True)
+    assert "alice" in result
+    assert "[ghost]" in result
+
+
+def test_make_operative_cell_ghost_tty():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = make_operative_cell("alice", is_ghost=True)
+    assert "alice" in result
+    assert "👻" in result
+
+
+def test_render_table_ghost_indicator_non_tty():
+    rows = [
+        {"username": "alice", "2025": 0, "2024": 0},
+        {"username": "bob", "2025": 100, "2024": 80},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025", "2024"], ghost_usernames={"alice"})
+    alice_line = next(ln for ln in output.splitlines() if "alice" in ln)
+    bob_line = next(ln for ln in output.splitlines() if "bob" in ln)
+    assert "[ghost]" in alice_line
+    assert "[ghost]" not in bob_line
+
+
+def test_render_table_ghost_indicator_tty():
+    rows = [
+        {"username": "alice", "2025": 0},
+        {"username": "bob", "2025": 50},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        output = render_table(rows, ["2025"], ghost_usernames={"alice"})
+    assert "👻" in output
+
+
+def test_render_table_no_ghost_when_not_provided():
+    rows = [{"username": "alice", "2025": 0}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"])
+    assert "[ghost]" not in output
+    assert "👻" not in output
+
+
+def test_render_table_non_ghost_unaffected():
+    rows = [
+        {"username": "alice", "2025": 0},
+        {"username": "bob", "2025": 100},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], ghost_usernames={"alice"})
+    # bob has contributions and must not get the ghost mark
+    bob_line = next(ln for ln in output.splitlines() if "bob" in ln)
+    assert "[ghost]" not in bob_line
