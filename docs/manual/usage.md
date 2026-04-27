@@ -161,6 +161,37 @@ In TTY mode a 👻 indicator is appended to the operative's name in the table. I
 
 Ghost detection is automatic and requires no extra flags. It is suppressed in `--delta` mode, where the column shows contribution changes rather than totals.
 
+## Redacting Operative Identities
+
+Use `--redact` to replace real GitHub usernames with NATO phonetic codenames before output is rendered. This lets you share reports publicly without exposing team members' handles.
+
+```bash
+gh-snitch --users alice,bob,carol --redact
+```
+
+```
+#  Operative          2026   2025   2024
+1  Operative Bravo     412    380    310
+2  Operative Alpha     210    195    180
+3  Operative Charlie   170    210    190
+```
+
+Codenames are assigned in alphabetical order of the real username, so the mapping is stable across runs:
+
+| Real handle | Codename            |
+|-------------|---------------------|
+| alice       | Operative Alpha     |
+| bob         | Operative Bravo     |
+| carol       | Operative Charlie   |
+
+If you have more than 26 operatives the sequence continues as Operative Alpha-2, Bravo-2, etc.
+
+In redact mode:
+- OSC 8 terminal hyperlinks are suppressed — no clickable links that could reveal the real handle
+- The codename replaces the username in all output formats (`table`, `json`, `csv`, `markdown`, `graph`)
+- Ghost indicators (`👻` / `[ghost]`) are still shown alongside the codename
+- Error messages for not-found operatives also use the codename
+
 ## Filtering Inactive Operatives
 
 Suppress operatives whose current-year contribution count falls below a threshold:

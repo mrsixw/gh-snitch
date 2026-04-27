@@ -856,3 +856,99 @@ def test_render_table_non_ghost_unaffected():
     # bob has contributions and must not get the ghost mark
     bob_line = next(ln for ln in output.splitlines() if "bob" in ln)
     assert "[ghost]" not in bob_line
+
+
+# ---------------------------------------------------------------------------
+# --redact mode
+# ---------------------------------------------------------------------------
+
+
+def test_make_operative_cell_redact_non_tty():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        result = make_operative_cell("alice", display_name="Operative Alpha")
+    assert result == "Operative Alpha"
+    assert "alice" not in result
+    assert "\033]8;;" not in result
+
+
+def test_make_operative_cell_redact_tty_no_hyperlink():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = make_operative_cell("alice", display_name="Operative Alpha")
+    assert "Operative Alpha" in result
+    assert "\033]8;;" not in result
+
+
+def test_make_operative_cell_redact_with_ghost():
+    with patch("ghsnitch.ui.IS_TTY", False):
+        result = make_operative_cell(
+            "alice", is_ghost=True, display_name="Operative Alpha"
+        )
+    assert "Operative Alpha" in result
+    assert "[ghost]" in result
+    assert "alice" not in result
+
+
+def test_render_table_redact_uses_codename():
+    rows = [
+        {"username": "alice", "2025": 100},
+        {"username": "bob", "2025": 50},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows,
+            ["2025"],
+            redact_map={"alice": "Operative Alpha", "bob": "Operative Bravo"},
+        )
+    assert "Operative Alpha" in output
+    assert "Operative Bravo" in output
+    assert "alice" not in output
+    assert "bob" not in output
+
+
+def test_render_table_redact_no_hyperlinks_tty():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        output = render_table(rows, ["2025"], redact_map={"alice": "Operative Alpha"})
+    assert "\033]8;;" not in output
+
+
+def test_render_table_no_redact_when_map_none():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], redact_map=None)
+    assert "alice" in output
+
+
+def test_render_json_redact_operative_field():
+    import json as _json
+
+    rows = [{"username": "alice", "2025": 100}]
+    output = render_json(rows, ["2025"], redact_map={"alice": "Operative Alpha"})
+    data = _json.loads(output)
+    assert data[0]["operative"] == "Operative Alpha"
+    assert "alice" not in output
+
+
+def test_render_csv_redact_operative_column():
+    rows = [{"username": "alice", "2025": 100}]
+    output = render_csv(rows, ["2025"], redact_map={"alice": "Operative Alpha"})
+    assert "Operative Alpha" in output
+    assert "alice" not in output
+
+
+def test_render_markdown_redact_operative_column():
+    rows = [{"username": "alice", "2025": 100}]
+    output = render_markdown(rows, ["2025"], redact_map={"alice": "Operative Alpha"})
+    assert "Operative Alpha" in output
+    assert "alice" not in output
+
+
+def test_render_table_redact_unmapped_shows_username():
+    rows = [
+        {"username": "alice", "2025": 100},
+        {"username": "unknown", "2025": 50},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], redact_map={"alice": "Operative Alpha"})
+    assert "Operative Alpha" in output
+    assert "unknown" in output

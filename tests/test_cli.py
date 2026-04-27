@@ -1400,3 +1400,103 @@ def test_rank_delta_column_visible_by_default(runner, tmp_path, requests_mock):
                     ],
                 )
                 assert "±" not in result_no_delta.output
+
+
+# ---------------------------------------------------------------------------
+# --redact mode
+# ---------------------------------------------------------------------------
+
+_GRAPHQL_RESPONSE_TWO_USERS = {
+    "data": {
+        "user_alice": {
+            "login": "alice",
+            "contributionsCollection": {
+                "contributionCalendar": {"totalContributions": 100}
+            },
+        },
+        "user_bob": {
+            "login": "bob",
+            "contributionsCollection": {
+                "contributionCalendar": {"totalContributions": 50}
+            },
+        },
+    }
+}
+
+
+def _make_two_user_config(tmp_path, years=0):
+    f = tmp_path / "config.toml"
+    f.write_text(
+        f'[operatives]\nusers = ["alice", "bob"]\n[surveillance]\nyears = {years}\n'
+    )
+    return f
+
+
+def test_redact_replaces_usernames(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--redact"])
+    assert result.exit_code == 0
+    assert "alice" not in result.output
+    assert "bob" not in result.output
+
+
+def test_redact_uses_nato_codenames(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--redact"])
+    assert result.exit_code == 0
+    # alice sorts before bob → Operative Alpha; bob → Operative Bravo
+    assert "Operative Alpha" in result.output
+    assert "Operative Bravo" in result.output
+
+
+def test_redact_codename_order_is_deterministic(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result1 = _run(runner, cfg, tmp_path, ["--redact", "--no-rank-delta"])
+    result2 = _run(runner, cfg, tmp_path, ["--redact", "--no-rank-delta"])
+    assert result1.output == result2.output
+
+
+def test_redact_json_format_uses_codenames(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--redact", "--format", "json"])
+    assert result.exit_code == 0
+    data = _extract_json(result.output)
+    operatives = {e["operative"] for e in data}
+    assert "Operative Alpha" in operatives
+    assert "Operative Bravo" in operatives
+    assert not any(o in ("alice", "bob") for o in operatives)
+
+
+def test_redact_csv_format_uses_codenames(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--redact", "--format", "csv"])
+    assert result.exit_code == 0
+    assert "Operative" in result.output
+    assert "alice" not in result.output
+    assert "bob" not in result.output
+
+
+def test_redact_markdown_format_uses_codenames(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--redact", "--format", "markdown"])
+    assert result.exit_code == 0
+    assert "Operative Alpha" in result.output
+    assert "alice" not in result.output

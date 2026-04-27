@@ -37,6 +37,35 @@ from .updater import check_for_update
 
 VALID_FORMATS = ("table", "json", "csv", "markdown", "graph")
 
+_NATO_ALPHABET = [
+    "Alpha",
+    "Bravo",
+    "Charlie",
+    "Delta",
+    "Echo",
+    "Foxtrot",
+    "Golf",
+    "Hotel",
+    "India",
+    "Juliet",
+    "Kilo",
+    "Lima",
+    "Mike",
+    "November",
+    "Oscar",
+    "Papa",
+    "Quebec",
+    "Romeo",
+    "Sierra",
+    "Tango",
+    "Uniform",
+    "Victor",
+    "Whiskey",
+    "X-ray",
+    "Yankee",
+    "Zulu",
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -231,6 +260,12 @@ def _backup_config(path: Path):
     help="Hide the ± column showing rank change since the last run.",
 )
 @click.option(
+    "--redact",
+    is_flag=True,
+    default=False,
+    help="Replace operative usernames with NATO codenames for shareable output.",
+)
+@click.option(
     "--delta",
     is_flag=True,
     default=False,
@@ -270,6 +305,7 @@ def gh_snitch(  # noqa: PLR0913
     totals,
     percent,
     no_rank_delta,
+    redact,
     delta,
     reset_snapshot,
     output_format,
@@ -364,6 +400,13 @@ def gh_snitch(  # noqa: PLR0913
         cfg["users"] = teams[team]
 
     operative_list = cfg["users"]
+
+    # Build redact map: sorted usernames → NATO codenames (deterministic).
+    redact_map: dict[str, str] = {}
+    if redact:
+        for i, username in enumerate(sorted(operative_list)):
+            suffix = f"-{i // 26 + 1}" if i >= 26 else ""
+            redact_map[username] = f"Operative {_NATO_ALPHABET[i % 26]}{suffix}"
 
     # Calculate context ID for partitioned snapshot caching.
     context_id = None
@@ -592,12 +635,22 @@ def gh_snitch(  # noqa: PLR0913
 
     show_totals = cfg.get("totals", False)
 
+    _redact = redact_map or None
     if active_format == "json":
-        click.echo(render_json(rows, year_labels, show_totals=show_totals))
+        click.echo(
+            render_json(rows, year_labels, show_totals=show_totals, redact_map=_redact)
+        )
     elif active_format == "csv":
-        click.echo(render_csv(rows, year_labels, show_totals=show_totals), nl=False)
+        click.echo(
+            render_csv(rows, year_labels, show_totals=show_totals, redact_map=_redact),
+            nl=False,
+        )
     elif active_format == "markdown":
-        click.echo(render_markdown(rows, year_labels, show_totals=show_totals))
+        click.echo(
+            render_markdown(
+                rows, year_labels, show_totals=show_totals, redact_map=_redact
+            )
+        )
     elif active_format == "graph":
         if cfg.get("percent"):
             click.echo(
@@ -609,7 +662,9 @@ def gh_snitch(  # noqa: PLR0913
                 "⚠️  --totals is ignored in graph format (no footer rows in charts).",
                 err=True,
             )
-        click.echo(render_graph(rows, year_labels, show_totals=show_totals))
+        click.echo(
+            render_graph(rows, year_labels, show_totals=show_totals, redact_map=_redact)
+        )
     else:
         table = render_table(
             rows,
@@ -622,6 +677,7 @@ def gh_snitch(  # noqa: PLR0913
             delta_col=delta_col,
             rank_deltas=rank_deltas,
             ghost_usernames=ghost_usernames if not delta else None,
+            redact_map=_redact,
         )
         click.echo(table)
 
@@ -640,8 +696,9 @@ def gh_snitch(  # noqa: PLR0913
 
     if not_found:
         for username in sorted(not_found):
+            display = redact_map.get(username, username) if redact_map else username
             click.echo(
-                f"⚠️  Operative '{username}' not found — they may have gone dark.",
+                f"⚠️  Operative '{display}' not found — they may have gone dark.",
                 err=True,
             )
         click.echo(
