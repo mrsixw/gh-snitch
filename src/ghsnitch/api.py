@@ -122,8 +122,8 @@ def get_period_range(period: str) -> tuple[str, str, str]:
 def build_contributions_query(users, from_iso, to_iso):
     """Build a GraphQL query with aliases for each user."""
     aliases = []
-    for username in users:
-        alias = f"user_{username.replace('-', '_').replace('.', '_')}"
+    for i, username in enumerate(users):
+        alias = f"user_{i}"
         aliases.append(f"""
   {alias}: user(login: "{username}") {{
     login
@@ -264,8 +264,8 @@ def fetch_contributions(
         for completed, future in enumerate(as_completed(futures), start=1):
             label, response_data = future.result()
 
-            for username in users:
-                alias = f"user_{username.replace('-', '_').replace('.', '_')}"
+            for i, username in enumerate(users):
+                alias = f"user_{i}"
                 user_data = response_data.get(alias)
                 if user_data is None:
                     logger.warning(

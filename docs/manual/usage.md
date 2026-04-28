@@ -149,6 +149,18 @@ gh-snitch --github-url https://github.example.com --users alice,bob
 
 The GraphQL API endpoint is derived automatically (`<host>/api/graphql`). Your `GITHUB_TOKEN` should be a personal access token issued by the Enterprise instance.
 
+## Ghost Operative Detection
+
+Operatives who have recorded zero contributions across **all** surveilled windows are automatically flagged as ghost operatives — dormant assets who have gone dark.
+
+In TTY mode a 👻 indicator is appended to the operative's name in the table. In non-TTY mode (pipes, scripts, `--format csv/json/markdown`) a `[ghost]` annotation is used instead. A summary line is also printed to stderr:
+
+```
+👻 1 ghost operative(s) detected — zero activity across all surveilled windows.
+```
+
+Ghost detection is automatic and requires no extra flags. It is suppressed in `--delta` mode, where the column shows contribution changes rather than totals.
+
 ## Filtering Inactive Operatives
 
 Suppress operatives whose current-year contribution count falls below a threshold:

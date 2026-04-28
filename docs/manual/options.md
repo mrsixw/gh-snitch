@@ -26,6 +26,16 @@
 | `--version` | — | Show version and exit |
 | `--help` | — | Show help and exit |
 
+## Automatic Indicators
+
+Some behaviours are always-on and require no flag:
+
+| Indicator | Condition | Output |
+|---|---|---|
+| 👻 / `[ghost]` | Operative has zero contributions across **all** surveilled windows | Appended to name in the Operative column; summary line on stderr |
+
+Ghost detection is suppressed in `--delta` mode.
+
 ## Environment Variables
 
 | Variable | Required | Description |
