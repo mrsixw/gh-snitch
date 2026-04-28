@@ -18,6 +18,31 @@ from ghsnitch.api import (
 )
 
 
+def _graphql_response(*users, errors=None):
+    """Build a mock GraphQL response dict matching the current alias scheme.
+
+    Pass (login, total_contributions) pairs; use None for count to simulate
+    a null/not-found user:
+        _graphql_response(("alice", 50), ("bob", 30))
+        _graphql_response(("ghost", None), errors=[{...}])
+    """
+    data = {}
+    for i, (login, count) in enumerate(users):
+        if count is None:
+            data[f"user_{i}"] = None
+        else:
+            data[f"user_{i}"] = {
+                "login": login,
+                "contributionsCollection": {
+                    "contributionCalendar": {"totalContributions": count}
+                },
+            }
+    response = {"data": data}
+    if errors is not None:
+        response["errors"] = errors
+    return response
+
+
 def test_graphql_url_for_github_com():
     assert graphql_url_for("https://github.com") == "https://api.github.com/graphql"
 
@@ -205,16 +230,7 @@ def test_get_custom_range_since_after_until():
 def test_fetch_contributions_with_period(requests_mock):
     requests_mock.post(
         "https://api.github.com/graphql",
-        json={
-            "data": {
-                "user_alice": {
-                    "login": "alice",
-                    "contributionsCollection": {
-                        "contributionCalendar": {"totalContributions": 7}
-                    },
-                }
-            }
-        },
+        json=_graphql_response(("alice", 7)),
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
@@ -257,8 +273,8 @@ def test_build_contributions_query_contains_aliases():
     query = build_contributions_query(
         ["alice", "bob"], "2025-01-01T00:00:00+00:00", "2025-12-31T23:59:59+00:00"
     )
-    assert "user_alice" in query
-    assert "user_bob" in query
+    assert "user_0" in query
+    assert "user_1" in query
     assert "contributionCalendar" in query
     assert "totalContributions" in query
 
@@ -267,7 +283,19 @@ def test_build_contributions_query_handles_hyphen_in_username():
     query = build_contributions_query(
         ["my-user"], "2025-01-01T00:00:00+00:00", "2025-12-31T23:59:59+00:00"
     )
-    assert "user_my_user" in query
+    assert "user_0" in query
+    assert 'login: "my-user"' in query
+
+
+def test_build_contributions_query_no_alias_collision_for_similar_usernames():
+    """agent-007 and agent_007 must not produce the same GraphQL alias."""
+    query = build_contributions_query(
+        ["agent-007", "agent_007"],
+        "2025-01-01T00:00:00+00:00",
+        "2025-12-31T23:59:59+00:00",
+    )
+    assert 'user_0: user(login: "agent-007")' in query
+    assert 'user_1: user(login: "agent_007")' in query
 
 
 def test_fetch_contributions_parses_response(requests_mock):
@@ -275,16 +303,7 @@ def test_fetch_contributions_parses_response(requests_mock):
     prior_year = str(date.today().year - 1)
 
     def graphql_handler(request, context):
-        return {
-            "data": {
-                "user_alice": {
-                    "login": "alice",
-                    "contributionsCollection": {
-                        "contributionCalendar": {"totalContributions": 150}
-                    },
-                }
-            }
-        }
+        return _graphql_response(("alice", 150))
 
     requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
 
@@ -301,7 +320,7 @@ def test_fetch_contributions_null_user_returns_zero(requests_mock):
 
     requests_mock.post(
         "https://api.github.com/graphql",
-        json={"data": {"user_ghost": None}},
+        json=_graphql_response(("ghost", None)),
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
@@ -316,16 +335,7 @@ def test_fetch_contributions_uses_enterprise_url(requests_mock):
 
     requests_mock.post(
         "https://github.example.com/api/graphql",
-        json={
-            "data": {
-                "user_alice": {
-                    "login": "alice",
-                    "contributionsCollection": {
-                        "contributionCalendar": {"totalContributions": 99}
-                    },
-                }
-            }
-        },
+        json=_graphql_response(("alice", 99)),
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
@@ -340,16 +350,7 @@ def test_fetch_contributions_uses_enterprise_url(requests_mock):
 def test_fetch_contributions_calls_on_progress(requests_mock):
     requests_mock.post(
         "https://api.github.com/graphql",
-        json={
-            "data": {
-                "user_alice": {
-                    "login": "alice",
-                    "contributionsCollection": {
-                        "contributionCalendar": {"totalContributions": 1}
-                    },
-                }
-            }
-        },
+        json=_graphql_response(("alice", 1)),
     )
 
     calls = []
@@ -368,16 +369,16 @@ def test_fetch_contributions_not_found_user_via_graphql_error(requests_mock):
 
     requests_mock.post(
         "https://api.github.com/graphql",
-        json={
-            "data": {"user_ghost": None},
-            "errors": [
+        json=_graphql_response(
+            ("ghost", None),
+            errors=[
                 {
                     "type": "NOT_FOUND",
-                    "path": ["user_ghost"],
+                    "path": ["user_0"],
                     "message": "Could not resolve to a User with the login of 'ghost'.",
                 }
             ],
-        },
+        ),
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
