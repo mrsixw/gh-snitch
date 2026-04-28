@@ -1301,22 +1301,7 @@ def test_rank_delta_column_visible_by_default(runner, tmp_path, requests_mock):
 # --redact mode
 # ---------------------------------------------------------------------------
 
-_GRAPHQL_RESPONSE_TWO_USERS = {
-    "data": {
-        "user_alice": {
-            "login": "alice",
-            "contributionsCollection": {
-                "contributionCalendar": {"totalContributions": 100}
-            },
-        },
-        "user_bob": {
-            "login": "bob",
-            "contributionsCollection": {
-                "contributionCalendar": {"totalContributions": 50}
-            },
-        },
-    }
-}
+_GRAPHQL_RESPONSE_TWO_USERS = _graphql_response(("alice", 100), ("bob", 50))
 
 
 def _make_two_user_config(tmp_path, years=0):
