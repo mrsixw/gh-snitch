@@ -75,7 +75,7 @@ def test_successful_run_renders_table(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 42}
@@ -108,7 +108,7 @@ def test_no_update_check_skips_update(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 10}
@@ -138,7 +138,7 @@ def test_github_url_cli_override(runner, tmp_path, requests_mock):
         "https://github.example.com/api/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 5}
@@ -207,11 +207,11 @@ def test_not_found_operative_shows_warning_and_exits_nonzero(
     requests_mock.post(
         "https://api.github.com/graphql",
         json={
-            "data": {"user_ghost": None},
+            "data": {"user_0": None},
             "errors": [
                 {
                     "type": "NOT_FOUND",
-                    "path": ["user_ghost"],
+                    "path": ["user_0"],
                     "message": "Could not resolve to a User with the login of 'ghost'.",
                 }
             ],
@@ -240,13 +240,13 @@ def test_min_contributions_suppresses_below_threshold(runner, tmp_path, requests
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 50}
                     },
                 },
-                "user_bob": {
+                "user_1": {
                     "login": "bob",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 3}
@@ -285,13 +285,13 @@ def test_min_contributions_zero_shows_all(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 50}
                     },
                 },
-                "user_bob": {
+                "user_1": {
                     "login": "bob",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 0}
@@ -333,13 +333,13 @@ def test_min_contributions_from_config(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 50}
                     },
                 },
-                "user_bob": {
+                "user_1": {
                     "login": "bob",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 5}
@@ -370,7 +370,7 @@ def test_users_cli_override(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_bob": {
+                "user_0": {
                     "login": "bob",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 7}
@@ -392,7 +392,7 @@ def test_users_cli_override(runner, tmp_path, requests_mock):
 
 _GRAPHQL_RESPONSE = {
     "data": {
-        "user_alice": {
+        "user_0": {
             "login": "alice",
             "contributionsCollection": {
                 "contributionCalendar": {"totalContributions": 50}
@@ -1025,7 +1025,7 @@ def test_team_selects_users_from_config(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 42}
@@ -1083,7 +1083,7 @@ def test_users_overrides_team(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_bob": {
+                "user_0": {
                     "login": "bob",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 7}
@@ -1121,18 +1121,21 @@ def test_team_snapshots_are_partitioned(runner, tmp_path, requests_mock):
         "[surveillance]\nyears = 0\n"
     )
 
-    # Mock response for alice (alpha) and bob (beta)
+    # Mock response covers all three invocations:
+    # - alpha (["alice"]): user_0 → alice
+    # - beta  (["bob"]):   user_0 → bob
+    # - ad-hoc (["alice","bob"]): user_0 → alice, user_1 → bob
     requests_mock.post(
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 10}
                     },
                 },
-                "user_bob": {
+                "user_1": {
                     "login": "bob",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 20}
@@ -1366,7 +1369,7 @@ def test_rank_delta_column_visible_by_default(runner, tmp_path, requests_mock):
         "https://api.github.com/graphql",
         json={
             "data": {
-                "user_alice": {
+                "user_0": {
                     "login": "alice",
                     "contributionsCollection": {
                         "contributionCalendar": {"totalContributions": 10}
