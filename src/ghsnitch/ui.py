@@ -83,8 +83,15 @@ def make_coloured_hyperlink_cell(count, url, column_values):
     return str(count)
 
 
-def make_operative_cell(username, is_ghost=False):
-    """Return a hyperlinked username cell, with a ghost indicator if zero activity."""
+def make_operative_cell(username, is_ghost=False, display_name=None):
+    """Return an operative name cell.
+
+    When display_name is provided (redact mode) the cell is plain text with no
+    hyperlink.  Otherwise a clickable OSC 8 link to the GitHub profile is used.
+    """
+    if display_name is not None:
+        ghost_mark = (" 👻" if IS_TTY else " [ghost]") if is_ghost else ""
+        return display_name + ghost_mark
     url = f"https://github.com/{username}"
     link = make_hyperlink(url, username)
     if not is_ghost:
@@ -290,7 +297,7 @@ def _sorted_rows_and_ranks(rows, year_labels):
     return sorted_rows, ranks
 
 
-def render_json(rows, year_labels, show_totals=False):
+def render_json(rows, year_labels, show_totals=False, redact_map=None):
     """Render contribution data as a JSON array (no ANSI codes).
 
     Each element is an object with "rank", "operative", one key per period
@@ -301,7 +308,9 @@ def render_json(rows, year_labels, show_totals=False):
     sorted_rows, ranks = _sorted_rows_and_ranks(rows, year_labels)
     result = []
     for rank, row in zip(ranks, sorted_rows):
-        entry = {"rank": rank, "operative": row["username"]}
+        username = row["username"]
+        operative_name = redact_map.get(username, username) if redact_map else username
+        entry = {"rank": rank, "operative": operative_name}
         for label in year_labels:
             entry[label] = row.get(label, 0)
         if show_totals:
@@ -310,7 +319,7 @@ def render_json(rows, year_labels, show_totals=False):
     return _json.dumps(result, indent=2, ensure_ascii=False)
 
 
-def render_csv(rows, year_labels, show_totals=False):
+def render_csv(rows, year_labels, show_totals=False, redact_map=None):
     """Render contribution data as CSV (no ANSI codes).
 
     Header row: rank, operative, <period labels…> [, total]
@@ -326,7 +335,9 @@ def render_csv(rows, year_labels, show_totals=False):
     writer = _csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
     for rank, row in zip(ranks, sorted_rows):
-        record = {"rank": rank, "operative": row["username"]}
+        username = row["username"]
+        operative_name = redact_map.get(username, username) if redact_map else username
+        record = {"rank": rank, "operative": operative_name}
         for label in year_labels:
             record[label] = row.get(label, 0)
         if show_totals:
@@ -344,7 +355,7 @@ def render_csv(rows, year_labels, show_totals=False):
     return output.getvalue()
 
 
-def render_markdown(rows, year_labels, show_totals=False):
+def render_markdown(rows, year_labels, show_totals=False, redact_map=None):
     """Render contribution data as a GitHub-Flavoured Markdown table (no ANSI).
 
     Columns: # | Operative | <period labels…> [| Total]
@@ -365,7 +376,9 @@ def render_markdown(rows, year_labels, show_totals=False):
 
     lines = [_row(headers), separator]
     for rank, row in zip(ranks, sorted_rows):
-        cells = [rank, row["username"]]
+        username = row["username"]
+        operative_name = redact_map.get(username, username) if redact_map else username
+        cells = [rank, operative_name]
         for label in year_labels:
             cells.append(row.get(label, 0))
         if show_totals:
@@ -396,6 +409,7 @@ def render_table(
     delta_col=None,
     rank_deltas=None,
     ghost_usernames=None,
+    redact_map=None,
 ):
     """Render contribution data as a formatted table string.
 
@@ -417,6 +431,9 @@ def render_table(
         ghost_usernames: optional set of usernames with zero contributions across all
             surveilled periods. These operatives receive a 👻 (TTY) or [ghost]
             (non-TTY) indicator appended to their name cell.
+        redact_map: optional dict mapping real usernames to NATO codenames. When
+            provided, the codename replaces the username in the Operative column
+            and no hyperlink is emitted (plain text only).
     """
     if not rows:
         return "(no operatives configured)"
@@ -477,7 +494,10 @@ def render_table(
         if show_rank_delta:
             cells.append(_rank_delta_cell(rank_deltas.get(username)))
         is_ghost = ghost_usernames is not None and username in ghost_usernames
-        cells.append(make_operative_cell(username, is_ghost=is_ghost))
+        display_name = redact_map.get(username) if redact_map else None
+        cells.append(
+            make_operative_cell(username, is_ghost=is_ghost, display_name=display_name)
+        )
         if show_trend:
             current = row.get(year_labels[0], 0)
             previous = row.get(year_labels[1], 0)
@@ -486,21 +506,28 @@ def render_table(
             count = row.get(label, 0)
             if label == delta_col:
                 cells.append(_delta_cell(count, col_values[label]))
+                continue
+            if redact_map is not None:
+                if IS_TTY:
+                    prefix, suffix = _grade_colour(count, col_values[label])
+                    cell = f"{prefix}{count}{suffix}"
+                else:
+                    cell = str(count)
             else:
                 contrib_url = f"https://github.com/{username}"
                 cell = make_coloured_hyperlink_cell(
                     count, contrib_url, col_values[label]
                 )
-                if show_percent:
-                    total = year_totals[label]
-                    pct = (count / total * 100) if total > 0 else 0.0
-                    if IS_TTY:
-                        prefix, suffix = _grade_colour(pct, col_pct_values[label])
-                        pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
-                    else:
-                        pct_annotation = f"({pct:.0f}%)"
-                    cell = f"{cell} {pct_annotation}"
-                cells.append(cell)
+            if show_percent:
+                total = year_totals[label]
+                pct = (count / total * 100) if total > 0 else 0.0
+                if IS_TTY:
+                    prefix, suffix = _grade_colour(pct, col_pct_values[label])
+                    pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
+                else:
+                    pct_annotation = f"({pct:.0f}%)"
+                cell = f"{cell} {pct_annotation}"
+            cells.append(cell)
         if show_totals:
             cells.append(sum(row.get(label, 0) for label in year_labels))
         table_data.append(cells)
@@ -538,7 +565,7 @@ def render_table(
     )
 
 
-def render_graph(rows, year_labels, show_totals=False):
+def render_graph(rows, year_labels, show_totals=False, redact_map=None):
     """Render contribution data as a time-series line graph string."""
     if not rows:
         return "(no operatives configured)"
@@ -622,7 +649,12 @@ def render_graph(rows, year_labels, show_totals=False):
         if not IS_TTY:
             color_code = ""
             reset = ""
-        legend_items.append(f"{color_code}{row['username']}{reset}")
+        name = (
+            redact_map.get(row["username"], row["username"])
+            if redact_map
+            else row["username"]
+        )
+        legend_items.append(f"{color_code}{name}{reset}")
 
     legend = "          " + ", ".join(legend_items) + "\n"
 
