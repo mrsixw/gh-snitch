@@ -17,6 +17,7 @@
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
 | `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, `markdown`, or `graph`. Non-table formats write clean data to stdout and send status messages to stderr. |
 | `--no-rank-delta` | off | Hide the `±` rank-change column (rank delta is shown by default) |
+| `--redact` | off | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …); suppresses hyperlinks. Codenames are assigned in alphabetical order of the real username and are deterministic across runs. Works with all output formats. |
 | `--delta` | off | Replace the current-year column with `Δ Today` showing the change since the last saved snapshot; green/red-coded |
 | `--reset-snapshot` | off | Clear the saved contribution snapshot and exit |
 | `--no-trend` | off | Hide the Trend column |
