@@ -666,30 +666,30 @@ def render_graph(rows, year_labels, show_totals=False, redact_map=None):
 # ---------------------------------------------------------------------------
 
 _ANSI_COLORS = [
-    "\033[38;5;160m",  # red
-    "\033[38;5;34m",  # green
-    "\033[38;5;26m",  # blue
-    "\033[38;5;178m",  # yellow
-    "\033[38;5;127m",  # magenta
-    "\033[38;5;37m",  # teal
-    "\033[38;5;166m",  # orange
-    "\033[38;5;92m",  # violet
-    "\033[38;5;70m",  # lime
-    "\033[38;5;20m",  # royal blue
-    "\033[38;5;172m",  # amber
-    "\033[38;5;73m",  # aqua
-    "\033[38;5;130m",  # burnt orange
-    "\033[38;5;64m",  # olive green
-    "\033[38;5;54m",  # indigo
-    "\033[38;5;136m",  # gold
-    "\033[38;5;42m",  # spring green
-    "\033[38;5;133m",  # orchid
-    "\033[38;5;167m",  # salmon
-    "\033[38;5;68m",  # steel blue
-    "\033[38;5;106m",  # yellow-green
-    "\033[38;5;61m",  # blue-violet
-    "\033[38;5;142m",  # khaki
-    "\033[38;5;74m",  # cornflower
+    "\033[38;5;196m",  # red
+    "\033[38;5;46m",  # green
+    "\033[38;5;21m",  # blue
+    "\033[38;5;226m",  # yellow
+    "\033[38;5;201m",  # magenta
+    "\033[38;5;51m",  # cyan
+    "\033[38;5;208m",  # orange
+    "\033[38;5;129m",  # violet
+    "\033[38;5;118m",  # lime
+    "\033[38;5;27m",  # royal blue
+    "\033[38;5;214m",  # amber
+    "\033[38;5;87m",  # aqua
+    "\033[38;5;160m",  # crimson
+    "\033[38;5;82m",  # chartreuse
+    "\033[38;5;57m",  # indigo
+    "\033[38;5;220m",  # gold
+    "\033[38;5;48m",  # spring green
+    "\033[38;5;165m",  # orchid
+    "\033[38;5;203m",  # coral
+    "\033[38;5;75m",  # sky blue
+    "\033[38;5;154m",  # yellow-green
+    "\033[38;5;93m",  # blue-violet
+    "\033[38;5;190m",  # lime-yellow
+    "\033[38;5;39m",  # cornflower
 ]
 _ANSI_RESET = "\033[0m"
 _BLOCK = "█"
