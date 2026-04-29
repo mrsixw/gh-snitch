@@ -666,18 +666,30 @@ def render_graph(rows, year_labels, show_totals=False, redact_map=None):
 # ---------------------------------------------------------------------------
 
 _ANSI_COLORS = [
-    "\033[96m",  # bright cyan
-    "\033[95m",  # bright magenta
-    "\033[92m",  # bright green
-    "\033[93m",  # bright yellow
-    "\033[94m",  # bright blue
-    "\033[91m",  # bright red
-    "\033[36m",  # cyan
-    "\033[35m",  # magenta
-    "\033[32m",  # green
-    "\033[33m",  # yellow
-    "\033[34m",  # blue
-    "\033[31m",  # red
+    "\033[38;5;196m",  # red
+    "\033[38;5;46m",  # green
+    "\033[38;5;21m",  # blue
+    "\033[38;5;226m",  # yellow
+    "\033[38;5;201m",  # magenta
+    "\033[38;5;51m",  # cyan
+    "\033[38;5;208m",  # orange
+    "\033[38;5;129m",  # violet
+    "\033[38;5;118m",  # lime
+    "\033[38;5;27m",  # royal blue
+    "\033[38;5;214m",  # amber
+    "\033[38;5;87m",  # aqua
+    "\033[38;5;160m",  # crimson
+    "\033[38;5;82m",  # chartreuse
+    "\033[38;5;57m",  # indigo
+    "\033[38;5;220m",  # gold
+    "\033[38;5;48m",  # spring green
+    "\033[38;5;165m",  # orchid
+    "\033[38;5;203m",  # coral
+    "\033[38;5;75m",  # sky blue
+    "\033[38;5;154m",  # yellow-green
+    "\033[38;5;93m",  # blue-violet
+    "\033[38;5;190m",  # lime-yellow
+    "\033[38;5;39m",  # cornflower
 ]
 _ANSI_RESET = "\033[0m"
 _BLOCK = "█"
