@@ -659,3 +659,135 @@ def render_graph(rows, year_labels, show_totals=False, redact_map=None):
     legend = "          " + ", ".join(legend_items) + "\n"
 
     return f"{title}\n{plot_output}\n\n{legend}"
+
+
+# ---------------------------------------------------------------------------
+# Stacked bar chart
+# ---------------------------------------------------------------------------
+
+_ANSI_COLORS = [
+    "\033[96m",  # bright cyan
+    "\033[95m",  # bright magenta
+    "\033[92m",  # bright green
+    "\033[93m",  # bright yellow
+    "\033[94m",  # bright blue
+    "\033[91m",  # bright red
+    "\033[36m",  # cyan
+    "\033[35m",  # magenta
+    "\033[32m",  # green
+    "\033[33m",  # yellow
+    "\033[34m",  # blue
+    "\033[31m",  # red
+]
+_ANSI_RESET = "\033[0m"
+_BLOCK = "█"
+
+
+def render_stack(rows, year_labels, redact_map=None):
+    """Render a stacked bar chart: one column per year, colour-coded by operative."""
+    if not rows:
+        return "(no operatives configured)"
+
+    x_labels = list(reversed(year_labels))  # chronological left→right
+    current_year_label = year_labels[0]
+
+    # Sort operatives descending by current year (consistent with table order).
+    sorted_rows = sorted(
+        rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
+    )
+
+    def _display_name(row):
+        u = row["username"]
+        return redact_map.get(u, u) if redact_map else u
+
+    # Per-year totals and per-operative per-year counts.
+    year_totals = {
+        label: sum(r.get(label, 0) for r in sorted_rows) for label in x_labels
+    }
+    overall_max = max(year_totals.values()) if year_totals else 1
+
+    try:
+        term_width, term_height = os.get_terminal_size()
+        chart_height = max(8, min(term_height - 12, 20))
+    except (OSError, AttributeError):
+        term_width = 80
+        chart_height = 12
+
+    # Column width: enough to fit the year label (min 4), capped so all years fit.
+    num_years = len(x_labels)
+    y_axis_width = 7  # "  9999 ┤" style
+    gap = 2
+    col_width = max(
+        4, min(10, (term_width - y_axis_width - gap) // max(num_years, 1) - gap)
+    )
+
+    # Build the chart row by row (top = chart_height, bottom = 0).
+    # For each chart row r (1 = top), the threshold value it represents:
+    #   threshold = overall_max * r / chart_height
+    # A year column cell at row r is filled by operatives whose cumulative
+    # contribution (from the bottom) reaches that threshold.
+
+    # Stack order: smallest operative at bottom, largest at top.
+    # reversed(sorted_rows) → least-current-year first, so it sits at the base.
+    stack_order = list(reversed(sorted_rows))
+
+    lines = []
+    for chart_row in range(chart_height, 0, -1):
+        # Value band this row represents: (prev_threshold, threshold].
+        threshold = overall_max * chart_row / chart_height
+        prev_threshold = overall_max * (chart_row - 1) / chart_height
+        tick_val = round(threshold)
+
+        # Y-axis label on labelled rows, continuation bar elsewhere.
+        if chart_row == chart_height or chart_row % max(1, chart_height // 5) == 0:
+            y_label = f"{tick_val:>{y_axis_width - 2}} ┤"
+        else:
+            y_label = " " * (y_axis_width - 1) + "│"
+
+        cells = []
+        for label in x_labels:
+            total = year_totals[label]
+            if total <= 0 or total < prev_threshold:
+                # Year has no contributions, or total doesn't reach this band.
+                cells.append(" " * col_width)
+                continue
+
+            # Find which operative owns the cumulative band containing prev_threshold.
+            cumulative = 0.0
+            cell_color = ""
+            for op_i, row in enumerate(stack_order):
+                cumulative += row.get(label, 0)
+                if cumulative >= prev_threshold:
+                    if IS_TTY:
+                        cell_color = _ANSI_COLORS[op_i % len(_ANSI_COLORS)]
+                    break
+
+            block = _BLOCK * col_width
+            cells.append(f"{cell_color}{block}{_ANSI_RESET}" if IS_TTY else block)
+
+        lines.append(y_label + (" " * gap).join(cells))
+
+    # X-axis baseline
+    baseline = " " * y_axis_width + ("─" * col_width + "  ") * num_years
+    lines.append(baseline)
+
+    # Year labels centred under each column
+    year_row = " " * y_axis_width
+    for label in x_labels:
+        year_row += label[:col_width].center(col_width) + "  "
+    lines.append(year_row.rstrip())
+
+    # Legend: left→right matches bottom→top stack order.
+    legend_parts = []
+    for i, row in enumerate(stack_order):
+        name = _display_name(row)
+        if IS_TTY:
+            c = _ANSI_COLORS[i % len(_ANSI_COLORS)]
+            legend_parts.append(f"{c}{_BLOCK}{_ANSI_RESET} {name}")
+        else:
+            legend_parts.append(f"{_BLOCK} {name}")
+    legend = "  " + "   ".join(legend_parts)
+
+    title = "\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — STACKED SURVEILLANCE\n"
+    body = "\n".join(lines)
+    return f"{title}\n{body}\n\n{legend}\n"

@@ -1380,3 +1380,38 @@ def test_redact_markdown_format_uses_codenames(runner, tmp_path, requests_mock):
     assert result.exit_code == 0
     assert "Operative Alpha" in result.output
     assert "alice" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# --format stack
+# ---------------------------------------------------------------------------
+
+
+def test_stack_format_renders_year_labels(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "stack"])
+    assert result.exit_code == 0
+    assert "SURVEILLANCE" in result.output
+
+
+def test_stack_format_renders_operative_in_legend(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "stack"])
+    assert result.exit_code == 0
+    assert "alice" in result.output
+    assert "bob" in result.output
+
+
+def test_stack_format_redact_shows_codenames(runner, tmp_path, requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE_TWO_USERS
+    )
+    cfg = _make_two_user_config(tmp_path)
+    result = _run(runner, cfg, tmp_path, ["--format", "stack", "--redact"])
+    assert result.exit_code == 0
+    assert "Operative Alpha" in result.output
+    assert "alice" not in result.output

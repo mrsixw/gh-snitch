@@ -13,6 +13,7 @@ from ghsnitch.ui import (
     render_graph,
     render_json,
     render_markdown,
+    render_stack,
     render_table,
 )
 
@@ -1021,3 +1022,79 @@ def test_render_graph_redact_uses_codenames_in_legend():
     assert "Operative Bravo" in output
     assert "alice" not in output
     assert "bob" not in output
+
+
+# ---------------------------------------------------------------------------
+# render_stack
+# ---------------------------------------------------------------------------
+
+
+def test_render_stack_empty_rows():
+    assert "no operatives" in render_stack([], ["2025"]).lower()
+
+
+def test_render_stack_contains_year_labels():
+    rows = [{"username": "alice", "2024": 100, "2025": 200}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_stack(rows, ["2025", "2024"])
+    assert "2024" in output
+    assert "2025" in output
+
+
+def test_render_stack_contains_operative_in_legend():
+    rows = [{"username": "alice", "2025": 100}, {"username": "bob", "2025": 50}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_stack(rows, ["2025"])
+    assert "alice" in output
+    assert "bob" in output
+
+
+def test_render_stack_zero_year_column_is_empty():
+    """A year with zero total contributions must produce no filled cells."""
+    rows = [{"username": "alice", "2024": 0, "2025": 500}]
+    # x_labels = reversed(["2025","2024"]) = ["2024","2025"] — 2024 is the left column.
+    with patch("ghsnitch.ui.IS_TTY", False):
+        with patch("os.get_terminal_size", return_value=os.terminal_size((80, 24))):
+            output = render_stack(rows, ["2025", "2024"])
+    y_axis_width = 7
+    col_width = 10  # deterministic for 80-wide terminal with 2 years
+    body_lines = [ln for ln in output.splitlines() if "┤" in ln or "│" in ln]
+    for ln in body_lines:
+        left_cell = ln[y_axis_width : y_axis_width + col_width]
+        assert "█" not in left_cell, f"Expected no blocks for zero year: {ln!r}"
+
+
+def test_render_stack_no_ansi_in_non_tty():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_stack(rows, ["2025"])
+    assert "\033[" not in output
+
+
+def test_render_stack_ansi_in_tty():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        with patch("os.get_terminal_size", return_value=os.terminal_size((80, 30))):
+            output = render_stack(rows, ["2025"])
+    assert "\033[" in output
+
+
+def test_render_stack_redact_shows_codenames():
+    rows = [{"username": "alice", "2025": 100}, {"username": "bob", "2025": 50}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_stack(
+            rows,
+            ["2025"],
+            redact_map={"alice": "Operative Alpha", "bob": "Operative Bravo"},
+        )
+    assert "Operative Alpha" in output
+    assert "Operative Bravo" in output
+    assert "alice" not in output
+    assert "bob" not in output
+
+
+def test_render_stack_all_zeros_does_not_crash():
+    rows = [{"username": "alice", "2025": 0}, {"username": "bob", "2025": 0}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_stack(rows, ["2025"])
+    assert output  # does not raise, returns something

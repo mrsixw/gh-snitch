@@ -15,7 +15,7 @@
 | `--min-contributions INTEGER` | `0` (show all) | Hide operatives with fewer than N contributions in the current year |
 | `--totals` | off | Add a `Total` column (per-operative sum across all years) and a `Total` footer row (per-year sum across all operatives) |
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
-| `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, `markdown`, or `graph`. Non-table formats write clean data to stdout and send status messages to stderr. |
+| `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, `markdown`, `graph`, or `stack`. Non-table formats write clean data to stdout and send status messages to stderr. |
 | `--no-rank-delta` | off | Hide the `±` rank-change column (rank delta is shown by default) |
 | `--redact` | off | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …); suppresses hyperlinks. Codenames are assigned in alphabetical order of the real username and are deterministic across runs. Works with all output formats. |
 | `--delta` | off | Replace the current-year column with `Δ Today` showing the change since the last saved snapshot; green/red-coded |
@@ -64,7 +64,7 @@ years = 3
 # github_url = "https://github.example.com"  # omit for github.com
 
 [display]
-# format = "table"      # table (default), json, csv, markdown, or graph
+# format = "table"      # table (default), json, csv, markdown, graph, or stack
 # min_contributions = 10  # hide operatives below this threshold
 # totals = false           # show Total column and footer row
 # percent = false          # annotate cells with (N%) share of year total
