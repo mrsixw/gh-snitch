@@ -506,7 +506,8 @@ def render_table(
             count = row.get(label, 0)
             if label == delta_col:
                 cells.append(_delta_cell(count, col_values[label]))
-            elif redact_map is not None:
+                continue
+            if redact_map is not None:
                 if IS_TTY:
                     prefix, suffix = _grade_colour(count, col_values[label])
                     cell = f"{prefix}{count}{suffix}"
@@ -517,16 +518,16 @@ def render_table(
                 cell = make_coloured_hyperlink_cell(
                     count, contrib_url, col_values[label]
                 )
-                if show_percent:
-                    total = year_totals[label]
-                    pct = (count / total * 100) if total > 0 else 0.0
-                    if IS_TTY:
-                        prefix, suffix = _grade_colour(pct, col_pct_values[label])
-                        pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
-                    else:
-                        pct_annotation = f"({pct:.0f}%)"
-                    cell = f"{cell} {pct_annotation}"
-                cells.append(cell)
+            if show_percent:
+                total = year_totals[label]
+                pct = (count / total * 100) if total > 0 else 0.0
+                if IS_TTY:
+                    prefix, suffix = _grade_colour(pct, col_pct_values[label])
+                    pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
+                else:
+                    pct_annotation = f"({pct:.0f}%)"
+                cell = f"{cell} {pct_annotation}"
+            cells.append(cell)
         if show_totals:
             cells.append(sum(row.get(label, 0) for label in year_labels))
         table_data.append(cells)
