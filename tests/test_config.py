@@ -1,4 +1,6 @@
-from ghsnitch.config import generate_default_config, load_config
+import tomllib
+
+from ghsnitch.config import generate_default_config, load_config, render_config
 
 
 def test_load_config_from_file(tmp_path):
@@ -165,3 +167,63 @@ def test_load_config_teams_alongside_operatives(tmp_path):
     cfg = load_config(str(config_file))
     assert cfg["users"] == ["carol"]
     assert cfg["teams"] == {"alpha": ["alice", "bob"]}
+
+
+# --- render_config tests ---
+
+
+def test_render_config_produces_valid_toml():
+    cfg = {"users": ["alice", "bob"], "years": 3, "github_url": "https://github.com"}
+    output = render_config(cfg)
+    parsed = tomllib.loads(output)
+    assert parsed["operatives"]["users"] == ["alice", "bob"]
+    assert parsed["surveillance"]["years"] == 3
+
+
+def test_render_config_users_in_output():
+    cfg = {
+        "users": ["alice", "bob", "carol"],
+        "years": 3,
+        "github_url": "https://github.com",
+    }
+    output = render_config(cfg)
+    assert "alice" in output
+    assert "bob" in output
+    assert "carol" in output
+
+
+def test_render_config_years_reflected():
+    cfg = {"users": ["alice"], "years": 5, "github_url": "https://github.com"}
+    output = render_config(cfg)
+    assert "years = 5" in output
+
+
+def test_render_config_default_github_url_is_commented():
+    cfg = {"users": [], "years": 3, "github_url": "https://github.com"}
+    output = render_config(cfg)
+    assert 'github_url = "https://github.com"' not in output.replace("# ", "X")
+    assert "github_url" in output
+
+
+def test_render_config_custom_github_url_is_active():
+    cfg = {"users": [], "years": 3, "github_url": "https://ghe.corp.com"}
+    output = render_config(cfg)
+    parsed = tomllib.loads(output)
+    assert parsed["network"]["github_url"] == "https://ghe.corp.com"
+
+
+def test_render_config_round_trips():
+    cfg = {"users": ["alice", "bob"], "years": 2, "github_url": "https://github.com"}
+    output = render_config(cfg)
+    import os
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+        f.write(output)
+        tmp = f.name
+    try:
+        loaded = load_config(tmp)
+        assert loaded["users"] == ["alice", "bob"]
+        assert loaded["years"] == 2
+    finally:
+        os.unlink(tmp)

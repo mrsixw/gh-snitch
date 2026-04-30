@@ -73,3 +73,6 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - **MANDATORY: Always create a GitHub issue before writing code or opening a PR.** This is a non-negotiable first step to confirm diagnosis and scope.
 - **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
 - Link the PR to the issue in the PR body.
+
+## Branch Naming
+- **MANDATORY: Feature branches must follow the format `issue_<N>_<short_description>`**, e.g. `issue_44_export_config`, `issue_22_brief_mode`.

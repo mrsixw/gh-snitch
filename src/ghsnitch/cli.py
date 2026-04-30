@@ -226,6 +226,13 @@ def _backup_config(path: Path):
     help="Add missing keys from template to existing config and exit.",
 )
 @click.option(
+    "--export-config",
+    "export_config",
+    is_flag=True,
+    default=False,
+    help="Print a TOML config scaffolded from current CLI arguments and exit.",
+)
+@click.option(
     "--github-url",
     default=None,
     help="GitHub base URL (default: https://github.com). For GitHub Enterprise Server.",
@@ -306,6 +313,7 @@ def gh_snitch(  # noqa: PLR0913
     show_config,
     init_config,
     update_config,
+    export_config,
     no_update_check,
     no_trend,
     min_contributions,
@@ -425,19 +433,6 @@ def gh_snitch(  # noqa: PLR0913
         user_hash = hashlib.sha256(user_key.encode()).hexdigest()[:12]
         context_id = f"u-{user_hash}"
 
-    if reset_snapshot:
-        clear_all_snapshots()
-        click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
-        return
-
-    if not SECRET_GITHUB_TOKEN:
-        click.echo(
-            "🚨 GITHUB_TOKEN not set. "
-            "Operatives cannot be surveilled without credentials.",
-            err=True,
-        )
-        sys.exit(1)
-
     if years is not None:
         cfg["years"] = years
     if period is not None:
@@ -458,6 +453,23 @@ def gh_snitch(  # noqa: PLR0913
         cfg["rank_delta"] = False
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
+
+    if export_config:
+        click.echo(config_module.render_config(cfg))
+        return
+
+    if reset_snapshot:
+        clear_all_snapshots()
+        click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
+        return
+
+    if not SECRET_GITHUB_TOKEN:
+        click.echo(
+            "🚨 GITHUB_TOKEN not set. "
+            "Operatives cannot be surveilled without credentials.",
+            err=True,
+        )
+        sys.exit(1)
 
     active_format = cfg.get("output_format", "table")
 

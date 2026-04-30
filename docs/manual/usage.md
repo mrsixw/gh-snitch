@@ -124,6 +124,49 @@ gh-snitch --init-config
 
 Creates a default config at `~/.config/gh-snitch/config.toml`. Edit this file to add your operatives.
 
+## Exporting a Config from the Command Line
+
+Use `--export-config` to generate a ready-to-save TOML config from the operatives and options you specify on the command line. This is the reverse of the config-first flow — useful for bootstrapping a dossier from a one-liner and saving it for later.
+
+```bash
+gh-snitch --users alice,bob,carol --export-config
+```
+
+```toml
+[operatives]
+users = ["alice", "bob", "carol"]
+
+[surveillance]
+years = 3
+# period = "month"      # "week", "month", or "year" — overrides years when set
+# last_months = 6       # last 6 calendar months as separate columns
+# last_weeks = 8        # last 8 ISO weeks as separate columns
+
+[network]
+# github_url = "https://github.example.com"  # omit for github.com
+
+[display]
+# format = "table"
+# min_contributions = 0
+# totals = false
+# percent = false
+# rank_delta = true
+```
+
+CLI overrides are reflected in the output:
+
+```bash
+gh-snitch --users alice,bob --years 5 --github-url https://ghe.corp.com --export-config
+```
+
+Pipe directly to your config file to save it:
+
+```bash
+gh-snitch --users alice,bob,carol --export-config > ~/.config/gh-snitch/config.toml
+```
+
+`--export-config` does not require `GITHUB_TOKEN` — it exits before any API calls are made.
+
 ## Reviewing Your Config
 
 ```bash
