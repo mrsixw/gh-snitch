@@ -32,10 +32,17 @@ from .snapshot import (
     load_snapshot,
     save_snapshot,
 )
-from .ui import render_csv, render_graph, render_json, render_markdown, render_table
+from .ui import (
+    render_csv,
+    render_graph,
+    render_json,
+    render_markdown,
+    render_stack,
+    render_table,
+)
 from .updater import check_for_update
 
-VALID_FORMATS = ("table", "json", "csv", "markdown", "graph")
+VALID_FORMATS = ("table", "json", "csv", "markdown", "graph", "stack")
 
 _NATO_ALPHABET = [
     "Alpha",
@@ -665,6 +672,12 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(
             render_graph(rows, year_labels, show_totals=show_totals, redact_map=_redact)
         )
+    elif active_format == "stack":
+        if cfg.get("percent"):
+            click.echo("⚠️  --percent is ignored in stack format.", err=True)
+        if show_totals:
+            click.echo("⚠️  --totals is ignored in stack format.", err=True)
+        click.echo(render_stack(rows, year_labels, redact_map=_redact))
     else:
         table = render_table(
             rows,

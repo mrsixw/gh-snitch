@@ -188,7 +188,7 @@ If you have more than 26 operatives the sequence continues as Operative Alpha-2,
 
 In redact mode:
 - OSC 8 terminal hyperlinks are suppressed — no clickable links that could reveal the real handle
-- The codename replaces the username in all output formats (`table`, `json`, `csv`, `markdown`, `graph`)
+- The codename replaces the username in all output formats (`table`, `json`, `csv`, `markdown`, `graph`, `stack`)
 - Ghost indicators (`👻` / `[ghost]`) are still shown alongside the codename
 - Error messages for not-found operatives also use the codename
 
@@ -362,6 +362,27 @@ gh-snitch --team platform --delta --format graph
 ```
 
 **Note:** The `--totals` and `--percent` flags are ignored in graph mode.
+
+## Stacked Bar Chart
+
+Render a vertical stacked bar chart showing each operative's share of the team's total contributions per year:
+
+```bash
+gh-snitch --users alice,bob,charlie --years 3 --format stack
+```
+
+- **X-axis:** Years (chronological left→right)
+- **Y-axis:** Contribution count (scaled to terminal height)
+- **Stacking:** Each year's bar is divided into colour-coded segments, one per operative, proportional to their share of that year's total
+- **Legend:** Displayed below the chart, left→right matching bottom→top stack order
+
+The stacked view makes it easy to see team trajectory (bar height) and each person's relative contribution (segment size) at a glance. Combine with `--redact` to share publicly:
+
+```bash
+gh-snitch --team platform --years 3 --format stack --redact
+```
+
+**Note:** `--totals` and `--percent` are not applicable in stack format and are ignored.
 
 ## One-Shot Command
 

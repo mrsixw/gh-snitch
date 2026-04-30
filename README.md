@@ -59,7 +59,7 @@ make build
 | `--min-contributions` | Hide operatives below this contribution count |
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
-| `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph` |
+| `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph`, `stack` |
 | `--no-rank-delta` | Hide the `±` rank-change column (shown by default) |
 | `--redact` | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …) for shareable reports |
 | `--delta` | Show change since last snapshot instead of current-year count |
