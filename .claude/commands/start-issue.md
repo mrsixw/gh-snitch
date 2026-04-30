@@ -11,7 +11,7 @@ Start work on a GitHub issue by creating a correctly-named branch.
 ## Steps
 
 1. Fetch the issue title from GitHub using `mcp__github__issue_read` (method: `get`, owner: `mrsixw`, repo: `gh-snitch`, issue_number: `$ARGUMENTS`).
-2. Derive a short branch slug from the title: lowercase, replace spaces and non-alphanumeric characters with underscores, strip leading `feat:` / `fix:` / `chore:` prefixes, truncate to ~30 characters.
+2. Derive a short branch slug from the title: lowercase, replace spaces and non-alphanumeric characters with underscores, strip leading conventional commit prefixes (`feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `build:`, `ci:`, `chore:`, `revert:`), truncate to ~30 characters.
 3. Construct the branch name: `issue_<N>_<slug>` — e.g. `issue_44_export_config`.
 4. Run:
    ```bash
