@@ -691,6 +691,7 @@ def gh_snitch(  # noqa: PLR0913
             rank_deltas=rank_deltas,
             ghost_usernames=ghost_usernames if not delta else None,
             redact_map=_redact,
+            github_url=operative_github_url,
         )
         click.echo(table)
 
