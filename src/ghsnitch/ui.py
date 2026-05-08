@@ -83,7 +83,9 @@ def make_coloured_hyperlink_cell(count, url, column_values):
     return str(count)
 
 
-def make_operative_cell(username, is_ghost=False, display_name=None):
+def make_operative_cell(
+    username, is_ghost=False, display_name=None, github_url="https://github.com"
+):
     """Return an operative name cell.
 
     When display_name is provided (redact mode) the cell is plain text with no
@@ -92,7 +94,7 @@ def make_operative_cell(username, is_ghost=False, display_name=None):
     if display_name is not None:
         ghost_mark = (" 👻" if IS_TTY else " [ghost]") if is_ghost else ""
         return display_name + ghost_mark
-    url = f"https://github.com/{username}"
+    url = f"{github_url.rstrip('/')}/{username}"
     link = make_hyperlink(url, username)
     if not is_ghost:
         return link
@@ -410,6 +412,7 @@ def render_table(
     rank_deltas=None,
     ghost_usernames=None,
     redact_map=None,
+    github_url="https://github.com",
 ):
     """Render contribution data as a formatted table string.
 
@@ -496,7 +499,12 @@ def render_table(
         is_ghost = ghost_usernames is not None and username in ghost_usernames
         display_name = redact_map.get(username) if redact_map else None
         cells.append(
-            make_operative_cell(username, is_ghost=is_ghost, display_name=display_name)
+            make_operative_cell(
+                username,
+                is_ghost=is_ghost,
+                display_name=display_name,
+                github_url=github_url,
+            )
         )
         if show_trend:
             current = row.get(year_labels[0], 0)
@@ -514,7 +522,7 @@ def render_table(
                 else:
                     cell = str(count)
             else:
-                contrib_url = f"https://github.com/{username}"
+                contrib_url = f"{github_url.rstrip('/')}/{username}"
                 cell = make_coloured_hyperlink_cell(
                     count, contrib_url, col_values[label]
                 )

@@ -1098,3 +1098,43 @@ def test_render_stack_all_zeros_does_not_crash():
     with patch("ghsnitch.ui.IS_TTY", False):
         output = render_stack(rows, ["2025"])
     assert output  # does not raise, returns something
+
+
+# ---------------------------------------------------------------------------
+# GitHub Enterprise URL support (#90)
+# ---------------------------------------------------------------------------
+
+
+def test_make_operative_cell_ghe_url_in_hyperlink():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = make_operative_cell("alice", github_url="https://github.example.com")
+    assert "https://github.example.com/alice" in result
+    assert "https://github.com" not in result
+
+
+def test_make_operative_cell_default_url_is_github_com():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = make_operative_cell("alice")
+    assert "https://github.com/alice" in result
+
+
+def test_make_operative_cell_ghe_url_trailing_slash_normalised():
+    with patch("ghsnitch.ui.IS_TTY", True):
+        result = make_operative_cell("alice", github_url="https://github.example.com/")
+    assert "https://github.example.com/alice" in result
+    assert "//alice" not in result
+
+
+def test_render_table_ghe_url_in_cells():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        output = render_table(rows, ["2025"], github_url="https://github.example.com")
+    assert "https://github.example.com/alice" in output
+    assert "https://github.com" not in output
+
+
+def test_render_table_default_url_is_github_com():
+    rows = [{"username": "alice", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", True):
+        output = render_table(rows, ["2025"])
+    assert "https://github.com/alice" in output
