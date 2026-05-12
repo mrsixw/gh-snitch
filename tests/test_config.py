@@ -1,4 +1,4 @@
-from ghsnitch.config import generate_default_config, load_config
+from ghsnitch.config import generate_default_config, load_config, update_config
 
 
 def test_load_config_from_file(tmp_path):
@@ -165,3 +165,11 @@ def test_load_config_teams_alongside_operatives(tmp_path):
     cfg = load_config(str(config_file))
     assert cfg["users"] == ["carol"]
     assert cfg["teams"] == {"alpha": ["alice", "bob"]}
+
+
+def test_update_config_does_not_add_display_users(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[display]\nmin_contributions = 10\n")
+    added = update_config(str(config_file))
+    assert "display.users" not in added
+    assert "display.users" not in config_file.read_text()
