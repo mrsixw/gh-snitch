@@ -67,8 +67,17 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Before committing, run `make test`, `make lint`.
 - Before committing a feature or fix, confirm docs have been updated if any CLI options or user-visible behaviour changed.
 
+## Agent Instruction Files
+This project maintains per-agent instruction files that all convey the same rules:
+- `.claude/CLAUDE.md` — Claude Code (this file)
+- `GEMINI.md` — Gemini
+- `AGENTS.md` — OpenAI Codex
+- `.github/copilot-instructions.md` — GitHub Copilot
+
+When updating project rules, update **all four files** to keep them consistent.
+
 ## GitHub Workflow
 - **MANDATORY: Always create a GitHub issue before writing code or opening a PR.** This is a non-negotiable first step to confirm diagnosis and scope.
-- **MANDATORY: One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR, even if the changes are small or related.
+- **MANDATORY: One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR. If changes are related and depend on each other, open them as a stack of PRs (one per issue) rather than bundling.
 - **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
 - Link the PR to the issue in the PR body.
