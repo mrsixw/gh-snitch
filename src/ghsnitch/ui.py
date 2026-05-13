@@ -4,6 +4,7 @@ import json as _json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime
 
 import asciichartpy as ac
@@ -12,15 +13,27 @@ from tabulate import tabulate
 
 IS_TTY = sys.stdout.isatty() and not os.getenv("NO_COLOR")
 
-# Patch tabulate to strip OSC 8 hyperlink sequences when measuring column widths.
-# Without this, tabulate counts invisible escape bytes as visible characters,
-# causing grossly over-wide columns and broken alignment.
+# Patch tabulate to correctly measure column widths when cells contain OSC 8
+# hyperlink sequences or wide Unicode characters (e.g. emoji).
+#
+# Without this patch two things go wrong:
+#   1. Tabulate counts invisible OSC 8 escape bytes as visible characters,
+#      producing grossly over-wide columns.
+#   2. Without the optional `wcwidth` package installed, tabulate falls back to
+#      len(), which counts wide characters (East Asian Width W/F, which includes
+#      emoji like 👻) as 1 column even though terminals render them as 2. This
+#      causes a 1-column misalignment on every row that contains such a character.
+#
+# The fix strips OSC 8 sequences and then uses unicodedata (stdlib) to tally
+# visual width, counting W/F characters as 2 and everything else as 1.
 _OSC8_RE = re.compile(r"\x1b\]8;[^;]*;[^\x1b]*\x1b\\")
-_orig_visible_width = _tabulate_module._visible_width
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def _patched_visible_width(s):
-    return _orig_visible_width(_OSC8_RE.sub("", str(s)))
+    s = _OSC8_RE.sub("", str(s))
+    s = _ANSI_RE.sub("", s)
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
 
 
 _tabulate_module._visible_width = _patched_visible_width

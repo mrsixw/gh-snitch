@@ -839,6 +839,36 @@ def test_render_table_ghost_indicator_tty():
     assert "👻" in output
 
 
+def test_render_table_ghost_emoji_column_alignment_tty():
+    # 👻 is a wide Unicode character (East Asian Width = W, 2 terminal columns).
+    # Without explicit wide-char accounting, tabulate undercounts it by 1 and
+    # pads ghost rows with one too few spaces, misaligning subsequent columns.
+    # Verify the separator width matches every data row's content width.
+    rows = [
+        {"username": "alice", "2025": 0},
+        {"username": "bob", "2025": 50},
+    ]
+    import re
+
+    def strip_escapes(s):
+        s = re.sub(r"\x1b\][^\x1b]*\x1b\\", "", s)  # OSC 8
+        s = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", s)  # ANSI
+        return s
+
+    with patch("ghsnitch.ui.IS_TTY", True):
+        output = render_table(rows, ["2025"], ghost_usernames={"alice"})
+
+    lines = [strip_escapes(ln) for ln in output.splitlines() if ln.strip()]
+    sep_line = next(ln for ln in lines if ln.startswith("-"))
+    sep_width = len(sep_line)
+    for line in lines:
+        if line.startswith("-"):
+            continue
+        # Each data/header line must be no wider than the separator (allowing
+        # for trailing spaces that some tabulate versions omit).
+        assert len(line) <= sep_width + 1, f"misaligned line: {line!r}"
+
+
 def test_render_table_no_ghost_when_not_provided():
     rows = [{"username": "alice", "2025": 0}]
     with patch("ghsnitch.ui.IS_TTY", False):
