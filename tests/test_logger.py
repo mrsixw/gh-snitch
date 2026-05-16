@@ -85,3 +85,17 @@ def test_setup_logging_creates_log_dir(tmp_path):
 
     logging.getLogger("ghsnitch").info("hello")
     assert log_file.exists()
+
+
+def test_setup_logging_replaces_existing_handlers(tmp_path):
+    log_file = tmp_path / "run.log"
+    with (
+        patch("ghsnitch.logger.LOG_DIR", tmp_path),
+        patch("ghsnitch.logger._LOG_FILE", log_file),
+    ):
+        from ghsnitch.logger import setup_logging
+
+        setup_logging()
+        setup_logging()
+
+    assert len(logging.getLogger("ghsnitch").handlers) == 1
