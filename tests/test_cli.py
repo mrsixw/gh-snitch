@@ -1415,3 +1415,83 @@ def test_stack_format_redact_shows_codenames(runner, tmp_path, requests_mock):
     assert result.exit_code == 0
     assert "Operative Alpha" in result.output
     assert "alice" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# --export-config tests
+# ---------------------------------------------------------------------------
+
+
+def test_export_config_contains_users(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        [
+            "--config",
+            str(cfg),
+            "--users",
+            "alice,bob",
+            "--export-config",
+            "--no-update-check",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "alice" in result.output
+    assert "bob" in result.output
+
+
+def test_export_config_reflects_years(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        ["--config", str(cfg), "--users", "alice", "--years", "5", "--export-config"],
+    )
+    assert result.exit_code == 0
+    assert "years = 5" in result.output
+
+
+def test_export_config_no_token_required(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[operatives]\nusers = ["alice"]\n')
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", None):
+        with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", None):
+            result = runner.invoke(
+                gh_snitch,
+                ["--config", str(cfg), "--export-config"],
+            )
+    assert result.exit_code == 0
+
+
+def test_export_config_reflects_github_url(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        [
+            "--config",
+            str(cfg),
+            "--users",
+            "alice",
+            "--github-url",
+            "https://ghe.corp.com",
+            "--export-config",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "ghe.corp.com" in result.output
+
+
+def test_export_config_round_trips(runner, tmp_path):
+    import tomllib
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        ["--config", str(cfg), "--users", "alice,bob", "--export-config"],
+    )
+    assert result.exit_code == 0
+    parsed = tomllib.loads(result.output)
+    assert parsed["operatives"]["users"] == ["alice", "bob"]

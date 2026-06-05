@@ -83,3 +83,6 @@ When updating project rules, update **all four files** to keep them consistent.
 - **MANDATORY: One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR. If changes are related and depend on each other, open them as a stack of PRs (one per issue) rather than bundling.
 - **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
 - Link the PR to the issue in the PR body.
+
+## Branch Naming
+- **MANDATORY: Feature branches must follow the format `issue_<N>_<short_description>`**, e.g. `issue_44_export_config`, `issue_22_brief_mode`.
