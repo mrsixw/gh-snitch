@@ -1,167 +1,224 @@
+"""Update-check behaviour, exercised end-to-end through the CLI.
+
+gh-snitch runs ``check_for_update()`` at the tail of a normal surveillance
+pass (unless ``--no-update-check`` is given). These tests drive that path with
+``click.testing.CliRunner`` and assert on observable CLI behaviour — whether the
+"new intelligence package" nag is emitted and, crucially, that a broken cache or
+a failing network call never crashes the run.
+"""
+
 import json
 from datetime import datetime, timedelta, timezone
 from importlib.metadata import PackageNotFoundError
+from types import SimpleNamespace
 
 import pytest
 import requests
+from click.testing import CliRunner
 
 from ghsnitch import updater
+from ghsnitch.cli import gh_snitch
+
+RELEASES_URL = "https://api.github.com/repos/mrsixw/gh-snitch/releases/latest"
+NAG_MARKER = "New intelligence package available"
+
+
+def _graphql_response(login="alice", count=7):
+    """Minimal GraphQL survey payload so a run completes and reaches the check."""
+    return {
+        "data": {
+            "user_0": {
+                "login": login,
+                "contributionsCollection": {
+                    "contributionCalendar": {"totalContributions": count}
+                },
+            }
+        }
+    }
 
 
 @pytest.fixture
-def cache_dir(monkeypatch, tmp_path):
-    """Point the updater's cache directory at a temp location."""
-    target = tmp_path / "cache"
-    target.mkdir()
-    monkeypatch.setattr(updater, "_CACHE_DIR", target)
-    return target
+def cli(tmp_path, monkeypatch, requests_mock):
+    """Run gh-snitch through CliRunner with the update check enabled.
+
+    Isolates the updater cache, fakes the token, and mocks the GraphQL survey so
+    a full pass completes and ends by calling ``check_for_update()``. Returns a
+    namespace exposing ``run()``, the ``cache`` dir, and the ``requests_mock`` so
+    individual tests can seed cache state or mock the release lookup.
+    """
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    monkeypatch.setattr(updater, "_CACHE_DIR", cache)
+    monkeypatch.setattr("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token")
+    monkeypatch.setattr("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token")
+
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 1\n'
+    )
+    requests_mock.post("https://api.github.com/graphql", json=_graphql_response())
+
+    runner = CliRunner()
+
+    def run():
+        # No --no-update-check: the run ends by calling check_for_update().
+        return runner.invoke(gh_snitch, ["--config", str(config_file)])
+
+    return SimpleNamespace(run=run, cache=cache, requests_mock=requests_mock)
 
 
-def _write_cache(cache_dir, checked_at, latest_version="9.9.9"):
-    (cache_dir / "update_check.json").write_text(
+def _iso(delta=timedelta(0)):
+    return (datetime.now(timezone.utc) - delta).isoformat()
+
+
+def _write_cache(cache, checked_at, latest_version="9999.0.0"):
+    (cache / "update_check.json").write_text(
         json.dumps({"latest_version": latest_version, "checked_at": checked_at})
     )
 
 
-def test_read_version_cache_naive_datetime_returns_none(cache_dir):
-    """A naive cached timestamp must not raise TypeError (regression for #92).
+# --- happy paths: the nag is shown only when a newer version is known ---
 
-    Subtracting an offset-naive datetime from the offset-aware ``datetime.now``
-    raises ``TypeError``; the cache reader should swallow it and report a miss.
+
+def test_cli_shows_update_nag_when_newer_version_cached(cli):
+    _write_cache(cli.cache, _iso(timedelta(hours=1)), latest_version="9999.0.0")
+
+    result = cli.run()
+
+    assert result.exit_code == 0
+    assert NAG_MARKER in result.output
+    assert "9999.0.0" in result.output
+
+
+def test_cli_no_nag_when_cached_version_not_newer(cli):
+    _write_cache(cli.cache, _iso(timedelta(hours=1)), latest_version="0.0.1")
+
+    result = cli.run()
+
+    assert result.exit_code == 0
+    assert NAG_MARKER not in result.output
+
+
+# --- negative paths: a broken cache must never crash the run ---
+
+
+def _cache_naive_timestamp(cache):
+    # No timezone -> subtracting from an aware ``now`` raises TypeError (#92).
+    _write_cache(cache, datetime.now().isoformat())
+
+
+def _cache_malformed_json(cache):
+    (cache / "update_check.json").write_text("{not valid json")
+
+
+def _cache_missing_checked_at(cache):
+    (cache / "update_check.json").write_text(json.dumps({"latest_version": "9.9.9"}))
+
+
+def _cache_bad_timestamp(cache):
+    _write_cache(cache, "not-a-timestamp")
+
+
+def _cache_unreadable(cache):
+    # A directory where the cache file is expected: exists() is True but
+    # read_text() raises IsADirectoryError (an OSError subclass).
+    (cache / "update_check.json").mkdir()
+
+
+@pytest.mark.parametrize(
+    "prepare",
+    [
+        _cache_naive_timestamp,
+        _cache_malformed_json,
+        _cache_missing_checked_at,
+        _cache_bad_timestamp,
+        _cache_unreadable,
+    ],
+    ids=[
+        "naive-timestamp-issue-92",
+        "malformed-json",
+        "missing-checked-at",
+        "bad-timestamp",
+        "unreadable-cache",
+    ],
+)
+def test_cli_survives_broken_update_cache(cli, prepare):
+    """Every corrupt-cache shape is swallowed; the run exits cleanly.
+
+    The ``naive-timestamp`` case is the regression for #92: before the fix a
+    naive cached datetime raised an uncaught ``TypeError`` that surfaced as a
+    non-zero CLI exit.
     """
-    naive = datetime.now().replace(tzinfo=None).isoformat()
-    _write_cache(cache_dir, naive)
+    prepare(cli.cache)
+    # Cache is unusable, so the reader reports a miss and falls back to the
+    # network; mock that with an older release so no nag appears.
+    cli.requests_mock.get(RELEASES_URL, json={"tag_name": "v0.0.1"})
 
-    assert updater._read_version_cache() is None
+    result = cli.run()
 
-
-def test_read_version_cache_fresh_returns_version(cache_dir):
-    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    _write_cache(cache_dir, recent, latest_version="1.2.3")
-
-    assert updater._read_version_cache() == "1.2.3"
-
-
-def test_read_version_cache_expired_returns_none(cache_dir):
-    stale = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
-    _write_cache(cache_dir, stale)
-
-    assert updater._read_version_cache() is None
+    assert result.exit_code == 0
+    assert result.exception is None
+    assert NAG_MARKER not in result.output
 
 
-def test_read_version_cache_missing_file_returns_none(cache_dir):
-    assert updater._read_version_cache() is None
+def test_cli_ignores_malformed_cached_version(cli):
+    """A garbage cached version string parses to () and yields no nag."""
+    _write_cache(cli.cache, _iso(timedelta(hours=1)), latest_version="1.2.x")
+
+    result = cli.run()
+
+    assert result.exit_code == 0
+    assert NAG_MARKER not in result.output
 
 
-# --- negative paths: each exception branch in _read_version_cache ---
+# --- negative paths: a failing release lookup must never crash the run ---
 
 
-def test_read_version_cache_malformed_json_returns_none(cache_dir):
-    """Corrupt cache contents (JSONDecodeError) report a miss, not a crash."""
-    (cache_dir / "update_check.json").write_text("{not valid json")
+def test_cli_survives_release_lookup_network_error(cli):
+    cli.requests_mock.get(RELEASES_URL, exc=requests.exceptions.ConnectionError)
 
-    assert updater._read_version_cache() is None
+    result = cli.run()
 
-
-def test_read_version_cache_missing_checked_at_returns_none(cache_dir):
-    """A cache without the ``checked_at`` key (KeyError) reports a miss."""
-    (cache_dir / "update_check.json").write_text(
-        json.dumps({"latest_version": "1.2.3"})
-    )
-
-    assert updater._read_version_cache() is None
+    assert result.exit_code == 0
+    assert result.exception is None
+    assert NAG_MARKER not in result.output
 
 
-def test_read_version_cache_bad_timestamp_returns_none(cache_dir):
-    """An unparseable timestamp (ValueError from fromisoformat) reports a miss."""
-    _write_cache(cache_dir, "not-a-timestamp")
+def test_cli_survives_release_lookup_http_error(cli):
+    cli.requests_mock.get(RELEASES_URL, status_code=404)
 
-    assert updater._read_version_cache() is None
+    result = cli.run()
 
-
-def test_read_version_cache_unreadable_file_returns_none(cache_dir):
-    """An OSError while reading the cache (here a directory) reports a miss."""
-    # A directory at the cache path: exists() is True but read_text() raises
-    # IsADirectoryError (an OSError subclass).
-    (cache_dir / "update_check.json").mkdir()
-
-    assert updater._read_version_cache() is None
+    assert result.exit_code == 0
+    assert NAG_MARKER not in result.output
 
 
-# --- negative paths: _write_version_cache swallows OSError ---
-
-
-def test_write_version_cache_swallows_oserror(monkeypatch, tmp_path):
-    """A filesystem failure while writing the cache must not propagate."""
-    # Place the cache dir beneath a regular file so mkdir() raises
+def test_cli_survives_cache_write_failure(cli, tmp_path, monkeypatch):
+    """An OSError while caching the fetched version is swallowed."""
+    # Point the cache dir beneath a regular file so the write's mkdir raises
     # NotADirectoryError (an OSError subclass).
-    blocker = tmp_path / "not-a-dir"
+    blocker = tmp_path / "blocker"
     blocker.write_text("i am a file")
     monkeypatch.setattr(updater, "_CACHE_DIR", blocker / "cache")
+    cli.requests_mock.get(RELEASES_URL, json={"tag_name": "v9999.0.0"})
 
-    # Should not raise.
-    updater._write_version_cache("1.2.3")
+    result = cli.run()
 
-
-# --- negative paths: get_latest_version on network failure ---
-
-
-def test_get_latest_version_network_error_returns_none(cache_dir, monkeypatch):
-    """A RequestException during the release lookup yields None, not a crash."""
-
-    def boom(*args, **kwargs):
-        raise requests.exceptions.RequestException("offline")
-
-    monkeypatch.setattr(updater.requests, "get", boom)
-
-    assert updater.get_latest_version() is None
+    assert result.exit_code == 0
+    # The flow continued past the failed write and still surfaced the nag.
+    assert NAG_MARKER in result.output
 
 
-def test_get_latest_version_http_error_returns_none(cache_dir, monkeypatch):
-    """A non-2xx response (raise_for_status) is treated as no result."""
-
-    class FakeResponse:
-        def raise_for_status(self):
-            raise requests.exceptions.HTTPError("404")
-
-        def json(self):  # pragma: no cover - never reached
-            return {}
-
-    monkeypatch.setattr(updater.requests, "get", lambda *a, **k: FakeResponse())
-
-    assert updater.get_latest_version() is None
-
-
-# --- negative paths: _parse_version_tuple on garbage input ---
-
-
-def test_parse_version_tuple_non_numeric_returns_empty():
-    """Non-numeric segments (ValueError) collapse to an empty tuple."""
-    assert updater._parse_version_tuple("1.2.x") == ()
-
-
-def test_parse_version_tuple_none_returns_empty():
-    """A None version (AttributeError on .split) collapses to an empty tuple."""
-    assert updater._parse_version_tuple(None) == ()
-
-
-# --- negative paths: check_for_update when the package is not installed ---
-
-
-def test_check_for_update_package_not_found_returns_none(monkeypatch):
-    """PackageNotFoundError (package not installed) is handled gracefully."""
+def test_cli_survives_package_not_found(cli, monkeypatch):
+    """If the installed version can't be resolved, the run still exits cleanly."""
 
     def boom(_name):
         raise PackageNotFoundError("ghsnitch")
 
     monkeypatch.setattr(updater, "pkg_version", boom)
+    _write_cache(cli.cache, _iso(timedelta(hours=1)), latest_version="9999.0.0")
 
-    assert updater.check_for_update() is None
+    result = cli.run()
 
-
-def test_check_for_update_no_latest_returns_none(monkeypatch):
-    """When the latest version cannot be determined, no nudge is returned."""
-    monkeypatch.setattr(updater, "pkg_version", lambda _name: "1.0.0")
-    monkeypatch.setattr(updater, "get_latest_version", lambda: None)
-
-    assert updater.check_for_update() is None
+    assert result.exit_code == 0
+    assert NAG_MARKER not in result.output
