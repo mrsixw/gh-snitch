@@ -1,3 +1,4 @@
+import ghsnitch.config as config_module
 from ghsnitch.config import generate_default_config, load_config
 
 
@@ -90,8 +91,11 @@ def test_generate_default_config_creates_dirs(tmp_path):
 
 
 def test_generate_default_config_default_path(monkeypatch, tmp_path):
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    config_dir = tmp_path / "gh-snitch"
+    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
+
     path = generate_default_config()
+    assert path == config_dir / "config.toml"
     assert path.exists()
     assert "gh-snitch" in str(path)
 
