@@ -163,7 +163,7 @@ def test_cli_survives_broken_update_cache(cli, prepare):
 
 def test_cli_ignores_malformed_cached_version(cli):
     """A garbage cached version string parses to () and yields no nag."""
-    _write_cache(cli.cache, _iso(timedelta(hours=1)), latest_version="1.2.x")
+    _write_cache(cli.cache, _iso(timedelta(hours=1)), latest_version="not-a-version")
 
     result = cli.run()
 
@@ -222,3 +222,48 @@ def test_cli_survives_package_not_found(cli, monkeypatch):
 
     assert result.exit_code == 0
     assert NAG_MARKER not in result.output
+
+
+# --- _parse_version_tuple unit tests (pre-release handling) ---
+
+from ghsnitch.updater import _parse_version_tuple  # noqa: E402
+
+
+def test_parse_version_tuple_normal():
+    assert _parse_version_tuple("1.2.3") == (1, 2, 3)
+
+
+def test_parse_version_tuple_single():
+    assert _parse_version_tuple("42") == (42,)
+
+
+def test_parse_version_tuple_empty_string():
+    assert _parse_version_tuple("") == ()
+
+
+def test_parse_version_tuple_invalid():
+    assert _parse_version_tuple("not-a-version") == ()
+
+
+def test_parse_version_tuple_prerelease_alpha():
+    assert _parse_version_tuple("1.0.0a1") == (1, 0, 0)
+
+
+def test_parse_version_tuple_prerelease_dash():
+    assert _parse_version_tuple("1.0.0-beta") == (1, 0, 0)
+
+
+def test_parse_version_tuple_prerelease_rc():
+    assert _parse_version_tuple("2.1.0rc3") == (2, 1, 0)
+
+
+def test_parse_version_tuple_prerelease_compares_correctly():
+    pre = _parse_version_tuple("1.0.0a1")
+    release = _parse_version_tuple("1.0.0")
+    assert pre == release
+
+
+def test_parse_version_tuple_prerelease_does_not_trigger_false_update():
+    installed = _parse_version_tuple("0.25.0a1")
+    latest = _parse_version_tuple("0.25.0")
+    assert not (latest > installed)

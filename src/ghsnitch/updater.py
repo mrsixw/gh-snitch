@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
@@ -69,7 +70,13 @@ def get_latest_version():
 
 def _parse_version_tuple(version_str):
     try:
-        return tuple(int(x) for x in version_str.split("."))
+        parts = []
+        for segment in version_str.split("."):
+            m = re.match(r"\d+", segment)
+            if not m:
+                break
+            parts.append(int(m.group()))
+        return tuple(parts)
     except (ValueError, AttributeError):
         return ()
 
