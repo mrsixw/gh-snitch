@@ -265,6 +265,11 @@ def update_config(config_path=None):
             continue
         section_name = section_match.group(1)
 
+        # Stop at commented-out section headers so their keys don't attribute here.
+        commented_header = re.search(r"\n#\s*\[[\w.]+\]", section_block)
+        if commented_header:
+            section_block = section_block[: commented_header.start()]
+
         # Find all keys in this template section
         # Look for: # help text\n# key = value  OR  key = value
         # This regex catches:
