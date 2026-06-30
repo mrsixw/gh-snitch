@@ -56,8 +56,8 @@ def save_snapshot(
     Args:
         contributions: dict[username, dict[year_label, int]]
         ranks: optional dict[username, int] mapping each operative to their rank
-        positions: optional dict[username, float | int] mapping each operative
-            to their tie-aware leaderboard movement position
+        positions: optional dict[username, int] mapping each operative to the
+            visible rank used for leaderboard movement
         scope: optional scope key from :func:`compute_scope`
         context_id: optional explicit ID (e.g. team name)
     """

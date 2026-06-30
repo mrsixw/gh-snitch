@@ -508,7 +508,7 @@ def test_successful_run_saves_snapshot(runner, tmp_path, requests_mock):
     assert data["positions"] == {"alice": 1}
 
 
-def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
+def test_rank_delta_uses_visible_rank_when_tie_splits(runner, tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text(
         '[operatives]\nusers = ["alice", "bob", "carol"]\n'
@@ -560,8 +560,63 @@ def test_rank_delta_marks_both_sides_when_tie_splits(runner, tmp_path):
     assert "bob" in result.output
     assert "carol" in result.output
     assert "  1   =   alice" in result.output
-    assert "  2  +1   bob" in result.output
+    assert "  2   =   bob" in result.output
     assert "  3  -1   carol" in result.output
+
+
+def test_rank_delta_uses_visible_rank_when_tie_forms(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "bob", "carol"]\n'
+        "[surveillance]\nyears = 0\n"
+    )
+
+    from datetime import date
+
+    current_year = str(date.today().year)
+    snap = tmp_path / f"snapshot-{_context_id(['alice', 'bob', 'carol'])}.json"
+    snap.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-04-04T10:00:00+00:00",
+                "contributions": {
+                    "alice": {current_year: 90},
+                    "bob": {current_year: 80},
+                    "carol": {current_year: 70},
+                },
+                "ranks": {"alice": 1, "bob": 2, "carol": 3},
+                "positions": {"alice": 1, "bob": 2, "carol": 3},
+            }
+        )
+    )
+
+    current_data = {
+        "alice": {current_year: 90},
+        "bob": {current_year: 80},
+        "carol": {current_year: 80},
+    }
+
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                with patch(
+                    "ghsnitch.cli.fetch_contributions",
+                    return_value=(current_data, []),
+                ):
+                    result = runner.invoke(
+                        gh_snitch,
+                        [
+                            "--config",
+                            str(config_file),
+                            "--no-update-check",
+                            "--no-trend",
+                        ],
+                    )
+
+    assert result.exit_code == 0
+    assert "  1   =   alice" in result.output
+    assert "  2   =   bob" in result.output
+    assert "  2  +1   carol" in result.output
 
 
 def test_period_week_renders_this_week_column(runner, tmp_path, requests_mock):
@@ -1415,3 +1470,83 @@ def test_stack_format_redact_shows_codenames(runner, tmp_path, requests_mock):
     assert result.exit_code == 0
     assert "Operative Alpha" in result.output
     assert "alice" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# --export-config tests
+# ---------------------------------------------------------------------------
+
+
+def test_export_config_contains_users(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        [
+            "--config",
+            str(cfg),
+            "--users",
+            "alice,bob",
+            "--export-config",
+            "--no-update-check",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "alice" in result.output
+    assert "bob" in result.output
+
+
+def test_export_config_reflects_years(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        ["--config", str(cfg), "--users", "alice", "--years", "5", "--export-config"],
+    )
+    assert result.exit_code == 0
+    assert "years = 5" in result.output
+
+
+def test_export_config_no_token_required(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[operatives]\nusers = ["alice"]\n')
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", None):
+        with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", None):
+            result = runner.invoke(
+                gh_snitch,
+                ["--config", str(cfg), "--export-config"],
+            )
+    assert result.exit_code == 0
+
+
+def test_export_config_reflects_github_url(runner, tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        [
+            "--config",
+            str(cfg),
+            "--users",
+            "alice",
+            "--github-url",
+            "https://ghe.corp.com",
+            "--export-config",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "ghe.corp.com" in result.output
+
+
+def test_export_config_round_trips(runner, tmp_path):
+    import tomllib
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[operatives]\nusers = []\n")
+    result = runner.invoke(
+        gh_snitch,
+        ["--config", str(cfg), "--users", "alice,bob", "--export-config"],
+    )
+    assert result.exit_code == 0
+    parsed = tomllib.loads(result.output)
+    assert parsed["operatives"]["users"] == ["alice", "bob"]

@@ -149,6 +149,54 @@ def load_config(config_path=None):
     return config
 
 
+def render_config(cfg: dict) -> str:
+    """Return a TOML config string scaffolded from a loaded cfg dict.
+
+    Active overrides (users, years, github_url) are written as live values;
+    optional keys are written as comments showing their current/default values.
+    The result is valid TOML that round-trips through load_config().
+    """
+    users = cfg.get("users", [])
+    users_toml = "[" + ", ".join(f'"{u}"' for u in users) + "]"
+
+    years = cfg.get("years", 3)
+
+    github_url = cfg.get("github_url", "https://github.com")
+    if github_url and github_url != "https://github.com":
+        network_url_line = f'github_url = "{github_url}"'
+    else:
+        network_url_line = (
+            '# github_url = "https://github.example.com"  # omit for github.com'
+        )
+
+    output_format = cfg.get("output_format", "table")
+    min_contributions = cfg.get("min_contributions", 0)
+    totals = str(cfg.get("totals", False)).lower()
+    percent = str(cfg.get("percent", False)).lower()
+    rank_delta = str(cfg.get("rank_delta", True)).lower()
+
+    return f"""\
+[operatives]
+users = {users_toml}
+
+[surveillance]
+years = {years}
+# period = "month"      # "week", "month", or "year" — overrides years when set
+# last_months = 6       # last 6 calendar months as separate columns
+# last_weeks = 8        # last 8 ISO weeks as separate columns
+
+[network]
+{network_url_line}
+
+[display]
+# format = "{output_format}"
+# min_contributions = {min_contributions}
+# totals = {totals}
+# percent = {percent}
+# rank_delta = {rank_delta}
+"""
+
+
 def generate_default_config(config_path=None):
     """Write default config template to disk. Returns the path used."""
     path = Path(config_path) if config_path else get_config_path()

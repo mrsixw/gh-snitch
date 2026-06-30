@@ -1,7 +1,6 @@
 import hashlib
 import importlib.metadata
 import logging
-import math
 import shutil
 import sys
 import time
@@ -77,15 +76,15 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_rank_metadata(rows, current_year_label):
-    """Return display ranks and tie-aware movement positions for the leaderboard.
+    """Return display ranks and movement positions for the leaderboard.
 
     Args:
         rows: iterable of contribution rows with a ``username`` key
         current_year_label: year label used to sort the leaderboard
 
     Returns:
-        tuple[dict[str, int], dict[str, float]]: competition ranks for display
-        and average occupied positions for movement tracking
+        tuple[dict[str, int], dict[str, int]]: competition ranks for display and
+        visible ranks for movement tracking
     """
     sorted_rows = sorted(
         rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
@@ -103,28 +102,24 @@ def _compute_rank_metadata(rows, current_year_label):
             group_end += 1
 
         competition_rank = i + 1
-        average_position = (competition_rank + group_end) / 2
         for row in sorted_rows[i:group_end]:
             username = row["username"]
             ranks[username] = competition_rank
-            positions[username] = average_position
+            positions[username] = competition_rank
 
         i = group_end
     return ranks, positions
 
 
-def _get_snapshot_positions(snapshot, current_year_label):
-    """Return tie-aware movement positions for a previous snapshot if possible.
+def _get_snapshot_ranks(snapshot, current_year_label):
+    """Return visible ranks for a previous snapshot if possible.
 
-    Newer snapshots persist explicit movement positions. Older snapshots can
-    still be upgraded in place by deriving tie-aware positions from their
-    contribution
-    counts for the current year. If that data is unavailable, fall back to the
-    legacy rank metadata so movement continues to work across year boundaries.
+    Persisted ranks are preferred over legacy movement positions so the ±
+    column matches the rank shown in the table when ties form or split.
     """
-    stored_positions = snapshot.get("positions", {})
-    if stored_positions:
-        return stored_positions
+    stored_ranks = snapshot.get("ranks", {})
+    if stored_ranks:
+        return stored_ranks
 
     snapshot_contributions = snapshot.get("contributions", {})
     if any(
@@ -135,18 +130,15 @@ def _get_snapshot_positions(snapshot, current_year_label):
             row = {"username": username}
             row.update(year_data)
             snapshot_rows.append(row)
-        _, positions = _compute_rank_metadata(snapshot_rows, current_year_label)
-        return positions
+        ranks, _ = _compute_rank_metadata(snapshot_rows, current_year_label)
+        return ranks
 
-    return snapshot.get("ranks", {})
+    return snapshot.get("positions", {})
 
 
-def _movement_delta(previous_position, current_position):
-    """Return an integer movement delta from tie-aware position scores."""
-    raw_delta = previous_position - current_position
-    if raw_delta == 0:
-        return 0
-    return int(math.copysign(math.ceil(abs(raw_delta)), raw_delta))
+def _movement_delta(previous_rank, current_rank):
+    """Return rank movement using the visible competition ranks."""
+    return previous_rank - current_rank
 
 
 def _backup_config(path: Path):
@@ -224,6 +216,13 @@ def _backup_config(path: Path):
     is_flag=True,
     default=False,
     help="Add missing keys from template to existing config and exit.",
+)
+@click.option(
+    "--export-config",
+    "export_config",
+    is_flag=True,
+    default=False,
+    help="Print a TOML config scaffolded from current CLI arguments and exit.",
 )
 @click.option(
     "--github-url",
@@ -306,6 +305,7 @@ def gh_snitch(  # noqa: PLR0913
     show_config,
     init_config,
     update_config,
+    export_config,
     no_update_check,
     no_trend,
     min_contributions,
@@ -425,19 +425,6 @@ def gh_snitch(  # noqa: PLR0913
         user_hash = hashlib.sha256(user_key.encode()).hexdigest()[:12]
         context_id = f"u-{user_hash}"
 
-    if reset_snapshot:
-        clear_all_snapshots()
-        click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
-        return
-
-    if not SECRET_GITHUB_TOKEN:
-        click.echo(
-            "🚨 GITHUB_TOKEN not set. "
-            "Operatives cannot be surveilled without credentials.",
-            err=True,
-        )
-        sys.exit(1)
-
     if years is not None:
         cfg["years"] = years
     if period is not None:
@@ -458,6 +445,23 @@ def gh_snitch(  # noqa: PLR0913
         cfg["rank_delta"] = False
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
+
+    if export_config:
+        click.echo(config_module.render_config(cfg))
+        return
+
+    if reset_snapshot:
+        clear_all_snapshots()
+        click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
+        return
+
+    if not SECRET_GITHUB_TOKEN:
+        click.echo(
+            "🚨 GITHUB_TOKEN not set. "
+            "Operatives cannot be surveilled without credentials.",
+            err=True,
+        )
+        sys.exit(1)
 
     active_format = cfg.get("output_format", "table")
 
@@ -583,18 +587,18 @@ def gh_snitch(  # noqa: PLR0913
             context_id=context_id,
         )
 
-    # Compute visible leaderboard movement from tie-aware position scores.
+    # Compute visible leaderboard movement from displayed competition ranks.
     rank_deltas = None
     if prev_snapshot is not None:
-        prev_positions = _get_snapshot_positions(prev_snapshot, current_year_label)
-        if prev_positions:
+        prev_ranks = _get_snapshot_ranks(prev_snapshot, current_year_label)
+        if prev_ranks:
             rank_deltas = {}
             for username, curr_position in current_positions.items():
-                if username not in prev_positions:
+                if username not in prev_ranks:
                     rank_deltas[username] = None  # new operative
                 else:
                     rank_deltas[username] = _movement_delta(
-                        prev_positions[username], curr_position
+                        prev_ranks[username], curr_position
                     )
 
     threshold = cfg["min_contributions"]

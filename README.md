@@ -66,6 +66,7 @@ make build
 | `--reset-snapshot` | Clear the saved contribution snapshot and exit |
 | `--config` | Path to config file |
 | `--init-config` | Write default config and exit |
+| `--export-config` | Print TOML config scaffolded from current CLI args and exit (pipe to a file to save) |
 | `--show-config` | Print current config and exit |
 | `--no-update-check` | Skip update check |
 | `--version` | Show version |

@@ -23,6 +23,9 @@ def setup_logging():
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(logging.Formatter(_FMT, datefmt=_DATE_FMT))
         logger = logging.getLogger("ghsnitch")
+        for h in logger.handlers[:]:
+            h.close()
+            logger.removeHandler(h)
         logger.setLevel(logging.DEBUG)
         logger.addHandler(handler)
         logger.propagate = False

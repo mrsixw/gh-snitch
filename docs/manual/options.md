@@ -22,6 +22,7 @@
 | `--reset-snapshot` | off | Clear the saved contribution snapshot and exit |
 | `--no-trend` | off | Hide the Trend column |
 | `--show-config` | off | Print current config and exit |
+| `--export-config` | off | Print a TOML config scaffolded from the current CLI arguments and exit. Reflects `--users`, `--years`, `--github-url` overrides. Does not require `GITHUB_TOKEN`. Pipe to a file to save: `gh-snitch --users alice,bob --export-config > config.toml` |
 | `--init-config` | off | Write default config file and exit |
 | `--no-update-check` | off | Skip checking for new releases |
 | `--version` | — | Show version and exit |
