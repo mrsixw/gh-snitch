@@ -1,4 +1,4 @@
-# Gemini Instructions: gh-snitch
+# Codex Instructions: gh-snitch
 
 Instructions found in this file are foundational mandates. They take absolute precedence over general workflows and tool defaults.
 
@@ -24,6 +24,15 @@ Instructions found in this file are foundational mandates. They take absolute pr
   - `docs/manual/` — user-facing manual
   - `docs/design/` — technical design documents
 
+## Agent Instruction Files
+This project maintains per-agent instruction files that all convey the same rules:
+- `.claude/CLAUDE.md` — Claude Code
+- `GEMINI.md` — Gemini
+- `AGENTS.md` — OpenAI Codex (this file)
+- `.github/copilot-instructions.md` — GitHub Copilot
+
+When updating project rules, update **all four files** to keep them consistent.
+
 ## Environment
 - Python >= 3.11
 - Package manager: **uv** (not pip). Use `uv sync`, `uv run`, etc.
@@ -46,9 +55,18 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Run `make test` before committing.
 - **Never use bare `except Exception`.** Catch specific exception types.
 
+## Work Items
+- This project uses GitHub issues. Reference the GitHub issue number in branch names and PR titles.
+- **A GitHub issue MUST exist before any work begins.** If the user requests a change and no issue exists yet, create one before starting implementation. Every branch, commit, and PR must reference an issue number.
+- **One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR. If changes are related and depend on each other, open them as a stack of PRs (one per issue) rather than bundling.
+
 ## Commit Messages
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`).
 - Keep the summary short and imperative.
+
+## Pull Requests
+- Always include `Closes #N` in the PR body so the issue is automatically closed when the PR is merged.
+- **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
 
 ## Tone and Personality
 - This project embraces spy theming. Operatives, surveillance, handlers, dossiers — lean into it.
@@ -68,21 +86,3 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Never use bare `except Exception`.
 - Before committing, run `make test`, `make lint`.
 - Before committing a feature or fix, confirm docs have been updated if any CLI options or user-visible behaviour changed.
-
-## Agent Instruction Files
-This project maintains per-agent instruction files that all convey the same rules:
-- `.claude/CLAUDE.md` — Claude Code
-- `GEMINI.md` — Gemini (this file)
-- `AGENTS.md` — OpenAI Codex
-- `.github/copilot-instructions.md` — GitHub Copilot
-
-When updating project rules, update **all four files** to keep them consistent.
-
-## GitHub Workflow
-- **MANDATORY: Always create a GitHub issue before writing code or opening a PR.** This is a non-negotiable first step to confirm diagnosis and scope.
-- **MANDATORY: One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR. If changes are related and depend on each other, open them as a stack of PRs (one per issue) rather than bundling.
-- **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
-- Link the PR to the issue in the PR body.
-
-## Branch Naming
-- **MANDATORY: Feature branches must follow the format `issue_<N>_<short_description>`**, e.g. `issue_44_export_config`, `issue_22_brief_mode`.
