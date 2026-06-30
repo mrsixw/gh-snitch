@@ -182,6 +182,22 @@ def test_update_config_does_not_add_display_users(tmp_path):
     assert "display.users" not in config_file.read_text()
 
 
+def test_update_config_is_idempotent(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[display]\nmin_contributions = 10\n")
+    update_config(str(config_file))
+    added_second = update_config(str(config_file))
+    assert added_second == []
+
+
+def test_update_config_fresh_config_no_display_users(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+    added = update_config(str(config_file))
+    assert "display.users" not in added
+    assert "display.users" not in config_file.read_text()
+
+
 # --- render_config tests ---
 
 
