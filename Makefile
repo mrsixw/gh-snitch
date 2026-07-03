@@ -1,7 +1,11 @@
 .ONESHELL:
 SHELL = /bin/bash
 
-.PHONY: activate build version-bump release gh-snitch smoketest test lint format
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+DESTDIR ?=
+
+.PHONY: activate build version-bump release gh-snitch smoketest test lint format install uninstall
 
 .venv:
 	uv venv .venv
@@ -15,6 +19,13 @@ build: .venv
 	uv sync --extra build
 	mkdir -p dist
 	uv run shiv -c gh-snitch -o dist/gh-snitch --python '/usr/bin/env python3.13' .
+
+install: build
+	install -d "$(DESTDIR)$(BINDIR)"
+	install -m 755 dist/gh-snitch "$(DESTDIR)$(BINDIR)/gh-snitch"
+
+uninstall:
+	rm -f "$(DESTDIR)$(BINDIR)/gh-snitch"
 
 version-bump:
 	git mkver patch

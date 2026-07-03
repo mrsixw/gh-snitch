@@ -10,12 +10,31 @@ Monitor your operatives' GitHub contribution counts across years — rendered as
 curl -sSL https://raw.githubusercontent.com/mrsixw/gh-snitch/main/install.sh | bash
 ```
 
-Or clone and build from source:
+Or build and install from source:
 
 ```bash
 git clone https://github.com/mrsixw/gh-snitch.git
 cd gh-snitch
 make build
+sudo make install
+```
+
+By default, this installs the executable to `/usr/local/bin`. You can customize the installation prefix using the `PREFIX` variable:
+
+```bash
+make install PREFIX=$HOME/.local
+```
+
+To uninstall:
+
+```bash
+sudo make uninstall
+```
+
+If installed with a custom `PREFIX`:
+
+```bash
+make uninstall PREFIX=$HOME/.local
 ```
 
 ## Quick Start
