@@ -19,6 +19,8 @@ make build
 sudo make install
 ```
 
+*(Note: This compiles and installs the binary locally from your source checkout. If you want to download and install a pre-compiled binary instantly instead, use the `install.sh` script above).*
+
 By default, this installs the executable to `/usr/local/bin`. You can customize the installation prefix using the `PREFIX` variable:
 
 ```bash
