@@ -21,6 +21,41 @@ _MAX_GRAPHQL_ERROR_TYPES = 3
 _MAX_GRAPHQL_ERROR_MESSAGE_LENGTH = 120
 _MAX_STORED_GRAPHQL_ERRORS = 10
 
+_api_stats_lock = threading.Lock()
+_api_stats_enabled = threading.Event()
+_api_stats = {"graphql_calls": 0}
+
+
+def configure_api_stats(enabled):
+    """Reset GraphQL request statistics and configure collection for one run.
+
+    This must be called before any request worker threads start. Statistics count
+    every GraphQL POST attempt, including retries and requests that return errors.
+
+    Args:
+        enabled: Whether subsequent GraphQL request attempts should be counted.
+    """
+    with _api_stats_lock:
+        _api_stats["graphql_calls"] = 0
+        if enabled:
+            _api_stats_enabled.set()
+        else:
+            _api_stats_enabled.clear()
+
+
+def get_api_stats():
+    """Return a thread-safe snapshot of the current API request statistics."""
+    with _api_stats_lock:
+        return dict(_api_stats)
+
+
+def _record_graphql_call():
+    """Record one GraphQL POST attempt when API statistics are enabled."""
+    if not _api_stats_enabled.is_set():
+        return
+    with _api_stats_lock:
+        _api_stats["graphql_calls"] += 1
+
 
 def _bounded_message(value, limit=_MAX_GRAPHQL_ERROR_MESSAGE_LENGTH):
     """Return normalized text capped to a fixed display length.
@@ -188,6 +223,7 @@ def make_github_graphql_request(
         _wait_before_retry(attempt, cancel_event)
         try:
             request_start = time.monotonic()
+            _record_graphql_call()
             response = requests.post(
                 graphql_url,
                 json={"query": query},
@@ -260,6 +296,39 @@ def make_github_graphql_request(
             )
             if attempt == _MAX_RETRIES:
                 raise
+
+
+def get_graphql_rate_limit(github_url: str = DEFAULT_GITHUB_URL):
+    """Return GitHub's current GraphQL rate-limit status when available.
+
+    Args:
+        github_url: GitHub or GitHub Enterprise base URL.
+
+    Returns:
+        dict | None: The GraphQL ``rateLimit`` node, or ``None`` when the
+        endpoint does not expose it or the diagnostics request fails.
+    """
+    query = """
+    query {
+      rateLimit {
+        cost
+        remaining
+        resetAt
+        used
+      }
+    }
+    """
+    try:
+        response = make_github_graphql_request(query, github_url)
+    except (GitHubGraphQLError, requests.exceptions.RequestException) as exc:
+        logger.debug("GraphQL rate-limit diagnostics unavailable: %s", exc)
+        return None
+
+    data = response.get("data")
+    if not isinstance(data, dict):
+        return None
+    rate_limit = data.get("rateLimit")
+    return rate_limit if isinstance(rate_limit, dict) else None
 
 
 def current_year_fraction() -> float:

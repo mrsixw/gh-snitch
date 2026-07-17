@@ -11,9 +11,12 @@ from ghsnitch.api import (
     GitHubGraphQLRateLimitError,
     GitHubGraphQLResourceLimitError,
     build_contributions_query,
+    configure_api_stats,
     current_year_fraction,
     fetch_contributions,
+    get_api_stats,
     get_custom_range,
+    get_graphql_rate_limit,
     get_period_range,
     get_rolling_month_ranges,
     get_rolling_week_ranges,
@@ -531,6 +534,57 @@ def test_make_github_graphql_request_exhausts_three_retries(requests_mock):
 
     assert adapter.call_count == 4
     assert [call.args[0] for call in sleep.call_args_list] == [1, 2, 4]
+
+
+def test_api_stats_count_every_graphql_post_attempt(requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        [
+            {"status_code": 503},
+            {"json": {"data": {"viewer": {"login": "alice"}}}},
+        ],
+    )
+
+    configure_api_stats(True)
+    try:
+        with (
+            patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+            patch("ghsnitch.api._wait_before_retry"),
+        ):
+            make_github_graphql_request("{ viewer { login } }")
+
+        assert adapter.call_count == 2
+        assert get_api_stats() == {"graphql_calls": 2}
+    finally:
+        configure_api_stats(False)
+
+
+def test_get_graphql_rate_limit_returns_endpoint_data():
+    rate_limit = {
+        "cost": 1,
+        "remaining": 4987,
+        "resetAt": "2026-07-17T13:00:00Z",
+        "used": 13,
+    }
+    with patch(
+        "ghsnitch.api.make_github_graphql_request",
+        return_value={"data": {"rateLimit": rate_limit}},
+    ) as request:
+        result = get_graphql_rate_limit("https://github.example.com")
+
+    assert result == rate_limit
+    assert request.call_args.args[1] == "https://github.example.com"
+    assert "rateLimit" in request.call_args.args[0]
+
+
+def test_get_graphql_rate_limit_returns_none_when_diagnostics_fail():
+    with patch(
+        "ghsnitch.api.make_github_graphql_request",
+        side_effect=requests.exceptions.ConnectionError("signal lost"),
+    ):
+        result = get_graphql_rate_limit()
+
+    assert result is None
 
 
 def test_make_github_graphql_request_maps_rate_limit_with_reset(requests_mock):

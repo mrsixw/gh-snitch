@@ -205,6 +205,22 @@ for `--format json`, `csv`, and `markdown` consumers.
 
 For recovery advice and example messages, see the troubleshooting guide.
 
+## Inspecting API Usage
+
+Add `--api-stats` to print GraphQL request and rate-limit diagnostics after a
+successful sweep:
+
+```bash
+gh-snitch --users alice,bob --years 3 --api-stats
+```
+
+The stderr summary includes elapsed time, the number of operatives, every
+GraphQL POST attempt made by the sweep (including retries), points used and
+remaining, and GitHub's reset time. The final rate-limit lookup is excluded from
+the reported call count. If GitHub or a GitHub Enterprise Server does not expose
+the rate-limit data, the summary reports it as unavailable without failing the
+otherwise successful command. Data output remains exclusively on stdout.
+
 ## Ghost Operative Detection
 
 Operatives who have recorded zero contributions across **all** surveilled windows are automatically flagged as ghost operatives — dormant assets who have gone dark.

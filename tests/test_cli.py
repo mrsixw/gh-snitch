@@ -115,6 +115,107 @@ def test_successful_run_renders_table(runner, tmp_path, requests_mock):
     assert "Dossier" in result.output
 
 
+def test_api_stats_reports_graphql_usage_on_stderr(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 1\n'
+    )
+
+    def graphql_handler(request, _context):
+        query = request.json()["query"]
+        if "rateLimit" in query:
+            return {
+                "data": {
+                    "rateLimit": {
+                        "cost": 1,
+                        "remaining": 4987,
+                        "resetAt": "2026-07-17T13:00:00Z",
+                        "used": 13,
+                    }
+                }
+            }
+        return _graphql_response(("alice", 42))
+
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        json=graphql_handler,
+    )
+
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.snapshot.CACHE_DIR", tmp_path),
+    ):
+        result = runner.invoke(
+            gh_snitch,
+            [
+                "--config",
+                str(config_file),
+                "--format",
+                "json",
+                "--api-stats",
+                "--no-update-check",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)[0]["operative"] == "alice"
+    assert "API intelligence" not in result.stdout
+    assert "API intelligence" in result.stderr
+    assert "Operatives:       1" in result.stderr
+    assert "GraphQL calls:    2" in result.stderr
+    assert "4987 points remaining" in result.stderr
+    assert "GQL points used:  13" in result.stderr
+    assert "2026-07-17T13:00:00Z" in result.stderr
+    assert adapter.call_count == 3
+
+
+def test_api_stats_degrades_gracefully_when_rate_status_is_unavailable(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+
+    def graphql_handler(request, _context):
+        if "rateLimit" in request.json()["query"]:
+            return {
+                "errors": [
+                    {
+                        "type": "FORBIDDEN",
+                        "message": "Rate status is unavailable",
+                    }
+                ]
+            }
+        return _graphql_response(("alice", 42))
+
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        json=graphql_handler,
+    )
+
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.snapshot.CACHE_DIR", tmp_path),
+    ):
+        result = runner.invoke(
+            gh_snitch,
+            [
+                "--config",
+                str(config_file),
+                "--api-stats",
+                "--no-update-check",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert "GraphQL calls:    1" in result.stderr
+    assert "GQL rate status:  unavailable" in result.stderr
+    assert adapter.call_count == 2
+
+
 def test_resource_limit_exits_cleanly_without_partial_output_or_snapshot(
     runner, tmp_path, requests_mock
 ):

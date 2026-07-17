@@ -18,9 +18,12 @@ from .api import (
     GitHubGraphQLError,
     GitHubGraphQLRateLimitError,
     GitHubGraphQLResourceLimitError,
+    configure_api_stats,
     current_year_fraction,
     fetch_contributions,
+    get_api_stats,
     get_custom_range,
+    get_graphql_rate_limit,
     get_period_range,
     get_rolling_month_ranges,
     get_rolling_week_ranges,
@@ -92,6 +95,43 @@ def _bounded_error_detail(error, limit=200):
     if len(detail) > limit:
         return f"{detail[: limit - 3]}..."
     return detail
+
+
+def _print_api_stats_summary(run_start, operative_count, stats, rate_limit):
+    """Print a spy-themed API diagnostics summary to stderr.
+
+    Args:
+        run_start: Monotonic timestamp captured when the command started.
+        operative_count: Number of requested operatives in the completed sweep.
+        stats: Snapshot returned by :func:`get_api_stats`.
+        rate_limit: GraphQL ``rateLimit`` data, or ``None`` when unavailable.
+    """
+    elapsed = time.monotonic() - run_start
+    lines = [
+        click.style("🛰️  API intelligence", fg="cyan", bold=True),
+        f"  Total elapsed:    {elapsed:.2f}s",
+        f"  Operatives:       {operative_count}",
+        f"  GraphQL calls:    {stats['graphql_calls']}",
+    ]
+
+    rate_lines = 0
+    if rate_limit:
+        remaining = rate_limit.get("remaining")
+        used = rate_limit.get("used")
+        reset_at = rate_limit.get("resetAt")
+        if remaining is not None:
+            lines.append(f"  GQL rate limit:   {remaining} points remaining")
+            rate_lines += 1
+        if used is not None:
+            lines.append(f"  GQL points used:  {used}")
+            rate_lines += 1
+        if reset_at:
+            lines.append(f"  GQL rate resets:  {reset_at}")
+            rate_lines += 1
+    if rate_lines == 0:
+        lines.append("  GQL rate status:  unavailable")
+
+    click.echo("\n".join(lines), err=True)
 
 
 def _compute_rank_metadata(rows, current_year_label):
@@ -255,6 +295,15 @@ def _backup_config(path: Path):
     help="Skip checking for updates.",
 )
 @click.option(
+    "--api-stats",
+    is_flag=True,
+    default=False,
+    help=(
+        "Print GraphQL request counts and rate-limit diagnostics to stderr "
+        "after output."
+    ),
+)
+@click.option(
     "--no-trend",
     is_flag=True,
     default=False,
@@ -326,6 +375,7 @@ def gh_snitch(  # noqa: PLR0913
     update_config,
     export_config,
     no_update_check,
+    api_stats,
     no_trend,
     min_contributions,
     totals,
@@ -337,6 +387,8 @@ def gh_snitch(  # noqa: PLR0913
     output_format,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
+    run_start = time.monotonic()
+    configure_api_stats(api_stats)
     setup_logging()
     logger.info(
         "gh-snitch started config=%s users=%s years=%s period=%s "
@@ -804,6 +856,16 @@ def gh_snitch(  # noqa: PLR0913
         update_msg = check_for_update()
         if update_msg:
             click.echo(update_msg, err=True)
+
+    if api_stats:
+        stats = get_api_stats()
+        rate_limit = get_graphql_rate_limit(operative_github_url)
+        _print_api_stats_summary(
+            run_start,
+            len(operative_list),
+            stats,
+            rate_limit,
+        )
 
     if not_found:
         sys.exit(1)
