@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import date
 from unittest.mock import patch
 
 import pytest
@@ -112,6 +113,188 @@ def test_successful_run_renders_table(runner, tmp_path, requests_mock):
     assert "surveillance" in result.output.lower() or "Initiating" in result.output
     assert "alice" in result.output
     assert "Dossier" in result.output
+
+
+def test_resource_limit_exits_cleanly_without_partial_output_or_snapshot(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    errors = [
+        {
+            "type": "RESOURCE_LIMITS_EXCEEDED",
+            "path": ["user_0", "contributionsCollection", index],
+            "message": "Resource limits for this query exceeded.",
+        }
+        for index in range(500)
+    ]
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={"data": _graphql_response(("alice", 99))["data"], "errors": errors},
+    )
+
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.cli.save_snapshot") as save_snapshot,
+    ):
+        result = runner.invoke(
+            gh_snitch,
+            [
+                "--config",
+                str(config_file),
+                "--format",
+                "json",
+                "--no-update-check",
+            ],
+        )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "exceeded GitHub's resource limits" in result.stderr
+    assert "Reduce the number of operatives or time ranges" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "RESOURCE_LIMITS_EXCEEDED" not in result.stderr
+    assert len(result.stderr) < 300
+    save_snapshot.assert_not_called()
+
+
+def test_multi_range_fatal_error_discards_successful_partial_data(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 1\n'
+    )
+    current_year = date.today().year
+
+    def graphql_handler(request, context):
+        query = request.json()["query"]
+        if f'from: "{current_year}-01-01' in query:
+            return _graphql_response(("alice", 99))
+        return {
+            "data": _graphql_response(("alice", 12))["data"],
+            "errors": [
+                {
+                    "type": "RESOURCE_LIMITS_EXCEEDED",
+                    "message": "Resource limits for this query exceeded.",
+                }
+            ],
+        }
+
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json=graphql_handler,
+    )
+
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.cli.save_snapshot") as save_snapshot,
+    ):
+        result = runner.invoke(
+            gh_snitch,
+            [
+                "--config",
+                str(config_file),
+                "--format",
+                "json",
+                "--no-update-check",
+            ],
+        )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "exceeded GitHub's resource limits" in result.stderr
+    assert "CancelledError" not in result.stderr
+    assert "Traceback" not in result.stderr
+    save_snapshot.assert_not_called()
+
+
+def test_rate_limit_exits_cleanly_with_reset_time(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={"errors": [{"type": "RATE_LIMITED", "message": "Slow down"}]},
+        headers={"X-RateLimit-Reset": "1750000000"},
+    )
+
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+    ):
+        result = runner.invoke(
+            gh_snitch,
+            ["--config", str(config_file), "--format", "json", "--no-update-check"],
+        )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Surveillance rate limit reached" in result.stderr
+    assert "UTC" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_generic_graphql_error_exits_with_bounded_stderr(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={"errors": [{"type": "FORBIDDEN", "message": "Access denied"}]},
+    )
+
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+    ):
+        result = runner.invoke(
+            gh_snitch,
+            ["--config", str(config_file), "--format", "json", "--no-update-check"],
+        )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Surveillance query failed" in result.stderr
+    assert "FORBIDDEN=1: Access denied" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert len(result.stderr) < 300
+
+
+def test_transient_retry_exhaustion_exits_cleanly(runner, tmp_path, requests_mock):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        status_code=503,
+    )
+
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api._wait_before_retry"),
+    ):
+        result = runner.invoke(
+            gh_snitch,
+            ["--config", str(config_file), "--format", "json", "--no-update-check"],
+        )
+
+    assert result.exit_code == 1
+    assert adapter.call_count == 4
+    assert result.stdout == ""
+    assert "Signal lost after retries" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert len(result.stderr) < 500
 
 
 def test_no_update_check_skips_update(runner, tmp_path, requests_mock):

@@ -38,6 +38,12 @@ Some behaviours are always-on and require no flag:
 
 Ghost detection is suppressed in `--delta` mode.
 
+Network retries and GraphQL error handling are also automatic. Transient
+502/503/504 and connection failures receive three retries with backoff. Rate
+limits, resource limits, and other fatal GraphQL errors exit non-zero with a
+concise message on stderr; structured stdout is never populated with partial
+surveillance data.
+
 ## Environment Variables
 
 | Variable | Required | Description |

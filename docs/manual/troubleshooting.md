@@ -49,15 +49,58 @@ One or more of the supplied usernames could not be resolved to a GitHub account.
 
 **Fix:** Check the spelling of the username(s). GitHub usernames are case-insensitive but must otherwise be exact. Usernames containing dots (`.`) or hyphens (`-`) must be specified exactly as they appear on GitHub.
 
-## `Signal lost. Operative unreachable`
+## `Signal lost after retries. Operative unreachable`
 
 ```
-📡 Signal lost. Operative unreachable: <error>
+📡 Signal lost after retries. Operative unreachable: <error>
 ```
 
-**Fix:** Check your network connection and verify your `GITHUB_TOKEN` is valid and not expired. GitHub's API may also be temporarily unavailable.
+gh-snitch automatically retries connection failures, timeouts, and GitHub
+502/503/504 responses three times with exponential backoff before showing this
+message.
 
-## GitHub Enterprise Server: `Signal lost` or `GraphQL errors`
+**Fix:** Check your network connection and verify your `GITHUB_TOKEN` is valid
+and not expired. GitHub's API may also be temporarily unavailable.
+
+## `Surveillance rate limit reached`
+
+```
+⏱️  Surveillance rate limit reached. GitHub signals reset at <time>. Stand down and retry after that time.
+```
+
+GitHub rejected the query because the token's GraphQL rate limit is exhausted.
+When GitHub supplies a reset time, gh-snitch includes it in UTC.
+
+**Fix:** Wait until the reported reset time, reduce the number of time ranges,
+or use a token with an available rate-limit budget.
+
+## `Surveillance query exceeded GitHub's resource limits`
+
+```
+🕵️  Surveillance query exceeded GitHub's resource limits. Reduce the number of operatives or time ranges and try again.
+```
+
+GitHub could not execute the query within its resource budget. gh-snitch stops
+the complete sweep and does not render or save partial contribution data.
+
+**Fix:** Reduce the number of operatives in `--users` or the selected team.
+Alternatively, request fewer years, months, or weeks before trying again.
+
+## Other fatal GraphQL errors
+
+```
+🕵️  Surveillance query failed: <bounded error summary>
+```
+
+Authentication, scope, and other GraphQL failures are summarized by error type
+and count. The full GitHub error array is never printed to the terminal or
+normal logs, even when GitHub repeats an error hundreds of times.
+
+All operational errors are written to stderr and exit non-zero. Data formats
+remain exclusive to stdout, so redirected JSON, CSV, and Markdown output cannot
+be contaminated by a traceback or partial result.
+
+## GitHub Enterprise Server: `Signal lost` or GraphQL errors
 
 If you're targeting a GHES instance and see network or GraphQL errors, check:
 

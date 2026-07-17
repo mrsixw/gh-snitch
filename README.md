@@ -93,6 +93,10 @@ make uninstall PREFIX=$HOME/.local
 | `--version` | Show version |
 | `--help` | Show help |
 
+Transient GitHub 502/503/504 and connection failures are retried three times
+with backoff. Fatal GraphQL failures exit cleanly with a concise spy-themed
+message on stderr, leaving stdout safe for JSON, CSV, and Markdown pipelines.
+
 ## Output
 
 The table shows contribution counts per operative per year, colour-graded:

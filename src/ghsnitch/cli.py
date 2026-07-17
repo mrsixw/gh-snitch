@@ -15,6 +15,9 @@ from . import config as config_module
 from .api import (
     SECRET_GITHUB_TOKEN,
     VALID_PERIODS,
+    GitHubGraphQLError,
+    GitHubGraphQLRateLimitError,
+    GitHubGraphQLResourceLimitError,
     current_year_fraction,
     fetch_contributions,
     get_custom_range,
@@ -73,6 +76,22 @@ _NATO_ALPHABET = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _bounded_error_detail(error, limit=200):
+    """Return a concise single-line detail for terminal error messages.
+
+    Args:
+        error: Exception or value to render.
+        limit: Maximum number of characters to return.
+
+    Returns:
+        str: Normalized, optionally truncated error detail.
+    """
+    detail = " ".join(str(error).split()) or type(error).__name__
+    if len(detail) > limit:
+        return f"{detail[: limit - 3]}..."
+    return detail
 
 
 def _compute_rank_metadata(rows, current_year_label):
@@ -549,10 +568,61 @@ def gh_snitch(  # noqa: PLR0913
                 on_progress,
                 year_ranges=active_year_ranges,
             )
+    except GitHubGraphQLRateLimitError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: rate_limited error_count=%d errors=%s reset=%s",
+            duration,
+            e.error_count,
+            e.summary,
+            e.reset_at,
+        )
+        if e.reset_at:
+            click.echo(
+                "⏱️  Surveillance rate limit reached. "
+                f"GitHub signals reset at {e.reset_at}. "
+                "Stand down and retry after that time.",
+                err=True,
+            )
+        else:
+            click.echo(
+                "⏱️  Surveillance rate limit reached. "
+                "Stand down briefly and try again.",
+                err=True,
+            )
+        sys.exit(1)
+    except GitHubGraphQLResourceLimitError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: resource_limited error_count=%d errors=%s",
+            duration,
+            e.error_count,
+            e.summary,
+        )
+        click.echo(
+            "🕵️  Surveillance query exceeded GitHub's resource limits. "
+            "Reduce the number of operatives or time ranges and try again.",
+            err=True,
+        )
+        sys.exit(1)
+    except GitHubGraphQLError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: graphql_error error_count=%d errors=%s",
+            duration,
+            e.error_count,
+            e.summary,
+        )
+        click.echo(f"🕵️  Surveillance query failed: {e.summary}", err=True)
+        sys.exit(1)
     except requests.exceptions.RequestException as e:
         duration = time.monotonic() - sweep_start
-        logger.error("sweep failed after %.3fs: %s", duration, e)
-        click.echo(f"📡 Signal lost. Operative unreachable: {e}", err=True)
+        detail = _bounded_error_detail(e)
+        logger.error("sweep failed after %.3fs: network_error=%s", duration, detail)
+        click.echo(
+            f"📡 Signal lost after retries. Operative unreachable: {detail}",
+            err=True,
+        )
         sys.exit(1)
 
     duration = time.monotonic() - sweep_start

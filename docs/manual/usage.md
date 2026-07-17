@@ -192,6 +192,19 @@ gh-snitch --github-url https://github.example.com --users alice,bob
 
 The GraphQL API endpoint is derived automatically (`<host>/api/graphql`). Your `GITHUB_TOKEN` should be a personal access token issued by the Enterprise instance.
 
+## Network and GraphQL Failures
+
+gh-snitch retries transient GitHub 502/503/504 responses and connection or
+timeout failures three times with exponential backoff. If the signal remains
+down, the command exits non-zero with one concise message on stderr.
+
+GitHub rate limits, GraphQL resource limits, and other fatal GraphQL errors are
+not retried as network failures. The surveillance sweep stops without rendering
+partial contribution data or saving a partial snapshot. This keeps stdout clean
+for `--format json`, `csv`, and `markdown` consumers.
+
+For recovery advice and example messages, see the troubleshooting guide.
+
 ## Ghost Operative Detection
 
 Operatives who have recorded zero contributions across **all** surveilled windows are automatically flagged as ghost operatives — dormant assets who have gone dark.
