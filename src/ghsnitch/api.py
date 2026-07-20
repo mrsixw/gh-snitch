@@ -17,6 +17,8 @@ SECRET_GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 _MAX_RETRIES = 3
 _RETRY_STATUSES = {502, 503, 504}
 _REQUEST_TIMEOUT = 30
+_MAX_OPERATIVES_PER_QUERY = 10
+_MAX_RANGE_WORKERS = 4
 _MAX_GRAPHQL_ERROR_TYPES = 3
 _MAX_GRAPHQL_ERROR_MESSAGE_LENGTH = 120
 _MAX_STORED_GRAPHQL_ERRORS = 10
@@ -421,7 +423,7 @@ def build_contributions_query(users, from_iso, to_iso):
 
 
 def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
-    """Fetch contributions for all users for a single year range.
+    """Fetch one range using bounded, adaptively reduced operative batches.
 
     Args:
         users: GitHub usernames included in the query.
@@ -432,19 +434,69 @@ def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
         cancel_event: Optional signal used to stop concurrent retries.
 
     Returns:
-        tuple: Range label and its GraphQL data mapping.
+        tuple: Range label, contribution counts keyed by username, and usernames
+        whose GraphQL aliases returned null.
     """
-    logger.debug(
-        "fetching year=%s users=%s from=%s to=%s", label, users, from_iso, to_iso
-    )
-    query = build_contributions_query(users, from_iso, to_iso)
-    data = make_github_graphql_request(
-        query,
-        github_url,
-        cancel_event=cancel_event,
-    )
-    logger.debug("year=%s response received", label)
-    return label, data.get("data", {})
+    range_result = {}
+    null_users = set()
+    offset = 0
+    batch_size = min(_MAX_OPERATIVES_PER_QUERY, len(users))
+
+    while offset < len(users):
+        batch = users[offset : offset + batch_size]
+        logger.debug(
+            "fetching range=%s operative_offset=%d batch_size=%d from=%s to=%s",
+            label,
+            offset,
+            len(batch),
+            from_iso,
+            to_iso,
+        )
+        query = build_contributions_query(batch, from_iso, to_iso)
+        try:
+            data = make_github_graphql_request(
+                query,
+                github_url,
+                cancel_event=cancel_event,
+            )
+        except GitHubGraphQLResourceLimitError as exc:
+            if len(batch) == 1:
+                raise
+            next_batch_size = max(1, len(batch) // 2)
+            logger.warning(
+                "resource-limited range=%s operative_offset=%d error_count=%d "
+                "batch_size=%d retry_batch_size=%d",
+                label,
+                offset,
+                exc.error_count,
+                len(batch),
+                next_batch_size,
+            )
+            # Keep the safer size for all remaining operatives in this range.
+            batch_size = next_batch_size
+            continue
+
+        response_data = data.get("data", {})
+        for i, username in enumerate(batch):
+            user_data = response_data.get(f"user_{i}")
+            if user_data is None:
+                logger.warning("no data returned for user=%s range=%s", username, label)
+                range_result[username] = 0
+                null_users.add(username)
+                continue
+
+            count = (
+                user_data.get("contributionsCollection", {})
+                .get("contributionCalendar", {})
+                .get("totalContributions", 0)
+            )
+            range_result[username] = count
+            logger.debug("user=%s range=%s contributions=%d", username, label, count)
+
+        offset += len(batch)
+
+    logger.debug("range=%s response received", label)
+    return label, range_result, null_users
 
 
 def get_rolling_month_ranges(n: int) -> list[tuple[str, str, str]]:
@@ -554,10 +606,13 @@ def fetch_contributions(
     total = len(ranges)
     result = {username: {} for username in users}
     null_counts: dict[str, int] = {username: 0 for username in users}
+    if total == 0:
+        return result, set(users)
 
     cancel_event = threading.Event()
-    executor = ThreadPoolExecutor()
+    executor = ThreadPoolExecutor(max_workers=min(_MAX_RANGE_WORKERS, total))
     futures = set()
+    completed_ranges = []
     try:
         for label, from_iso, to_iso in ranges:
             futures.add(
@@ -573,27 +628,7 @@ def fetch_contributions(
             )
 
         for completed, future in enumerate(as_completed(futures), start=1):
-            label, response_data = future.result()
-
-            for i, username in enumerate(users):
-                alias = f"user_{i}"
-                user_data = response_data.get(alias)
-                if user_data is None:
-                    logger.warning(
-                        "no data returned for user=%s year=%s", username, label
-                    )
-                    result[username][label] = 0
-                    null_counts[username] += 1
-                else:
-                    count = (
-                        user_data.get("contributionsCollection", {})
-                        .get("contributionCalendar", {})
-                        .get("totalContributions", 0)
-                    )
-                    result[username][label] = count
-                    logger.debug(
-                        "user=%s year=%s contributions=%d", username, label, count
-                    )
+            completed_ranges.append(future.result())
 
             if on_progress is not None:
                 on_progress(completed, total)
@@ -604,6 +639,12 @@ def fetch_contributions(
         # Active HTTP calls cannot be interrupted, but the event prevents each
         # worker from starting another retry after its current request returns.
         executor.shutdown(wait=True, cancel_futures=True)
+
+    for label, range_result, null_users in completed_ranges:
+        for username, count in range_result.items():
+            result[username][label] = count
+        for username in null_users:
+            null_counts[username] += 1
 
     not_found = {u for u, c in null_counts.items() if c == total}
     return result, not_found
