@@ -197,11 +197,25 @@ years = {years}
 """
 
 
-def generate_default_config(config_path=None):
-    """Write default config template to disk. Returns the path used."""
+def generate_default_config(config_path=None, *, overwrite=False):
+    """Write the default config template to disk.
+
+    Args:
+        config_path: Optional destination path. Uses the default config path when
+            omitted.
+        overwrite: Whether to replace an existing config file.
+
+    Returns:
+        Path: The config path written.
+
+    Raises:
+        FileExistsError: If the destination exists and overwrite is false.
+    """
     path = Path(config_path) if config_path else get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_DEFAULT_CONFIG_TEMPLATE)
+    mode = "w" if overwrite else "x"
+    with path.open(mode, encoding="utf-8") as config_file:
+        config_file.write(_DEFAULT_CONFIG_TEMPLATE)
     return path
 
 

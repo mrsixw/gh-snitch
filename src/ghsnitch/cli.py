@@ -335,7 +335,8 @@ def gh_snitch(  # noqa: PLR0913
 
     if init_config:
         path = Path(config) if config else get_config_path()
-        if path.exists():
+        overwrite = path.exists()
+        if overwrite:
             click.confirm(
                 f"🚨 Operative config already exists at {path}. Overwrite and backup?",
                 abort=True,
@@ -343,7 +344,7 @@ def gh_snitch(  # noqa: PLR0913
             backup = _backup_config(path)
             click.echo(f"📦 Original dossier secured at: {backup}", err=True)
 
-        path = generate_default_config(config)
+        path = generate_default_config(config, overwrite=overwrite)
         click.echo(f"🗂️  Handler config established at: {path}", err=True)
         return
 
