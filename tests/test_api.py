@@ -1,5 +1,6 @@
+import re
 import threading
-from concurrent.futures import CancelledError
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from datetime import date, datetime
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from ghsnitch.api import (
     GitHubGraphQLError,
     GitHubGraphQLRateLimitError,
     GitHubGraphQLResourceLimitError,
+    _fetch_year,
     build_contributions_query,
     configure_api_stats,
     current_year_fraction,
@@ -49,6 +51,11 @@ def _graphql_response(*users, errors=None):
     if errors is not None:
         response["errors"] = errors
     return response
+
+
+def _query_logins(request):
+    """Return operative logins from a mocked GraphQL request in alias order."""
+    return re.findall(r'user\(login: "([^"]+)"\)', request.json()["query"])
 
 
 def test_graphql_url_for_github_com():
@@ -394,6 +401,246 @@ def test_fetch_contributions_not_found_user_via_graphql_error(requests_mock):
 
     assert result["ghost"][current_year] == 0
     assert "ghost" in not_found
+
+
+def test_fetch_contributions_bounds_operative_batch_size(requests_mock):
+    """A range should split large cohorts into batches of at most ten users."""
+    users = [f"operative-{index}" for index in range(23)]
+    batch_sizes = []
+
+    def graphql_handler(request, _context):
+        logins = _query_logins(request)
+        batch_sizes.append(len(logins))
+        return _graphql_response(
+            *((login, int(login.rsplit("-", 1)[1])) for login in logins)
+        )
+
+    requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+    ranges = [("Range", "2026-01-01T00:00:00+00:00", "2026-01-31T23:59:59+00:00")]
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        result, not_found = fetch_contributions(users, 0, year_ranges=ranges)
+
+    assert batch_sizes == [10, 10, 3]
+    assert result["operative-22"]["Range"] == 22
+    assert not_found == set()
+
+
+def test_fetch_contributions_reduces_and_retains_resource_limited_batch(
+    requests_mock,
+):
+    """A rejected batch should halve once and retain the successful size."""
+    users = [f"operative-{index}" for index in range(12)]
+    batch_sizes = []
+    progress = []
+
+    def graphql_handler(request, _context):
+        logins = _query_logins(request)
+        batch_sizes.append(len(logins))
+        if len(logins) == 10:
+            return {
+                "data": _graphql_response(*((login, 999) for login in logins))["data"],
+                "errors": [
+                    {
+                        "type": "RESOURCE_LIMITS_EXCEEDED",
+                        "message": "Resource limits for this query exceeded.",
+                    }
+                ],
+            }
+        return _graphql_response(
+            *((login, int(login.rsplit("-", 1)[1])) for login in logins)
+        )
+
+    requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+    ranges = [("Range", "2026-01-01T00:00:00+00:00", "2026-01-31T23:59:59+00:00")]
+
+    configure_api_stats(True)
+    try:
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            result, not_found = fetch_contributions(
+                users,
+                0,
+                on_progress=lambda completed, total: progress.append(
+                    (completed, total)
+                ),
+                year_ranges=ranges,
+            )
+
+        assert get_api_stats() == {"graphql_calls": 4}
+    finally:
+        configure_api_stats(False)
+
+    assert batch_sizes == [10, 5, 5, 2]
+    assert result["operative-0"]["Range"] == 0
+    assert result["operative-11"]["Range"] == 11
+    assert not_found == set()
+    assert progress == [(1, 1)]
+
+
+def test_fetch_contributions_propagates_resource_limit_at_singleton(
+    requests_mock,
+):
+    """Adaptive batching should stop when GitHub rejects one operative."""
+    batch_sizes = []
+
+    def graphql_handler(request, _context):
+        logins = _query_logins(request)
+        batch_sizes.append(len(logins))
+        return {
+            "errors": [
+                {
+                    "type": "RESOURCE_LIMITS_EXCEEDED",
+                    "message": "Resource limits for this query exceeded.",
+                }
+            ]
+        }
+
+    requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+    users = [f"operative-{index}" for index in range(10)]
+    ranges = [("Range", "2026-01-01T00:00:00+00:00", "2026-01-31T23:59:59+00:00")]
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        pytest.raises(GitHubGraphQLResourceLimitError),
+    ):
+        fetch_contributions(users, 0, year_ranges=ranges)
+
+    assert batch_sizes == [10, 5, 2, 1]
+
+
+def test_fetch_contributions_does_not_adapt_mixed_fatal_errors(requests_mock):
+    """Only pure resource-limit failures should trigger smaller batches."""
+    batch_sizes = []
+
+    def graphql_handler(request, _context):
+        batch_sizes.append(len(_query_logins(request)))
+        return {
+            "errors": [
+                {"type": "FORBIDDEN", "message": "Access denied."},
+                {
+                    "type": "RESOURCE_LIMITS_EXCEEDED",
+                    "message": "Resource limits for this query exceeded.",
+                },
+            ]
+        }
+
+    requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+    ranges = [("Range", "2026-01-01T00:00:00+00:00", "2026-01-31T23:59:59+00:00")]
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        pytest.raises(GitHubGraphQLError) as exc_info,
+    ):
+        fetch_contributions(["alice", "bob", "carol"], 0, year_ranges=ranges)
+
+    assert type(exc_info.value) is GitHubGraphQLError
+    assert batch_sizes == [3]
+
+
+def test_fetch_contributions_preserves_not_found_during_resource_recovery(
+    requests_mock,
+):
+    """Benign NOT_FOUND errors should survive adaptive resource recovery."""
+    batch_sizes = []
+
+    def graphql_handler(request, _context):
+        logins = _query_logins(request)
+        batch_sizes.append(len(logins))
+        if len(logins) > 1:
+            return {
+                "data": _graphql_response(*((login, 999) for login in logins))["data"],
+                "errors": [
+                    {
+                        "type": "NOT_FOUND",
+                        "message": "Could not resolve an operative.",
+                    },
+                    {
+                        "type": "RESOURCE_LIMITS_EXCEEDED",
+                        "message": "Resource limits for this query exceeded.",
+                    },
+                ],
+            }
+        login = logins[0]
+        if login == "ghost":
+            return _graphql_response(
+                (login, None),
+                errors=[
+                    {
+                        "type": "NOT_FOUND",
+                        "message": "Could not resolve an operative.",
+                    }
+                ],
+            )
+        return _graphql_response((login, 7))
+
+    requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+    ranges = [("Range", "2026-01-01T00:00:00+00:00", "2026-01-31T23:59:59+00:00")]
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        result, not_found = fetch_contributions(
+            ["alice", "ghost", "bob"], 0, year_ranges=ranges
+        )
+
+    assert batch_sizes == [3, 1, 1, 1]
+    assert result["alice"]["Range"] == 7
+    assert result["ghost"]["Range"] == 0
+    assert result["bob"]["Range"] == 7
+    assert not_found == {"ghost"}
+
+
+def test_fetch_contributions_caps_concurrent_ranges():
+    """The range executor should never exceed the internal worker cap."""
+    ranges = [
+        (
+            f"Range {index}",
+            "2026-01-01T00:00:00+00:00",
+            "2026-01-31T23:59:59+00:00",
+        )
+        for index in range(6)
+    ]
+
+    def fake_fetch(_users, label, _from_iso, _to_iso, _github_url, _cancel_event):
+        return label, {"alice": 1}, set()
+
+    with (
+        patch("ghsnitch.api._fetch_year", side_effect=fake_fetch),
+        patch(
+            "ghsnitch.api.ThreadPoolExecutor", wraps=ThreadPoolExecutor
+        ) as executor_class,
+    ):
+        result, not_found = fetch_contributions(["alice"], 0, year_ranges=ranges)
+
+    executor_class.assert_called_once_with(max_workers=4)
+    assert len(result["alice"]) == 6
+    assert not_found == set()
+
+
+def test_fetch_year_honours_cancellation_between_batches(requests_mock):
+    """Cancellation after one batch should prevent the next GraphQL request."""
+    cancel_event = threading.Event()
+
+    def graphql_handler(request, _context):
+        logins = _query_logins(request)
+        cancel_event.set()
+        return _graphql_response(*((login, 1) for login in logins))
+
+    adapter = requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+    users = [f"operative-{index}" for index in range(12)]
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        pytest.raises(CancelledError, match="surveillance sweep cancelled"),
+    ):
+        _fetch_year(
+            users,
+            "Range",
+            "2026-01-01T00:00:00+00:00",
+            "2026-01-31T23:59:59+00:00",
+            "https://github.com",
+            cancel_event,
+        )
+
+    assert adapter.call_count == 1
 
 
 def test_make_github_graphql_request_raises_on_non_not_found_errors(requests_mock):

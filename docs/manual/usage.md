@@ -198,10 +198,15 @@ gh-snitch retries transient GitHub 502/503/504 responses and connection or
 timeout failures three times with exponential backoff. If the signal remains
 down, the command exits non-zero with one concise message on stderr.
 
-GitHub rate limits, GraphQL resource limits, and other fatal GraphQL errors are
-not retried as network failures. The surveillance sweep stops without rendering
-partial contribution data or saving a partial snapshot. This keeps stdout clean
-for `--format json`, `csv`, and `markdown` consumers.
+Contribution sweeps limit concurrent date ranges and divide large operative
+cohorts into bounded GraphQL batches. When GitHub reports a resource limit,
+gh-snitch retries the rejected operative slice at progressively smaller sizes
+and keeps the safer size for the remainder of that range.
+
+GitHub rate limits, unrecoverable resource limits, and other fatal GraphQL
+errors are not retried as network failures. The surveillance sweep stops
+without rendering partial contribution data or saving a partial snapshot. This
+keeps stdout clean for `--format json`, `csv`, and `markdown` consumers.
 
 For recovery advice and example messages, see the troubleshooting guide.
 

@@ -95,7 +95,9 @@ make uninstall PREFIX=$HOME/.local
 | `--help` | Show help |
 
 Transient GitHub 502/503/504 and connection failures are retried three times
-with backoff. Fatal GraphQL failures exit cleanly with a concise spy-themed
+with backoff. Contribution sweeps bound concurrent ranges and automatically
+retry resource-limited GraphQL work with progressively smaller operative
+batches. Unrecoverable GraphQL failures exit cleanly with a concise spy-themed
 message on stderr, leaving stdout safe for JSON, CSV, and Markdown pipelines.
 Use `--api-stats` to append GraphQL call counts, points remaining and used, and
 the rate-limit reset time to stderr after a successful run.

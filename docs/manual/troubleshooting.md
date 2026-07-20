@@ -80,8 +80,14 @@ or use a token with an available rate-limit budget.
 🕵️  Surveillance query exceeded GitHub's resource limits. Reduce the number of operatives or time ranges and try again.
 ```
 
-GitHub could not execute the query within its resource budget. gh-snitch stops
-the complete sweep and does not render or save partial contribution data.
+gh-snitch normally recovers from GitHub resource limits automatically. It limits
+concurrent date-range requests, queries operatives in bounded batches, and
+retries a rejected batch at progressively smaller sizes. A reduced size remains
+in use for the rest of that range.
+
+This message appears only when GitHub still rejects a single-operative batch.
+gh-snitch then stops the complete sweep and does not render or save partial
+contribution data.
 
 **Fix:** Reduce the number of operatives in `--users` or the selected team.
 Alternatively, request fewer years, months, or weeks before trying again.
