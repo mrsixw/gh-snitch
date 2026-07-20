@@ -1,5 +1,8 @@
 import tomllib
 
+import pytest
+
+import ghsnitch.config as config_module
 from ghsnitch.config import (
     generate_default_config,
     load_config,
@@ -97,10 +100,23 @@ def test_generate_default_config_creates_dirs(tmp_path):
 
 
 def test_generate_default_config_default_path(monkeypatch, tmp_path):
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    config_dir = tmp_path / "gh-snitch"
+    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
+
     path = generate_default_config()
+
+    assert path == config_dir / "config.toml"
     assert path.exists()
-    assert "gh-snitch" in str(path)
+
+
+def test_generate_default_config_refuses_to_overwrite(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("operative config")
+
+    with pytest.raises(FileExistsError):
+        generate_default_config(str(config_file))
+
+    assert config_file.read_text() == "operative config"
 
 
 def test_load_config_output_format(tmp_path):
