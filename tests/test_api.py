@@ -1,3 +1,5 @@
+import threading
+from concurrent.futures import CancelledError
 from datetime import date, datetime
 from unittest.mock import patch
 
@@ -5,10 +7,16 @@ import pytest
 import requests
 
 from ghsnitch.api import (
+    GitHubGraphQLError,
+    GitHubGraphQLRateLimitError,
+    GitHubGraphQLResourceLimitError,
     build_contributions_query,
+    configure_api_stats,
     current_year_fraction,
     fetch_contributions,
+    get_api_stats,
     get_custom_range,
+    get_graphql_rate_limit,
     get_period_range,
     get_rolling_month_ranges,
     get_rolling_week_ranges,
@@ -395,7 +403,7 @@ def test_make_github_graphql_request_raises_on_non_not_found_errors(requests_moc
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-        with pytest.raises(ValueError, match="GraphQL errors"):
+        with pytest.raises(GitHubGraphQLError, match="GraphQL request failed"):
             make_github_graphql_request("{ viewer { login } }")
 
 
@@ -461,5 +469,241 @@ def test_make_github_graphql_request_raises_on_graphql_errors(requests_mock):
     )
 
     with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
-        with pytest.raises(ValueError, match="GraphQL errors"):
+        with pytest.raises(GitHubGraphQLError, match="GraphQL request failed"):
             make_github_graphql_request("{ viewer { login } }")
+
+
+def test_make_github_graphql_request_retries_transient_status_then_succeeds(
+    requests_mock,
+):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        [
+            {"status_code": 503},
+            {"json": {"data": {"viewer": {"login": "alice"}}}},
+        ],
+    )
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.random.uniform", return_value=0),
+        patch("ghsnitch.api.time.sleep") as sleep,
+    ):
+        data = make_github_graphql_request("{ viewer { login } }")
+
+    assert data["data"]["viewer"]["login"] == "alice"
+    assert adapter.call_count == 2
+    sleep.assert_called_once_with(1)
+
+
+def test_make_github_graphql_request_retries_connection_error_then_succeeds(
+    requests_mock,
+):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        [
+            {"exc": requests.exceptions.ConnectionError("signal interrupted")},
+            {"json": {"data": {"viewer": {"login": "alice"}}}},
+        ],
+    )
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.random.uniform", return_value=0),
+        patch("ghsnitch.api.time.sleep"),
+    ):
+        data = make_github_graphql_request("{ viewer { login } }")
+
+    assert data["data"]["viewer"]["login"] == "alice"
+    assert adapter.call_count == 2
+
+
+def test_make_github_graphql_request_exhausts_three_retries(requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        status_code=503,
+    )
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.random.uniform", return_value=0),
+        patch("ghsnitch.api.time.sleep") as sleep,
+        pytest.raises(requests.exceptions.HTTPError),
+    ):
+        make_github_graphql_request("{ viewer { login } }")
+
+    assert adapter.call_count == 4
+    assert [call.args[0] for call in sleep.call_args_list] == [1, 2, 4]
+
+
+def test_api_stats_count_every_graphql_post_attempt(requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        [
+            {"status_code": 503},
+            {"json": {"data": {"viewer": {"login": "alice"}}}},
+        ],
+    )
+
+    configure_api_stats(True)
+    try:
+        with (
+            patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+            patch("ghsnitch.api._wait_before_retry"),
+        ):
+            make_github_graphql_request("{ viewer { login } }")
+
+        assert adapter.call_count == 2
+        assert get_api_stats() == {"graphql_calls": 2}
+    finally:
+        configure_api_stats(False)
+
+
+def test_get_graphql_rate_limit_returns_endpoint_data():
+    rate_limit = {
+        "cost": 1,
+        "remaining": 4987,
+        "resetAt": "2026-07-17T13:00:00Z",
+        "used": 13,
+    }
+    with patch(
+        "ghsnitch.api.make_github_graphql_request",
+        return_value={"data": {"rateLimit": rate_limit}},
+    ) as request:
+        result = get_graphql_rate_limit("https://github.example.com")
+
+    assert result == rate_limit
+    assert request.call_args.args[1] == "https://github.example.com"
+    assert "rateLimit" in request.call_args.args[0]
+
+
+def test_get_graphql_rate_limit_returns_none_when_diagnostics_fail():
+    with patch(
+        "ghsnitch.api.make_github_graphql_request",
+        side_effect=requests.exceptions.ConnectionError("signal lost"),
+    ):
+        result = get_graphql_rate_limit()
+
+    assert result is None
+
+
+def test_make_github_graphql_request_maps_rate_limit_with_reset(requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={"errors": [{"type": "RATE_LIMITED", "message": "Slow down"}]},
+        headers={"X-RateLimit-Reset": "1750000000"},
+    )
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        pytest.raises(GitHubGraphQLRateLimitError) as exc_info,
+    ):
+        make_github_graphql_request("{ viewer { login } }")
+
+    assert exc_info.value.error_count == 1
+    assert exc_info.value.reset_at is not None
+    assert exc_info.value.reset_at.endswith("UTC")
+
+
+def test_make_github_graphql_request_maps_resource_limit_from_fatal_subset(
+    requests_mock,
+):
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "data": {"user_0": None},
+            "errors": [
+                {"type": "NOT_FOUND", "message": "Operative missing"},
+                {
+                    "type": "RESOURCE_LIMITS_EXCEEDED",
+                    "message": "Resource limits for this query exceeded.",
+                },
+            ],
+        },
+    )
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        pytest.raises(GitHubGraphQLResourceLimitError) as exc_info,
+    ):
+        make_github_graphql_request("{ user_0 { login } }")
+
+    assert exc_info.value.error_count == 1
+    assert "NOT_FOUND" not in exc_info.value.summary
+
+
+def test_make_github_graphql_request_bounds_repeated_resource_errors(
+    requests_mock, caplog
+):
+    errors = [
+        {
+            "type": "RESOURCE_LIMITS_EXCEEDED",
+            "path": ["user_0", "contributionsCollection", index],
+            "message": "Resource limits for this query exceeded.",
+        }
+        for index in range(500)
+    ]
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={"data": {"user_0": None}, "errors": errors},
+    )
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        caplog.at_level("WARNING", logger="ghsnitch.api"),
+        pytest.raises(GitHubGraphQLResourceLimitError) as exc_info,
+    ):
+        make_github_graphql_request("{ user_0 { login } }")
+
+    error = exc_info.value
+    assert error.error_count == 500
+    assert len(error.errors) == 10
+    assert "RESOURCE_LIMITS_EXCEEDED=500" in str(error)
+    assert len(str(error)) < 250
+    assert caplog.text.count("Resource limits for this query exceeded") == 1
+    assert len(caplog.text) < 600
+
+
+def test_make_github_graphql_request_keeps_mixed_fatal_errors_generic(requests_mock):
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json={
+            "errors": [
+                {"type": "RATE_LIMITED", "message": "Slow down"},
+                {
+                    "type": "RESOURCE_LIMITS_EXCEEDED",
+                    "message": "Query too broad",
+                },
+            ]
+        },
+    )
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        pytest.raises(GitHubGraphQLError) as exc_info,
+    ):
+        make_github_graphql_request("{ viewer { login } }")
+
+    assert type(exc_info.value) is GitHubGraphQLError
+    assert "RATE_LIMITED=1" in exc_info.value.summary
+    assert "RESOURCE_LIMITS_EXCEEDED=1" in exc_info.value.summary
+
+
+def test_make_github_graphql_request_honours_cancelled_sweep(requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql",
+        json={"data": {"viewer": {"login": "alice"}}},
+    )
+    cancel_event = threading.Event()
+    cancel_event.set()
+
+    with (
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        pytest.raises(CancelledError, match="surveillance sweep cancelled"),
+    ):
+        make_github_graphql_request(
+            "{ viewer { login } }",
+            cancel_event=cancel_event,
+        )
+
+    assert adapter.call_count == 0

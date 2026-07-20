@@ -90,8 +90,15 @@ make uninstall PREFIX=$HOME/.local
 | `--export-config` | Print TOML config scaffolded from current CLI args and exit (pipe to a file to save) |
 | `--show-config` | Print current config and exit |
 | `--no-update-check` | Skip update check |
+| `--api-stats` | Print GraphQL request and rate-limit diagnostics to stderr |
 | `--version` | Show version |
 | `--help` | Show help |
+
+Transient GitHub 502/503/504 and connection failures are retried three times
+with backoff. Fatal GraphQL failures exit cleanly with a concise spy-themed
+message on stderr, leaving stdout safe for JSON, CSV, and Markdown pipelines.
+Use `--api-stats` to append GraphQL call counts, points remaining and used, and
+the rate-limit reset time to stderr after a successful run.
 
 ## Output
 

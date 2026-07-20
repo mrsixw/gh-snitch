@@ -15,9 +15,15 @@ from . import config as config_module
 from .api import (
     SECRET_GITHUB_TOKEN,
     VALID_PERIODS,
+    GitHubGraphQLError,
+    GitHubGraphQLRateLimitError,
+    GitHubGraphQLResourceLimitError,
+    configure_api_stats,
     current_year_fraction,
     fetch_contributions,
+    get_api_stats,
     get_custom_range,
+    get_graphql_rate_limit,
     get_period_range,
     get_rolling_month_ranges,
     get_rolling_week_ranges,
@@ -73,6 +79,59 @@ _NATO_ALPHABET = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _bounded_error_detail(error, limit=200):
+    """Return a concise single-line detail for terminal error messages.
+
+    Args:
+        error: Exception or value to render.
+        limit: Maximum number of characters to return.
+
+    Returns:
+        str: Normalized, optionally truncated error detail.
+    """
+    detail = " ".join(str(error).split()) or type(error).__name__
+    if len(detail) > limit:
+        return f"{detail[: limit - 3]}..."
+    return detail
+
+
+def _print_api_stats_summary(run_start, operative_count, stats, rate_limit):
+    """Print a spy-themed API diagnostics summary to stderr.
+
+    Args:
+        run_start: Monotonic timestamp captured when the command started.
+        operative_count: Number of requested operatives in the completed sweep.
+        stats: Snapshot returned by :func:`get_api_stats`.
+        rate_limit: GraphQL ``rateLimit`` data, or ``None`` when unavailable.
+    """
+    elapsed = time.monotonic() - run_start
+    lines = [
+        click.style("🛰️  API intelligence", fg="cyan", bold=True),
+        f"  Total elapsed:    {elapsed:.2f}s",
+        f"  Operatives:       {operative_count}",
+        f"  GraphQL calls:    {stats['graphql_calls']}",
+    ]
+
+    rate_lines = 0
+    if rate_limit:
+        remaining = rate_limit.get("remaining")
+        used = rate_limit.get("used")
+        reset_at = rate_limit.get("resetAt")
+        if remaining is not None:
+            lines.append(f"  GQL rate limit:   {remaining} points remaining")
+            rate_lines += 1
+        if used is not None:
+            lines.append(f"  GQL points used:  {used}")
+            rate_lines += 1
+        if reset_at:
+            lines.append(f"  GQL rate resets:  {reset_at}")
+            rate_lines += 1
+    if rate_lines == 0:
+        lines.append("  GQL rate status:  unavailable")
+
+    click.echo("\n".join(lines), err=True)
 
 
 def _compute_rank_metadata(rows, current_year_label):
@@ -236,6 +295,15 @@ def _backup_config(path: Path):
     help="Skip checking for updates.",
 )
 @click.option(
+    "--api-stats",
+    is_flag=True,
+    default=False,
+    help=(
+        "Print GraphQL request counts and rate-limit diagnostics to stderr "
+        "after output."
+    ),
+)
+@click.option(
     "--no-trend",
     is_flag=True,
     default=False,
@@ -307,6 +375,7 @@ def gh_snitch(  # noqa: PLR0913
     update_config,
     export_config,
     no_update_check,
+    api_stats,
     no_trend,
     min_contributions,
     totals,
@@ -318,6 +387,8 @@ def gh_snitch(  # noqa: PLR0913
     output_format,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
+    run_start = time.monotonic()
+    configure_api_stats(api_stats)
     setup_logging()
     logger.info(
         "gh-snitch started config=%s users=%s years=%s period=%s "
@@ -549,10 +620,61 @@ def gh_snitch(  # noqa: PLR0913
                 on_progress,
                 year_ranges=active_year_ranges,
             )
+    except GitHubGraphQLRateLimitError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: rate_limited error_count=%d errors=%s reset=%s",
+            duration,
+            e.error_count,
+            e.summary,
+            e.reset_at,
+        )
+        if e.reset_at:
+            click.echo(
+                "⏱️  Surveillance rate limit reached. "
+                f"GitHub signals reset at {e.reset_at}. "
+                "Stand down and retry after that time.",
+                err=True,
+            )
+        else:
+            click.echo(
+                "⏱️  Surveillance rate limit reached. "
+                "Stand down briefly and try again.",
+                err=True,
+            )
+        sys.exit(1)
+    except GitHubGraphQLResourceLimitError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: resource_limited error_count=%d errors=%s",
+            duration,
+            e.error_count,
+            e.summary,
+        )
+        click.echo(
+            "🕵️  Surveillance query exceeded GitHub's resource limits. "
+            "Reduce the number of operatives or time ranges and try again.",
+            err=True,
+        )
+        sys.exit(1)
+    except GitHubGraphQLError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: graphql_error error_count=%d errors=%s",
+            duration,
+            e.error_count,
+            e.summary,
+        )
+        click.echo(f"🕵️  Surveillance query failed: {e.summary}", err=True)
+        sys.exit(1)
     except requests.exceptions.RequestException as e:
         duration = time.monotonic() - sweep_start
-        logger.error("sweep failed after %.3fs: %s", duration, e)
-        click.echo(f"📡 Signal lost. Operative unreachable: {e}", err=True)
+        detail = _bounded_error_detail(e)
+        logger.error("sweep failed after %.3fs: network_error=%s", duration, detail)
+        click.echo(
+            f"📡 Signal lost after retries. Operative unreachable: {detail}",
+            err=True,
+        )
         sys.exit(1)
 
     duration = time.monotonic() - sweep_start
@@ -734,6 +856,16 @@ def gh_snitch(  # noqa: PLR0913
         update_msg = check_for_update()
         if update_msg:
             click.echo(update_msg, err=True)
+
+    if api_stats:
+        stats = get_api_stats()
+        rate_limit = get_graphql_rate_limit(operative_github_url)
+        _print_api_stats_summary(
+            run_start,
+            len(operative_list),
+            stats,
+            rate_limit,
+        )
 
     if not_found:
         sys.exit(1)

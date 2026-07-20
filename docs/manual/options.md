@@ -25,6 +25,7 @@
 | `--export-config` | off | Print a TOML config scaffolded from the current CLI arguments and exit. Reflects `--users`, `--years`, `--github-url` overrides. Does not require `GITHUB_TOKEN`. Pipe to a file to save: `gh-snitch --users alice,bob --export-config > config.toml` |
 | `--init-config` | off | Write default config file and exit |
 | `--no-update-check` | off | Skip checking for new releases |
+| `--api-stats` | off | Print GraphQL request counts, points remaining and used, and the rate-limit reset time to stderr after output. The diagnostics lookup is best-effort and never changes a successful run into a failure. |
 | `--version` | — | Show version and exit |
 | `--help` | — | Show help and exit |
 
@@ -37,6 +38,35 @@ Some behaviours are always-on and require no flag:
 | 👻 / `[ghost]` | Operative has zero contributions across **all** surveilled windows | Appended to name in the Operative column; summary line on stderr |
 
 Ghost detection is suppressed in `--delta` mode.
+
+Network retries and GraphQL error handling are also automatic. Transient
+502/503/504 and connection failures receive three retries with backoff. Rate
+limits, resource limits, and other fatal GraphQL errors exit non-zero with a
+concise message on stderr; structured stdout is never populated with partial
+surveillance data.
+
+## API Diagnostics
+
+Use `--api-stats` to append a spy-themed GraphQL diagnostics summary to stderr:
+
+```bash
+gh-snitch --users alice,bob --years 3 --api-stats
+```
+
+```text
+🛰️  API intelligence
+  Total elapsed:    1.42s
+  Operatives:       2
+  GraphQL calls:    4
+  GQL rate limit:   4987 points remaining
+  GQL points used:  13
+  GQL rate resets:  2026-07-17T13:00:00Z
+```
+
+The call count includes retries but excludes the final diagnostics lookup.
+Fields that are unavailable on a GitHub Enterprise Server endpoint are replaced
+by `GQL rate status: unavailable`. All diagnostics go to stderr so stdout stays
+safe for structured output.
 
 ## Environment Variables
 
