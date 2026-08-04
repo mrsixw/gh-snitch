@@ -1,17 +1,17 @@
 # Troubleshooting
 
-## `GITHUB_TOKEN not set`
+## `GH_TOKEN or GITHUB_TOKEN not set`
 
 ```
-🚨 GITHUB_TOKEN not set. Operatives cannot be surveilled without credentials.
+🚨 GH_TOKEN or GITHUB_TOKEN not set. Operatives cannot be surveilled without credentials.
 ```
 
-**Fix:** Export a valid GitHub personal access token:
+**Fix:** Export a valid GitHub personal access token as either `GH_TOKEN` or `GITHUB_TOKEN`:
 ```bash
 export GITHUB_TOKEN=ghp_...
 ```
 
-The token needs `read:user` scope to query contribution data.
+If both are set, `GH_TOKEN` takes precedence. The token needs `read:user` scope to query contribution data.
 
 ## `No handler config found`
 

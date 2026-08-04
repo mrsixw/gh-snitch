@@ -74,10 +74,13 @@ safe for structured output.
 
 | Variable | Required | Description |
 |---|---|---|
-| `GITHUB_TOKEN` | Yes | GitHub personal access token (needs `read:user` scope) |
+| `GH_TOKEN` | Yes* | GitHub personal access token (needs `read:user` scope). Takes precedence over `GITHUB_TOKEN` if both are set. |
+| `GITHUB_TOKEN` | Yes* | GitHub personal access token (needs `read:user` scope). Used if `GH_TOKEN` is not set. |
 | `NO_COLOR` | No | Set to disable ANSI colour output |
 | `XDG_CONFIG_HOME` | No | Override config directory base |
 | `XDG_CACHE_HOME` | No | Override cache directory base |
+
+\* One of `GH_TOKEN` or `GITHUB_TOKEN` is required.
 
 ## Config File
 

@@ -12,6 +12,7 @@ from ghsnitch.api import (
     GitHubGraphQLRateLimitError,
     GitHubGraphQLResourceLimitError,
     _fetch_year,
+    _resolve_github_token,
     build_contributions_query,
     configure_api_stats,
     current_year_fraction,
@@ -56,6 +57,24 @@ def _graphql_response(*users, errors=None):
 def _query_logins(request):
     """Return operative logins from a mocked GraphQL request in alias order."""
     return re.findall(r'user\(login: "([^"]+)"\)', request.json()["query"])
+
+
+def test_resolve_github_token_prefers_gh_token(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "gh-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+    assert _resolve_github_token() == "gh-token"
+
+
+def test_resolve_github_token_falls_back_to_github_token(monkeypatch):
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+    assert _resolve_github_token() == "github-token"
+
+
+def test_resolve_github_token_none_when_unset(monkeypatch):
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    assert _resolve_github_token() is None
 
 
 def test_graphql_url_for_github_com():

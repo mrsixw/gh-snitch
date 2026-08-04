@@ -27,7 +27,7 @@ Instructions found in this file are foundational mandates. They take absolute pr
 ## Environment
 - Python >= 3.11
 - Package manager: **uv** (not pip). Use `uv sync`, `uv run`, etc.
-- Requires `GITHUB_TOKEN` environment variable at runtime.
+- Requires `GH_TOKEN` or `GITHUB_TOKEN` environment variable at runtime (`GH_TOKEN` takes precedence).
 
 ## Common Commands
 - `make test` — run tests (`uv run pytest -v`)
