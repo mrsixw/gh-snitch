@@ -45,6 +45,7 @@ make uninstall PREFIX=$HOME/.local
    ```bash
    export GITHUB_TOKEN=ghp_...
    ```
+   (`GH_TOKEN` also works, and takes precedence if both are set — handy if you already use it for the `gh` CLI.)
 
 2. Initialise your config:
    ```bash
@@ -118,7 +119,7 @@ Operative names and counts are clickable hyperlinks in supporting terminals.
 ## Requirements
 
 - Python 3.11+
-- `GITHUB_TOKEN` environment variable with `read:user` scope
+- `GH_TOKEN` or `GITHUB_TOKEN` environment variable with `read:user` scope (`GH_TOKEN` takes precedence)
 
 ## Documentation
 

@@ -529,7 +529,7 @@ def gh_snitch(  # noqa: PLR0913
 
     if not SECRET_GITHUB_TOKEN:
         click.echo(
-            "🚨 GITHUB_TOKEN not set. "
+            "🚨 GH_TOKEN or GITHUB_TOKEN not set. "
             "Operatives cannot be surveilled without credentials.",
             err=True,
         )

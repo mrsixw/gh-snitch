@@ -35,7 +35,7 @@ When updating project rules, update **all four files** to keep them consistent.
   - `make lint`: Check linting (ruff + black).
   - `make format`: Auto-fix formatting.
   - `make build`: Build shiv executable to `dist/gh-snitch`.
-- **Env:** Requires `GITHUB_TOKEN` at runtime.
+- **Env:** Requires `GH_TOKEN` or `GITHUB_TOKEN` at runtime (`GH_TOKEN` takes precedence).
 
 ## Project Structure
 - `src/ghsnitch/` — package source code

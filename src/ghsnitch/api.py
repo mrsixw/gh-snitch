@@ -12,7 +12,14 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_GITHUB_URL = "https://github.com"
-SECRET_GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+
+def _resolve_github_token() -> str | None:
+    """Resolve the credential token, preferring GH_TOKEN over GITHUB_TOKEN."""
+    return os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+
+
+SECRET_GITHUB_TOKEN = _resolve_github_token()
 
 _MAX_RETRIES = 3
 _RETRY_STATUSES = {502, 503, 504}

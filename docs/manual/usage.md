@@ -190,7 +190,7 @@ Or pass it directly on the command line:
 gh-snitch --github-url https://github.example.com --users alice,bob
 ```
 
-The GraphQL API endpoint is derived automatically (`<host>/api/graphql`). Your `GITHUB_TOKEN` should be a personal access token issued by the Enterprise instance.
+The GraphQL API endpoint is derived automatically (`<host>/api/graphql`). Your `GH_TOKEN` (or `GITHUB_TOKEN`) should be a personal access token issued by the Enterprise instance.
 
 ## Network and GraphQL Failures
 
