@@ -2,6 +2,7 @@
 
 | Option | Default | Description |
 |---|---|---|
+| `--completion [bash\|zsh\|fish]` | — | Print shell completion script for SHELL and exit. Eval in your shell config (e.g. `eval "$(gh-snitch --completion bash)"`). Works with no config file or token. |
 | `--config PATH` | `~/.config/gh-snitch/config.toml` | Path to TOML config file |
 | `--users TEXT` | (from config) | Comma-separated GitHub usernames to surveil |
 | `--team TEXT` | (from config) | Select a named team defined under `[teams.<name>]`. Overridden by `--users`. |

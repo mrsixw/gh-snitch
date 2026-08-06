@@ -175,6 +175,18 @@ gh-snitch --show-config
 
 Prints the currently loaded configuration.
 
+## Shell Completions
+
+gh-snitch ships built-in tab completion for bash, zsh, and fish via the `--completion` flag:
+
+```bash
+eval "$(gh-snitch --completion bash)"   # bash
+eval "$(gh-snitch --completion zsh)"    # zsh
+gh-snitch --completion fish | source    # fish
+```
+
+Add the relevant line to your shell startup file (`~/.bashrc`, `~/.zshrc`, or a fish config file) to load it every session. `--completion` prints the script and exits — it works with no config file and no `GITHUB_TOKEN`/`GH_TOKEN` set.
+
 ## GitHub Enterprise Server
 
 To surveil operatives on a GitHub Enterprise Server instance, set the base URL either in your config file:

@@ -211,6 +211,15 @@ def _backup_config(path: Path):
 
 
 @click.command()
+@click.option(
+    "--completion",
+    "completion_shell",
+    type=click.Choice(["bash", "zsh", "fish"]),
+    default=None,
+    is_eager=True,
+    expose_value=True,
+    help="Print shell completion script for SHELL and exit. Eval in your shell config.",
+)
 @click.option("--config", default=None, help="Path to config file.")
 @click.option(
     "--users",
@@ -360,6 +369,7 @@ def _backup_config(path: Path):
 )
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
+    completion_shell,
     config,
     users,
     team,
@@ -387,6 +397,19 @@ def gh_snitch(  # noqa: PLR0913
     output_format,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
+    if completion_shell:
+        from click.shell_completion import get_completion_class
+
+        comp_cls = get_completion_class(completion_shell)
+        comp = comp_cls(
+            cli=gh_snitch,
+            ctx_args={},
+            prog_name="gh-snitch",
+            complete_var="_GH_SNITCH_COMPLETE",
+        )
+        click.echo(comp.source(), nl=False)
+        sys.exit(0)
+
     run_start = time.monotonic()
     configure_api_stats(api_stats)
     setup_logging()

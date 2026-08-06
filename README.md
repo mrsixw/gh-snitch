@@ -92,6 +92,7 @@ make uninstall PREFIX=$HOME/.local
 | `--show-config` | Print current config and exit |
 | `--no-update-check` | Skip update check |
 | `--api-stats` | Print GraphQL request and rate-limit diagnostics to stderr |
+| `--completion` | Print shell completion script for `bash`, `zsh`, or `fish` and exit. Eval in your shell config (e.g. `eval "$(gh-snitch --completion bash)"`). |
 | `--version` | Show version |
 | `--help` | Show help |
 

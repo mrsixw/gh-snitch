@@ -45,6 +45,39 @@ def runner():
     return CliRunner()
 
 
+def test_completion_zsh_exits_zero_and_outputs_script(runner):
+    result = runner.invoke(gh_snitch, ["--completion", "zsh"])
+    assert result.exit_code == 0
+    assert "_GH_SNITCH_COMPLETE" in result.output
+    assert "gh-snitch" in result.output
+
+
+def test_completion_bash_exits_zero_and_outputs_script(runner):
+    result = runner.invoke(gh_snitch, ["--completion", "bash"])
+    assert result.exit_code == 0
+    assert "_GH_SNITCH_COMPLETE" in result.output
+    assert "gh-snitch" in result.output
+
+
+def test_completion_fish_exits_zero_and_outputs_script(runner):
+    result = runner.invoke(gh_snitch, ["--completion", "fish"])
+    assert result.exit_code == 0
+    assert "_GH_SNITCH_COMPLETE" in result.output
+    assert "gh-snitch" in result.output
+
+
+def test_completion_requires_no_github_token(runner):
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", None):
+        with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", None):
+            result = runner.invoke(gh_snitch, ["--completion", "zsh"])
+    assert result.exit_code == 0
+
+
+def test_completion_rejects_unknown_shell(runner):
+    result = runner.invoke(gh_snitch, ["--completion", "powershell"])
+    assert result.exit_code != 0
+
+
 def test_init_config(runner, tmp_path):
     config_path = str(tmp_path / "config.toml")
     result = runner.invoke(gh_snitch, ["--init-config", "--config", config_path])
