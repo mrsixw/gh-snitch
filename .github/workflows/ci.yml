@@ -45,6 +45,39 @@ jobs:
       - name: Run lint
         run: make lint
 
+  completions:
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "latest"
+
+      - name: Install zsh and fish
+        run: sudo apt-get install -y zsh fish
+
+      - name: Generate completion scripts
+        run: |
+          mkdir -p completions
+          uv run gh-snitch --completion bash > completions/gh-snitch.bash
+          uv run gh-snitch --completion zsh > completions/_gh-snitch
+          uv run gh-snitch --completion fish > completions/gh-snitch.fish
+
+      - name: Verify completion scripts source cleanly
+        run: |
+          source completions/gh-snitch.bash && complete -p gh-snitch
+          zsh -i -c "autoload -Uz compinit && compinit -u && source completions/_gh-snitch && echo 'zsh ok'"
+          fish -c "source completions/gh-snitch.fish && echo 'fish ok'"
+
   build:
     runs-on: ubuntu-latest
     needs: [test, lint]
