@@ -312,26 +312,71 @@ def _sorted_rows_and_ranks(rows, year_labels):
     return sorted_rows, ranks
 
 
+def _tabular_records(rows, period_labels, show_totals=False, redact_map=None):
+    """Return ranked plain-data records shared by structured renderers.
+
+    Args:
+        rows: Contribution rows keyed by username and period label.
+        period_labels: Ordered period labels to include.
+        show_totals: Whether to include a per-operative total.
+        redact_map: Optional username-to-codename mapping.
+
+    Returns:
+        list[dict]: Ranked records without terminal formatting.
+    """
+    if not rows:
+        return []
+    sorted_rows, ranks = _sorted_rows_and_ranks(rows, period_labels)
+    records = []
+    for rank, row in zip(ranks, sorted_rows):
+        username = row["username"]
+        operative_name = redact_map.get(username, username) if redact_map else username
+        record = {"rank": rank, "operative": operative_name}
+        for label in period_labels:
+            record[label] = row.get(label, 0)
+        if show_totals:
+            record["total"] = sum(row.get(label, 0) for label in period_labels)
+        records.append(record)
+    return records
+
+
 def render_json(rows, year_labels, show_totals=False, redact_map=None):
     """Render contribution data as a JSON array (no ANSI codes).
 
     Each element is an object with "rank", "operative", one key per period
     label, and optionally "total" when show_totals is True.
     """
-    if not rows:
-        return "[]"
-    sorted_rows, ranks = _sorted_rows_and_ranks(rows, year_labels)
-    result = []
-    for rank, row in zip(ranks, sorted_rows):
-        username = row["username"]
-        operative_name = redact_map.get(username, username) if redact_map else username
-        entry = {"rank": rank, "operative": operative_name}
-        for label in year_labels:
-            entry[label] = row.get(label, 0)
-        if show_totals:
-            entry["total"] = sum(row.get(label, 0) for label in year_labels)
-        result.append(entry)
-    return _json.dumps(result, indent=2, ensure_ascii=False)
+    records = _tabular_records(
+        rows, year_labels, show_totals=show_totals, redact_map=redact_map
+    )
+    return _json.dumps(records, indent=2, ensure_ascii=False)
+
+
+def render_multi_json(reports, show_totals=False, redact_map=None):
+    """Render multiple independent team reports as structured JSON.
+
+    Args:
+        reports: Ordered contribution reports, one per selected team.
+        show_totals: Whether to include per-operative totals.
+        redact_map: Optional username-to-codename mapping.
+
+    Returns:
+        str: JSON object retaining explicit team boundaries.
+    """
+    teams = []
+    for report in reports:
+        teams.append(
+            {
+                "team": report.name,
+                "operatives": _tabular_records(
+                    report.rows,
+                    report.period_labels,
+                    show_totals=show_totals,
+                    redact_map=redact_map,
+                ),
+            }
+        )
+    return _json.dumps({"teams": teams}, indent=2, ensure_ascii=False)
 
 
 def render_csv(rows, year_labels, show_totals=False, redact_map=None):
@@ -367,6 +412,54 @@ def render_csv(rows, year_labels, show_totals=False, redact_map=None):
             footer[label] = year_totals[label]
         footer["total"] = sum(year_totals.values())
         writer.writerow(footer)
+    return output.getvalue()
+
+
+def render_multi_csv(reports, show_totals=False, redact_map=None):
+    """Render multiple team reports as one CSV with explicit team identity.
+
+    Args:
+        reports: Ordered contribution reports, one per selected team.
+        show_totals: Whether to add per-operative and per-team totals.
+        redact_map: Optional username-to-codename mapping.
+
+    Returns:
+        str: CSV containing a team column on every row.
+    """
+    period_labels = []
+    populated_reports = [report for report in reports if report.rows]
+    label_sources = populated_reports or reports
+    for report in label_sources:
+        for label in report.period_labels:
+            if label not in period_labels:
+                period_labels.append(label)
+
+    fieldnames = (
+        ["team", "rank", "operative"]
+        + period_labels
+        + (["total"] if show_totals else [])
+    )
+    output = io.StringIO()
+    writer = _csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for report in reports:
+        records = _tabular_records(
+            report.rows,
+            report.period_labels,
+            show_totals=show_totals,
+            redact_map=redact_map,
+        )
+        for record in records:
+            writer.writerow({"team": report.name, **record})
+
+        if show_totals and report.rows:
+            footer = {"team": report.name, "rank": "", "operative": "Total"}
+            for label in report.period_labels:
+                footer[label] = sum(row.get(label, 0) for row in report.rows)
+            footer["total"] = sum(footer[label] for label in report.period_labels)
+            writer.writerow(footer)
+
     return output.getvalue()
 
 
@@ -411,6 +504,29 @@ def render_markdown(rows, year_labels, show_totals=False, redact_map=None):
         lines.append(_row(footer))
 
     return "\n".join(lines)
+
+
+def render_multi_markdown(reports, show_totals=False, redact_map=None):
+    """Render multiple team reports as labelled Markdown sections.
+
+    Args:
+        reports: Ordered contribution reports, one per selected team.
+        show_totals: Whether to include totals in each team table.
+        redact_map: Optional username-to-codename mapping.
+
+    Returns:
+        str: GitHub-Flavoured Markdown with one section per team.
+    """
+    sections = []
+    for report in reports:
+        table = render_markdown(
+            report.rows,
+            report.period_labels,
+            show_totals=show_totals,
+            redact_map=redact_map,
+        )
+        sections.append(f"## Team: {report.name}\n\n{table}")
+    return "\n\n".join(sections)
 
 
 def render_table(

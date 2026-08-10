@@ -531,6 +531,52 @@ def get_rolling_month_ranges(n: int) -> list[tuple[str, str, str]]:
     return ranges
 
 
+def get_rolling_quarter_ranges(n: int) -> list[tuple[str, str, str]]:
+    """Return the last n calendar quarters as date-range tuples.
+
+    The current quarter-to-date is first, followed by complete prior quarters
+    in reverse chronological order. Labels use the format ``Q3 2026``.
+
+    Args:
+        n: Number of calendar quarters to return.
+
+    Returns:
+        list[tuple[str, str, str]]: Label, inclusive start, and inclusive end
+        for each quarter.
+    """
+    today = date.today()
+    current_quarter = (today.month - 1) // 3
+    current_index = today.year * 4 + current_quarter
+    ranges = []
+
+    for offset in range(n):
+        quarter_index = current_index - offset
+        year, zero_based_quarter = divmod(quarter_index, 4)
+        start_month = zero_based_quarter * 3 + 1
+        from_dt = datetime(year, start_month, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+        if offset == 0:
+            end_date = today
+        else:
+            end_month = start_month + 2
+            end_day = calendar.monthrange(year, end_month)[1]
+            end_date = date(year, end_month, end_day)
+
+        to_dt = datetime(
+            end_date.year,
+            end_date.month,
+            end_date.day,
+            23,
+            59,
+            59,
+            tzinfo=timezone.utc,
+        )
+        label = f"Q{zero_based_quarter + 1} {year}"
+        ranges.append((label, from_dt.isoformat(), to_dt.isoformat()))
+
+    return ranges
+
+
 def get_rolling_week_ranges(n: int) -> list[tuple[str, str, str]]:
     """Return the last n ISO weeks as (label, from_iso, to_iso) tuples.
 

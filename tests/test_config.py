@@ -74,6 +74,13 @@ def test_load_config_last_months(tmp_path):
     assert cfg["last_months"] == 6
 
 
+def test_load_config_last_quarters(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[surveillance]\nlast_quarters = 4\n")
+    cfg = load_config(str(config_file))
+    assert cfg["last_quarters"] == 4
+
+
 def test_load_config_last_weeks(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[surveillance]\nlast_weeks = 8\n")
@@ -86,6 +93,7 @@ def test_load_config_last_months_defaults_to_none(tmp_path):
     config_file.write_text("[surveillance]\nyears = 1\n")
     cfg = load_config(str(config_file))
     assert cfg["last_months"] is None
+    assert cfg["last_quarters"] is None
     assert cfg["last_weeks"] is None
 
 
@@ -144,6 +152,11 @@ def test_generate_default_config_contains_format_comment(tmp_path):
     path = generate_default_config(str(tmp_path / "config.toml"))
     content = path.read_text()
     assert "format" in content
+
+
+def test_generate_default_config_contains_last_quarters_comment(tmp_path):
+    path = generate_default_config(str(tmp_path / "config.toml"))
+    assert "last_quarters" in path.read_text()
 
 
 def test_generate_default_config_contains_teams_comment(tmp_path):
