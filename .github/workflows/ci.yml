@@ -68,10 +68,73 @@ jobs:
       - name: Verify binary version
         run: utils/check_binary_version.sh
 
+  man:
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "latest"
+
+      - name: Generate man page
+        run: make man
+
+      - name: Verify man page renders
+        run: |
+          test -f man1/gh-snitch.1.gz
+          man -l man1/gh-snitch.1.gz | head -1 | grep -q "gh-snitch"
+
+  completions:
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "latest"
+
+      - name: Generate completion scripts
+        run: make completions
+
+      - name: Install zsh and fish
+        run: sudo apt-get install -y zsh fish
+
+      - name: Verify completion scripts exist and source cleanly
+        run: |
+          test -f completions/gh-snitch.bash
+          test -f completions/_gh-snitch
+          test -f completions/gh-snitch.fish
+          source completions/gh-snitch.bash && complete -p gh-snitch
+          zsh -i -c "autoload -Uz compinit && compinit -u && source completions/_gh-snitch && echo 'zsh ok'"
+          fish -c "source completions/gh-snitch.fish && echo 'fish ok'"
+
+      - name: Verify completions subcommand works for all shells
+        run: |
+          uv run gh-snitch completions bash | grep -q "_GH_SNITCH_COMPLETE"
+          uv run gh-snitch completions zsh | grep -q "_GH_SNITCH_COMPLETE"
+          uv run gh-snitch completions fish | grep -q "_GH_SNITCH_COMPLETE"
+
   release:
     if: "github.ref == 'refs/heads/main' && github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore: bump version')"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, man, completions]
     permissions:
       contents: write
     steps:
@@ -135,3 +198,20 @@ jobs:
         run: |
           ~/.local/bin/gh-snitch --version
           ls -l ~/.config/gh-snitch/config.toml
+
+      - name: Install zsh, fish and man
+        run: sudo apt-get install -y zsh fish man-db
+
+      - name: Verify man page
+        run: man -l ~/.local/share/man/man1/gh-snitch.1.gz | head -1 | grep -q "gh-snitch"
+
+      - name: Verify bash completions
+        run: |
+          source ~/.local/share/bash-completion/completions/gh-snitch
+          complete -p gh-snitch
+
+      - name: Verify zsh completions
+        run: zsh -i -c "autoload -Uz compinit && compinit -u && source ~/.local/share/zsh/site-functions/_gh-snitch && echo 'zsh ok'"
+
+      - name: Verify fish completions
+        run: fish -c "source ~/.config/fish/completions/gh-snitch.fish && echo 'fish ok'"
