@@ -1,9 +1,11 @@
 import hashlib
 import importlib.metadata
 import logging
+import os
 import shutil
 import sys
 import time
+from enum import StrEnum, auto
 from pathlib import Path
 
 import click
@@ -45,9 +47,27 @@ from .ui import (
     render_stack,
     render_table,
 )
-from .updater import check_for_update
+from .updater import UpdateStatus, check_for_update, perform_update
 
 VALID_FORMATS = ("table", "json", "csv", "markdown", "graph", "stack")
+
+
+class Shell(StrEnum):
+    """A shell that ``completions`` can emit a completion script for.
+
+    ``StrEnum`` + ``auto()`` yields the lowercase member name as the value, so
+    members pass straight into Click's completion machinery and into f-strings
+    without a trail of ``.value``.
+    """
+
+    BASH = auto()
+    ZSH = auto()
+    FISH = auto()
+
+
+# Click matches enum choices on member *names*, so click.Choice(Shell) would
+# demand "BASH" rather than "bash" — pass the values explicitly instead.
+_SHELL_CHOICES = [shell.value for shell in Shell]
 
 _NATO_ALPHABET = [
     "Alpha",
@@ -210,7 +230,8 @@ def _backup_config(path: Path):
     return backup
 
 
-@click.command()
+@click.group(invoke_without_command=True)
+@click.pass_context
 @click.option("--config", default=None, help="Path to config file.")
 @click.option(
     "--users",
@@ -360,6 +381,7 @@ def _backup_config(path: Path):
 )
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
+    ctx,
     config,
     users,
     team,
@@ -387,6 +409,13 @@ def gh_snitch(  # noqa: PLR0913
     output_format,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
+    # This callback body *is* the program — without this guard, `gh-snitch
+    # completions bash` would query GitHub's GraphQL API before dispatching.
+    # Subcommands must also stay usable with no config file and no token, so
+    # return before any of the setup and validation below.
+    if ctx.invoked_subcommand is not None:
+        return
+
     run_start = time.monotonic()
     configure_api_stats(api_stats)
     setup_logging()
@@ -870,3 +899,77 @@ def gh_snitch(  # noqa: PLR0913
 
     if not_found:
         sys.exit(1)
+
+
+# ── Shell completions ───────────────────────────────────────────────────────
+
+
+@gh_snitch.command()
+@click.argument("shell", type=click.Choice(_SHELL_CHOICES))
+def completions(shell):
+    """Print the shell completion script for SHELL.
+
+    Eval it in your shell config, e.g. ``eval "$(gh-snitch completions bash)"``.
+    """
+    from click.shell_completion import get_completion_class
+
+    comp_cls = get_completion_class(Shell(shell))
+    comp = comp_cls(
+        cli=gh_snitch,
+        ctx_args={},
+        prog_name="gh-snitch",
+        complete_var="_GH_SNITCH_COMPLETE",
+    )
+    click.echo(comp.source(), nl=False)
+
+
+# ── Self-update ─────────────────────────────────────────────────────────────
+
+
+def _current_executable_path():
+    """Resolve the absolute path of the running gh-snitch executable.
+
+    ``sys.argv[0]`` can be relative (``./gh-snitch``), and perform_update()
+    derives its temp file from this path — left relative, the replacement would
+    land next to the working directory rather than the real install location.
+    ``abspath`` rather than ``resolve`` so a symlinked install has its link
+    replaced, not the file it points at.
+    """
+    return os.path.abspath(shutil.which("gh-snitch") or sys.argv[0])
+
+
+@gh_snitch.command()
+def update():
+    """Requisition the latest gh-snitch release over this executable."""
+    click.echo(
+        click.style("🕵️ Checking for a fresher intelligence package...", fg="cyan"),
+        err=True,
+    )
+    status, current, detail = perform_update(_current_executable_path())
+
+    if status is UpdateStatus.UNKNOWN:
+        raise click.ClickException("Could not reach GitHub to check for a new release.")
+    if status is UpdateStatus.ERROR:
+        raise click.ClickException(f"Update failed: {detail}")
+    if status is UpdateStatus.UP_TO_DATE:
+        click.echo(
+            click.style(
+                f"📡 Operative already running the latest package, v{current}.",
+                fg="green",
+            ),
+            err=True,
+        )
+        return
+
+    click.echo(
+        click.style(f"📡 Operative upgraded to v{detail}.", fg="green"), err=True
+    )
+    # The completion scripts re-invoke the binary, so they track it for free.
+    # The man page is a static file and may sit somewhere needing privileges,
+    # so point at the installer rather than trying to rewrite it here.
+    click.echo(
+        click.style(
+            "   Re-run install.sh if you also want a refreshed man page.", fg="cyan"
+        ),
+        err=True,
+    )
