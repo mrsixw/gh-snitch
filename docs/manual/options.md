@@ -31,6 +31,45 @@
 | `--version` | — | Show version and exit |
 | `--help` | — | Show help and exit |
 
+## Commands
+
+Alongside the options above, gh-snitch has two subcommands. Both run before any
+config loading or token validation, so they work on a fresh machine with nothing
+set up.
+
+### `completions SHELL`
+
+Print the tab-completion script for `SHELL` to stdout and exit. `SHELL` must be
+one of `bash`, `zsh`, or `fish`.
+
+```bash
+gh-snitch completions bash
+gh-snitch completions zsh
+gh-snitch completions fish | source
+```
+
+`install.sh` installs these permanently and prints the one line your shell needs
+to load them — dropping the files into place is not enough on its own. See
+[Usage → Shell completions](usage.md#shell-completions).
+
+### `update`
+
+Download the latest release and replace the running executable with it.
+
+```bash
+gh-snitch update
+```
+
+The replacement is atomic, so an interrupted download leaves the working binary
+in place. Nothing is written unless a newer release actually exists.
+
+The man page is not refreshed — re-run `install.sh` for that. Completion scripts
+need no refresh: they call back into the binary, so they follow it automatically.
+
+Not to be confused with `--update-config`, which merges new keys into your config
+file, or `--no-update-check`, which silences the passive "new intelligence
+package" notice.
+
 ## Automatic Indicators
 
 Some behaviours are always-on and require no flag:

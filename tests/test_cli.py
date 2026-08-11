@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from ghsnitch import cli as cli_mod
 from ghsnitch.cli import gh_snitch
 
 
@@ -2351,3 +2352,117 @@ def test_export_config_round_trips(runner, tmp_path):
     assert result.exit_code == 0
     parsed = tomllib.loads(result.output)
     assert parsed["operatives"]["users"] == ["alice", "bob"]
+
+
+# ---------------------------------------------------------------------------
+# Shell completions (#136)
+# ---------------------------------------------------------------------------
+
+
+def test_completions_bash_outputs_script():
+    result = CliRunner().invoke(gh_snitch, ["completions", "bash"])
+    assert result.exit_code == 0
+    assert "_GH_SNITCH_COMPLETE" in result.stdout
+
+
+def test_completions_zsh_outputs_script():
+    result = CliRunner().invoke(gh_snitch, ["completions", "zsh"])
+    assert result.exit_code == 0
+    assert "_GH_SNITCH_COMPLETE" in result.stdout
+
+
+def test_completions_fish_outputs_script():
+    result = CliRunner().invoke(gh_snitch, ["completions", "fish"])
+    assert result.exit_code == 0
+    assert "_GH_SNITCH_COMPLETE" in result.stdout
+
+
+def test_completions_rejects_unknown_shell():
+    result = CliRunner().invoke(gh_snitch, ["completions", "powershell"])
+    assert result.exit_code != 0
+
+
+def test_completions_needs_no_token_or_config(monkeypatch):
+    """Must work before any GitHub configuration exists."""
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setattr(cli_mod, "SECRET_GITHUB_TOKEN", "")
+    result = CliRunner().invoke(gh_snitch, ["completions", "zsh"])
+    assert result.exit_code == 0
+
+
+def test_completions_does_not_query_github(monkeypatch):
+    """The subcommand guard must short-circuit before any GraphQL work."""
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("the group callback body ran for a subcommand")
+
+    monkeypatch.setattr(cli_mod, "fetch_contributions", explode)
+    monkeypatch.setattr(cli_mod, "check_for_update", explode)
+    result = CliRunner().invoke(gh_snitch, ["completions", "bash"])
+    assert result.exit_code == 0
+
+
+def test_shell_enum_members_are_their_lowercase_names():
+    assert [s.value for s in cli_mod.Shell] == ["bash", "zsh", "fish"]
+    assert cli_mod.Shell.BASH == "bash"
+
+
+# ---------------------------------------------------------------------------
+# update (#140)
+# ---------------------------------------------------------------------------
+
+
+def _stub_update(monkeypatch, status, current="1.0.0", detail="2.0.0"):
+    monkeypatch.setattr(
+        cli_mod, "perform_update", lambda _path: (status, current, detail)
+    )
+    monkeypatch.setattr(cli_mod, "_current_executable_path", lambda: "/tmp/gh-snitch")
+
+
+def test_update_reports_success(monkeypatch):
+    _stub_update(monkeypatch, cli_mod.UpdateStatus.UPDATED)
+    result = CliRunner().invoke(gh_snitch, ["update"])
+    assert result.exit_code == 0
+    assert "upgraded to v2.0.0" in result.stderr
+    assert "install.sh" in result.stderr
+
+
+def test_update_reports_already_current(monkeypatch):
+    _stub_update(monkeypatch, cli_mod.UpdateStatus.UP_TO_DATE)
+    result = CliRunner().invoke(gh_snitch, ["update"])
+    assert result.exit_code == 0
+    assert "already running the latest package, v1.0.0" in result.stderr
+
+
+def test_update_unreachable_github_fails_cleanly(monkeypatch):
+    _stub_update(monkeypatch, cli_mod.UpdateStatus.UNKNOWN, detail=None)
+    result = CliRunner().invoke(gh_snitch, ["update"])
+    assert result.exit_code != 0
+    assert "Could not reach GitHub" in result.stderr
+    assert "Traceback" not in result.output
+
+
+def test_update_error_surfaces_detail(monkeypatch):
+    _stub_update(monkeypatch, cli_mod.UpdateStatus.ERROR, detail="Permission denied")
+    result = CliRunner().invoke(gh_snitch, ["update"])
+    assert result.exit_code != 0
+    assert "Permission denied" in result.stderr
+    assert "Traceback" not in result.output
+
+
+def test_update_does_not_query_github_for_contributions(monkeypatch):
+    def explode(*_args, **_kwargs):
+        raise AssertionError("the group callback body ran for a subcommand")
+
+    monkeypatch.setattr(cli_mod, "fetch_contributions", explode)
+    monkeypatch.setattr(cli_mod, "check_for_update", explode)
+    _stub_update(monkeypatch, cli_mod.UpdateStatus.UP_TO_DATE)
+    result = CliRunner().invoke(gh_snitch, ["update"])
+    assert result.exit_code == 0
+
+
+def test_current_executable_path_is_absolute(monkeypatch):
+    monkeypatch.setattr(cli_mod.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(cli_mod.sys, "argv", ["./gh-snitch"])
+    assert cli_mod._current_executable_path().startswith("/")
