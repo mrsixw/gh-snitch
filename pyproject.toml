@@ -24,8 +24,8 @@ gh-snitch = "ghsnitch.cli:gh_snitch"
 [project.optional-dependencies]
 test = ["pytest", "requests-mock", "pytest-mock"]
 lint = ["black", "ruff"]
-build = ["shiv"]
-dev = ["black", "pytest", "requests-mock", "pytest-mock", "ruff", "shiv"]
+build = ["shiv", "click-man"]
+dev = ["black", "click-man", "pytest", "requests-mock", "pytest-mock", "ruff", "shiv"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -10,6 +10,10 @@ Monitor your operatives' GitHub contribution counts across years — rendered as
 curl -sSL https://raw.githubusercontent.com/mrsixw/gh-snitch/main/install.sh | bash
 ```
 
+The installer also drops in the man page and bash/zsh/fish completions, and
+prints the one line your shell needs to activate them. Once installed,
+`gh-snitch update` pulls down later releases without re-running the installer.
+
 Or build and install from source:
 
 ```bash
@@ -94,6 +98,13 @@ make uninstall PREFIX=$HOME/.local
 | `--api-stats` | Print GraphQL request and rate-limit diagnostics to stderr |
 | `--version` | Show version |
 | `--help` | Show help |
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `completions SHELL` | Print the shell completion script for `bash`, `zsh`, or `fish`. Eval in your shell config, e.g. `eval "$(gh-snitch completions bash)"`. |
+| `update` | Download the latest release and replace the running executable, atomically. |
 
 Transient GitHub 502/503/504 and connection failures are retried three times
 with backoff. Contribution sweeps bound concurrent ranges and automatically

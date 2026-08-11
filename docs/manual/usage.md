@@ -116,6 +116,36 @@ gh-snitch --users alice,bob --since 2025-06-01
 
 The resulting table shows a single column labelled `2025-01-01–2025-03-31` (or `Since 2025-06-01` when no end date is given).  `--until` cannot be used without `--since`.
 
+## Shell completions
+
+gh-snitch ships tab completion for bash, zsh and fish.
+
+```bash
+eval "$(gh-snitch completions bash)"   # bash
+eval "$(gh-snitch completions zsh)"    # zsh
+gh-snitch completions fish | source    # fish
+```
+
+`install.sh` installs these permanently into the standard user directories.
+Dropping the files into place is only half the job, though: zsh needs the
+directory on `fpath` above `compinit`, and bash needs either the
+`bash-completion` package or an explicit `source` line. Only fish needs nothing.
+The installer detects your shell from `$SHELL` and prints exactly the snippet you
+need, falling back to all three when it cannot tell. It only prints — it never
+edits your rc files, since it is normally run piped through curl.
+
+## Updating
+
+Once installed, gh-snitch can requisition its own replacement:
+
+```bash
+gh-snitch update
+```
+
+The swap is atomic — an interrupted download leaves the working binary in place —
+and nothing is written unless a newer release actually exists. Re-run
+`install.sh` if you also want a refreshed man page.
+
 ## Initial Setup
 
 ```bash

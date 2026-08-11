@@ -5,7 +5,7 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 DESTDIR ?=
 
-.PHONY: activate build version-bump release gh-snitch smoketest test lint format install uninstall
+.PHONY: activate build version-bump release gh-snitch smoketest test lint format man completions install uninstall
 
 .venv:
 	uv venv .venv
@@ -27,10 +27,27 @@ install: build
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/gh-snitch"
 
+man: .venv
+	uv sync --extra build
+	mkdir -p man1
+	uv run python utils/generate_man_page.py man1
+	gzip -f man1/gh-snitch.1
+
+completions: .venv
+	uv sync
+	mkdir -p completions
+	_GH_SNITCH_COMPLETE=bash_source uv run gh-snitch > completions/gh-snitch.bash
+	# Click emits two unquoted expansions that trip shellcheck; quote them.
+	sed -i.bak 's/_GH_SNITCH_COMPLETE=bash_complete $$1)/_GH_SNITCH_COMPLETE=bash_complete "$$1")/' completions/gh-snitch.bash
+	sed -i.bak 's/COMPREPLY+=($$value)/COMPREPLY+=("$$value")/' completions/gh-snitch.bash
+	rm -f completions/gh-snitch.bash.bak
+	_GH_SNITCH_COMPLETE=zsh_source uv run gh-snitch > completions/_gh-snitch
+	_GH_SNITCH_COMPLETE=fish_source uv run gh-snitch > completions/gh-snitch.fish
+
 version-bump:
 	git mkver patch
 
-release: build
+release: build man completions
 
 gh-snitch: build
 
