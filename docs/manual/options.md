@@ -24,7 +24,7 @@
 | `--show-config` | off | Print current config and exit |
 | `--export-config` | off | Print a TOML config scaffolded from the current CLI arguments and exit. Reflects `--users`, `--years`, `--github-url` overrides. Does not require `GITHUB_TOKEN`. Pipe to a file to save: `gh-snitch --users alice,bob --export-config > config.toml` |
 | `--init-config` | off | Write default config file and exit |
-| `--no-update-check` | off | Skip checking for new releases |
+| `--no-update-check` | off | Skip checking for new releases. Also honoured via `GH_SNITCH_NO_UPDATE_CHECK`, or the `no_update_check` config key — see [Silencing the update check](#silencing-the-update-check) |
 | `--api-stats` | off | Print GraphQL request counts, points remaining and used, and the rate-limit reset time to stderr after output. The diagnostics lookup is best-effort and never changes a successful run into a failure. |
 | `--version` | — | Show version and exit |
 | `--help` | — | Show help and exit |
@@ -67,6 +67,32 @@ need no refresh: they call back into the binary, so they follow it automatically
 Not to be confused with `--update-config`, which merges new keys into your config
 file, or `--no-update-check`, which silences the passive "new intelligence
 package" notice.
+
+## Silencing the update check
+
+Three ways, in increasing order of permanence:
+
+```bash
+# Just this run
+gh-snitch --users alice --no-update-check
+
+# This shell session, or CI (useful in scripts)
+export GH_SNITCH_NO_UPDATE_CHECK=1
+```
+
+```toml
+# Permanently, in your config file
+[updates]
+no_update_check = true
+```
+
+Any one of the three switching the check off is enough; none of them can switch
+it back on.
+
+Like `NO_COLOR`, `GH_SNITCH_NO_UPDATE_CHECK` is resolved by presence: any
+non-empty value disables the check, and only unset or empty leaves it enabled.
+The value is never parsed, so a stray `GH_SNITCH_NO_UPDATE_CHECK=maybe` in a
+shell profile is harmless rather than fatal.
 
 ## Automatic Indicators
 
