@@ -36,7 +36,7 @@ years = 3
 # Skip the automatic check for newer releases entirely.
 # Also honoured via --no-update-check, or the GH_SNITCH_NO_UPDATE_CHECK
 # environment variable set to any non-empty value.
-# no_update_check = false
+# no-update-check = false
 
 [display]
 # Hide operatives whose current-year contribution count is below this threshold.
@@ -88,7 +88,7 @@ def load_config(config_path=None):
         "percent": False,
         "rank_delta": True,
         "output_format": "table",
-        "no_update_check": False,
+        "no-update-check": False,
         "teams": {},
     }
     logger.debug("loading config from %s", path)
@@ -129,8 +129,8 @@ def load_config(config_path=None):
         config["github_url"] = network["github_url"]
 
     updates = data.get("updates", {})
-    if "no_update_check" in updates:
-        config["no_update_check"] = bool(updates["no_update_check"])
+    if "no-update-check" in updates:
+        config["no-update-check"] = bool(updates["no-update-check"])
 
     display = data.get("display", {})
     if "min_contributions" in display:
@@ -185,7 +185,7 @@ def render_config(cfg: dict) -> str:
     totals = str(cfg.get("totals", False)).lower()
     percent = str(cfg.get("percent", False)).lower()
     rank_delta = str(cfg.get("rank_delta", True)).lower()
-    no_update_check = str(cfg.get("no_update_check", False)).lower()
+    no_update_check = str(cfg.get("no-update-check", False)).lower()
 
     return f"""\
 [operatives]
@@ -201,7 +201,7 @@ years = {years}
 {network_url_line}
 
 [updates]
-# no_update_check = {no_update_check}
+# no-update-check = {no_update_check}
 
 [display]
 # format = "{output_format}"

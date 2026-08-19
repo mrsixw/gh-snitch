@@ -1964,7 +1964,7 @@ def _resolved_no_update_check(runner, tmp_path, body="", extra_args=()):
     )
     assert result.exit_code == 0, result.output
     line = next(
-        ln for ln in result.output.splitlines() if ln.startswith("no_update_check")
+        ln for ln in result.output.splitlines() if ln.startswith("no-update-check")
     )
     return line.split("=", 1)[1].strip() == "True"
 
@@ -1976,13 +1976,13 @@ def test_update_check_on_by_default(runner, tmp_path, monkeypatch):
 
 def test_config_key_disables_update_check(runner, tmp_path, monkeypatch):
     monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
-    body = "[updates]\nno_update_check = true\n"
+    body = "[updates]\nno-update-check = true\n"
     assert _resolved_no_update_check(runner, tmp_path, body) is True
 
 
 def test_config_key_false_leaves_update_check_enabled(runner, tmp_path, monkeypatch):
     monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
-    body = "[updates]\nno_update_check = false\n"
+    body = "[updates]\nno-update-check = false\n"
     assert _resolved_no_update_check(runner, tmp_path, body) is False
 
 
@@ -2005,7 +2005,7 @@ def test_flag_beats_a_false_config_key(runner, tmp_path, monkeypatch):
     # None of the three can switch the check back on once another has
     # switched it off.
     monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
-    body = "[updates]\nno_update_check = false\n"
+    body = "[updates]\nno-update-check = false\n"
     assert (
         _resolved_no_update_check(runner, tmp_path, body, ["--no-update-check"]) is True
     )
@@ -2013,7 +2013,7 @@ def test_flag_beats_a_false_config_key(runner, tmp_path, monkeypatch):
 
 def test_env_var_beats_a_false_config_key(runner, tmp_path, monkeypatch):
     monkeypatch.setenv("GH_SNITCH_NO_UPDATE_CHECK", "1")
-    body = "[updates]\nno_update_check = false\n"
+    body = "[updates]\nno-update-check = false\n"
     assert _resolved_no_update_check(runner, tmp_path, body) is True
 
 
@@ -2042,7 +2042,7 @@ def test_config_key_skips_update_end_to_end(
 ):
     # --show-config returns early, so pin the real call site too.
     monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
-    body = "[updates]\nno_update_check = true\n"
+    body = "[updates]\nno-update-check = true\n"
     _run_to_completion(runner, tmp_path, requests_mock, body).assert_not_called()
 
 

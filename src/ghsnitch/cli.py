@@ -498,7 +498,7 @@ def gh_snitch(  # noqa: PLR0913
     no_update_check = (
         no_update_check
         or _env_flag_is_set("GH_SNITCH_NO_UPDATE_CHECK")
-        or cfg.get("no_update_check", False)
+        or cfg.get("no-update-check", False)
     )
 
     if show_config:
@@ -511,7 +511,7 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"github_url = {cfg['github_url']}")
         # The resolved value, not the raw config key: --show-config should say
         # what will actually happen, flag and environment variable included.
-        click.echo(f"no_update_check = {no_update_check}")
+        click.echo(f"no-update-check = {no_update_check}")
         teams = cfg.get("teams", {})
         if teams:
             for team_name, members in sorted(teams.items()):

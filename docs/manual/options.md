@@ -83,7 +83,7 @@ export GH_SNITCH_NO_UPDATE_CHECK=1
 ```toml
 # Permanently, in your config file
 [updates]
-no_update_check = true
+no-update-check = true
 ```
 
 Any one of the three switching the check off is enough; none of them can switch
