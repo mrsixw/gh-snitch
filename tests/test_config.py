@@ -3,6 +3,7 @@ import tomllib
 import pytest
 
 import ghsnitch.config as config_module
+from ghsnitch import config
 from ghsnitch.config import (
     generate_default_config,
     load_config,
@@ -246,15 +247,15 @@ def test_render_config_years_reflected():
 def test_render_config_default_github_url_is_commented():
     cfg = {"users": [], "years": 3, "github_url": "https://github.com"}
     output = render_config(cfg)
-    assert 'github_url = "https://github.com"' not in output.replace("# ", "X")
-    assert "github_url" in output
+    assert 'github-url = "https://github.com"' not in output.replace("# ", "X")
+    assert "github-url" in output
 
 
 def test_render_config_custom_github_url_is_active():
     cfg = {"users": [], "years": 3, "github_url": "https://ghe.corp.com"}
     output = render_config(cfg)
     parsed = tomllib.loads(output)
-    assert parsed["network"]["github_url"] == "https://ghe.corp.com"
+    assert parsed["network"]["github-url"] == "https://ghe.corp.com"
 
 
 def test_render_config_round_trips():
@@ -272,3 +273,135 @@ def test_render_config_round_trips():
         assert loaded["years"] == 2
     finally:
         os.unlink(tmp)
+
+
+# --- kebab-case migration (issue #146) --------------------------------------
+
+
+_LEGACY_CONFIG = """\
+[operatives]
+users = ["alice"]
+
+[surveillance]
+years = 2
+last_months = 6
+last_weeks = 8
+
+[network]
+github_url = "https://ghe.example.com"
+
+[display]
+min_contributions = 5
+rank_delta = false
+"""
+
+_KEBAB_CONFIG = (
+    _LEGACY_CONFIG.replace("last_months", "last-months")
+    .replace("last_weeks", "last-weeks")
+    .replace("github_url", "github-url")
+    .replace("min_contributions", "min-contributions")
+    .replace("rank_delta", "rank-delta")
+)
+
+
+def _write(tmp_path, text):
+    path = tmp_path / "config.toml"
+    path.write_text(text)
+    return path
+
+
+def test_kebab_case_keys_are_read(tmp_path):
+    cfg = config.load_config(str(_write(tmp_path, _KEBAB_CONFIG)))
+    assert cfg["last_months"] == 6
+    assert cfg["last_weeks"] == 8
+    assert cfg["github_url"] == "https://ghe.example.com"
+    assert cfg["min_contributions"] == 5
+    assert cfg["rank_delta"] is False
+
+
+def test_legacy_snake_case_keys_still_work(tmp_path):
+    # Nobody's existing config may break on upgrade.
+    cfg = config.load_config(str(_write(tmp_path, _LEGACY_CONFIG)))
+    assert cfg["last_months"] == 6
+    assert cfg["last_weeks"] == 8
+    assert cfg["github_url"] == "https://ghe.example.com"
+    assert cfg["min_contributions"] == 5
+    assert cfg["rank_delta"] is False
+
+
+def test_legacy_keys_warn_and_name_their_replacement(tmp_path, capsys):
+    config.load_config(str(_write(tmp_path, _LEGACY_CONFIG)))
+    err = capsys.readouterr().err
+    for old, new in (
+        ("last_months", "last-months"),
+        ("github_url", "github-url"),
+        ("min_contributions", "min-contributions"),
+        ("rank_delta", "rank-delta"),
+    ):
+        assert old in err and new in err
+
+
+def test_kebab_case_keys_do_not_warn(tmp_path, capsys):
+    config.load_config(str(_write(tmp_path, _KEBAB_CONFIG)))
+    assert "deprecated" not in capsys.readouterr().err
+
+
+def test_kebab_wins_when_both_spellings_are_present(tmp_path):
+    # A half-migrated file must resolve predictably, not by TOML ordering.
+    both = (
+        "[operatives]\nusers = []\n\n[network]\n"
+        'github_url = "https://old.example.com"\n'
+        'github-url = "https://new.example.com"\n'
+    )
+    cfg = config.load_config(str(_write(tmp_path, both)))
+    assert cfg["github_url"] == "https://new.example.com"
+
+
+def test_update_config_migrates_legacy_spellings(tmp_path):
+    path = _write(tmp_path, _LEGACY_CONFIG)
+    changes = config.update_config(str(path))
+    text = path.read_text()
+
+    assert "github-url" in text
+    assert "min-contributions" in text
+    assert "rank-delta" in text
+    # The old spellings are gone as keys, and the values survived.
+    assert "\ngithub_url =" not in text
+    assert 'github-url = "https://ghe.example.com"' in text
+    assert any("github_url -> github-url" in c for c in changes)
+
+
+def test_migrated_config_reloads_without_warnings(tmp_path, capsys):
+    path = _write(tmp_path, _LEGACY_CONFIG)
+    config.update_config(str(path))
+    capsys.readouterr()
+    cfg = config.load_config(str(path))
+    assert "deprecated" not in capsys.readouterr().err
+    assert cfg["github_url"] == "https://ghe.example.com"
+    assert cfg["min_contributions"] == 5
+
+
+def test_migration_leaves_prose_and_values_alone(tmp_path):
+    # The rename anchors at line start, so a snake_case word inside a comment
+    # or a string value must survive untouched.
+    text = (
+        '[operatives]\nusers = ["alice"]\n\n'
+        "# github_url used to be spelled this way\n"
+        "[network]\n"
+        'github_url = "https://example.com/github_url/path"\n'
+    )
+    path = _write(tmp_path, text)
+    config.update_config(str(path))
+    result = path.read_text()
+    assert "# github_url used to be spelled this way" in result
+    assert "/github_url/path" in result
+    assert 'github-url = "https://example.com/github_url/path"' in result
+
+
+def test_render_config_emits_kebab_case(tmp_path):
+    rendered = config.render_config({"users": ["a"], "github_url": "https://x.example"})
+    assert "github-url" in rendered
+    assert "\ngithub_url" not in rendered
+    # And it must still round-trip through load_config.
+    cfg = config.load_config(str(_write(tmp_path, rendered)))
+    assert cfg["github_url"] == "https://x.example"

@@ -498,7 +498,7 @@ def gh_snitch(  # noqa: PLR0913
     no_update_check = (
         no_update_check
         or _env_flag_is_set("GH_SNITCH_NO_UPDATE_CHECK")
-        or cfg.get("no-update-check", False)
+        or cfg.get("no_update_check", False)
     )
 
     if show_config:

@@ -1548,19 +1548,19 @@ def test_init_config_no_prompt_if_missing(runner, tmp_path):
 
 def test_update_config_appends_missing_key(runner, tmp_path):
     config_path = tmp_path / "config.toml"
-    # Create config missing rank_delta
+    # Create config missing rank-delta
     config_path.write_text("[display]\ntotals = false\n")
 
     result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
 
     assert result.exit_code == 0
     assert "Added" in result.output
-    assert "display.rank_delta" in result.output
+    assert "display.rank-delta" in result.output
 
     content = config_path.read_text()
     assert "[display]" in content
     assert "totals = false" in content
-    assert "# rank_delta =" in content
+    assert "# rank-delta =" in content
     assert "(added by --update-config)" in content
 
 

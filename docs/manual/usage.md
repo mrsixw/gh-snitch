@@ -98,8 +98,8 @@ Set defaults in your config file:
 
 ```toml
 [surveillance]
-last_months = 6
-last_weeks = 8
+last-months = 6
+last-weeks = 8
 ```
 
 ## Custom Date Range
@@ -169,18 +169,18 @@ users = ["alice", "bob", "carol"]
 [surveillance]
 years = 3
 # period = "month"      # "week", "month", or "year" — overrides years when set
-# last_months = 6       # last 6 calendar months as separate columns
-# last_weeks = 8        # last 8 ISO weeks as separate columns
+# last-months = 6       # last 6 calendar months as separate columns
+# last-weeks = 8        # last 8 ISO weeks as separate columns
 
 [network]
-# github_url = "https://github.example.com"  # omit for github.com
+# github-url = "https://github.example.com"  # omit for github.com
 
 [display]
 # format = "table"
-# min_contributions = 0
+# min-contributions = 0
 # totals = false
 # percent = false
-# rank_delta = true
+# rank-delta = true
 ```
 
 CLI overrides are reflected in the output:
@@ -211,7 +211,7 @@ To surveil operatives on a GitHub Enterprise Server instance, set the base URL e
 
 ```toml
 [network]
-github_url = "https://github.example.com"
+github-url = "https://github.example.com"
 ```
 
 Or pass it directly on the command line:
@@ -317,7 +317,7 @@ You can also set this in your config file to apply it by default:
 
 ```toml
 [display]
-min_contributions = 10
+min-contributions = 10
 ```
 
 ## Delta Mode — Changes Since Last Run
@@ -356,7 +356,7 @@ You can also disable it permanently in your config file:
 
 ```toml
 [display]
-rank_delta = false
+rank-delta = false
 ```
 
 ## Totals and Percentage Breakdown
