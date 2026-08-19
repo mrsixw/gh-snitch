@@ -24,15 +24,15 @@ years = 3
 # When set, the 'years' option is ignored.
 # period = "month"
 # Show the last N calendar months as separate columns.
-# last_months = 6
+# last-months = 6
 # Show the last N calendar quarters as separate columns.
-# last_quarters = 4
+# last-quarters = 4
 # Show the last N ISO weeks as separate columns.
-# last_weeks = 8
+# last-weeks = 8
 
 [network]
 # GitHub base URL. Change this to target a GitHub Enterprise Server instance.
-# github_url = "https://github.example.com"
+# github-url = "https://github.example.com"
 
 [updates]
 # Skip the automatic check for newer releases entirely.
@@ -43,7 +43,7 @@ years = 3
 [display]
 # Hide operatives whose current-year contribution count is below this threshold.
 # Set to 0 (default) to show all operatives.
-# min_contributions = 10
+# min-contributions = 10
 
 # Show a Total column (per-operative sum) and a Total footer row (per-year sum).
 # totals = false
@@ -52,7 +52,7 @@ years = 3
 # percent = false
 
 # Show a ± column with each operative's rank change since the last run.
-# rank_delta = true
+# rank-delta = true
 
 # Output format: table (default), json, csv, markdown, graph, stack, or xlsx.
 # format = "table"
@@ -64,6 +64,46 @@ years = 3
 # [teams.frontend]
 # users = ["gvanrossum"]
 """
+
+
+#: Kebab-case is the house style across the sibling CLIs (breakfast, five-clis,
+#: jeeves). gh-snitch shipped these keys in snake_case first, so the old
+#: spellings stay readable and warn. Maps (section, new name) -> old name.
+_LEGACY_SPELLING = {
+    ("surveillance", "last-months"): "last_months",
+    ("surveillance", "last-quarters"): "last_quarters",
+    ("surveillance", "last-weeks"): "last_weeks",
+    ("network", "github-url"): "github_url",
+    ("display", "min-contributions"): "min_contributions",
+    ("display", "rank-delta"): "rank_delta",
+    # Never a released spelling — but the options table documented it as
+    # no_update_check from the day the key shipped, so configs written to the
+    # docs exist in the wild. Aliasing it turns a silent no-op into a warning
+    # and lets --update-config repair the file.
+    ("updates", "no-update-check"): "no_update_check",
+}
+
+
+def _lookup(section_data, section_name, key):
+    """Return (found, value) for *key*, honouring its deprecated spelling.
+
+    If both spellings are present the kebab-case one wins outright and the old
+    one is ignored, so a half-migrated file resolves predictably rather than
+    depending on TOML ordering.
+    """
+    if key in section_data:
+        return True, section_data[key]
+    legacy = _LEGACY_SPELLING.get((section_name, key))
+    if legacy and legacy in section_data:
+        print(
+            f"⚠️  Config key '{legacy}' is deprecated; rename it to '{key}' "
+            f"under [{section_name}]. Run gh-snitch --update-config to do it "
+            "automatically.",
+            file=sys.stderr,
+        )
+        logger.warning("deprecated_config_key old=%s new=%s", legacy, key)
+        return True, section_data[legacy]
+    return False, None
 
 
 def get_config_path():
@@ -91,7 +131,7 @@ def load_config(config_path=None):
         "percent": False,
         "rank_delta": True,
         "output_format": "table",
-        "no-update-check": False,
+        "no_update_check": False,
         "teams": {},
     }
     logger.debug("loading config from %s", path)
@@ -124,28 +164,35 @@ def load_config(config_path=None):
         config["years"] = surveillance["years"]
     if "period" in surveillance:
         config["period"] = surveillance["period"]
-    if "last_months" in surveillance:
-        config["last_months"] = int(surveillance["last_months"])
-    if "last_quarters" in surveillance:
-        config["last_quarters"] = int(surveillance["last_quarters"])
-    if "last_weeks" in surveillance:
-        config["last_weeks"] = int(surveillance["last_weeks"])
-    if "github_url" in network:
-        config["github_url"] = network["github_url"]
+    found, value = _lookup(surveillance, "surveillance", "last-months")
+    if found:
+        config["last_months"] = int(value)
+    found, value = _lookup(surveillance, "surveillance", "last-quarters")
+    if found:
+        config["last_quarters"] = int(value)
+    found, value = _lookup(surveillance, "surveillance", "last-weeks")
+    if found:
+        config["last_weeks"] = int(value)
+    found, value = _lookup(network, "network", "github-url")
+    if found:
+        config["github_url"] = value
 
     updates = data.get("updates", {})
-    if "no-update-check" in updates:
-        config["no-update-check"] = bool(updates["no-update-check"])
+    found, value = _lookup(updates, "updates", "no-update-check")
+    if found:
+        config["no_update_check"] = bool(value)
 
     display = data.get("display", {})
-    if "min_contributions" in display:
-        config["min_contributions"] = display["min_contributions"]
+    found, value = _lookup(display, "display", "min-contributions")
+    if found:
+        config["min_contributions"] = value
     if "totals" in display:
         config["totals"] = bool(display["totals"])
     if "percent" in display:
         config["percent"] = bool(display["percent"])
-    if "rank_delta" in display:
-        config["rank_delta"] = bool(display["rank_delta"])
+    found, value = _lookup(display, "display", "rank-delta")
+    if found:
+        config["rank_delta"] = bool(value)
     if "format" in display:
         config["output_format"] = str(display["format"])
 
@@ -179,10 +226,10 @@ def render_config(cfg: dict) -> str:
 
     github_url = cfg.get("github_url", "https://github.com")
     if github_url and github_url != "https://github.com":
-        network_url_line = f'github_url = "{github_url}"'
+        network_url_line = f'github-url = "{github_url}"'
     else:
         network_url_line = (
-            '# github_url = "https://github.example.com"  # omit for github.com'
+            '# github-url = "https://github.example.com"  # omit for github.com'
         )
 
     output_format = cfg.get("output_format", "table")
@@ -190,7 +237,7 @@ def render_config(cfg: dict) -> str:
     totals = str(cfg.get("totals", False)).lower()
     percent = str(cfg.get("percent", False)).lower()
     rank_delta = str(cfg.get("rank_delta", True)).lower()
-    no_update_check = str(cfg.get("no-update-check", False)).lower()
+    no_update_check = str(cfg.get("no_update_check", False)).lower()
 
     return f"""\
 [operatives]
@@ -199,9 +246,9 @@ users = {users_toml}
 [surveillance]
 years = {years}
 # period = "month"      # "week", "month", or "year" — overrides years when set
-# last_months = 6       # last 6 calendar months as separate columns
-# last_quarters = 4     # last 4 calendar quarters as separate columns
-# last_weeks = 8        # last 8 ISO weeks as separate columns
+# last-months = 6       # last 6 calendar months as separate columns
+# last-quarters = 4     # last 4 calendar quarters as separate columns
+# last-weeks = 8        # last 8 ISO weeks as separate columns
 
 [network]
 {network_url_line}
@@ -211,10 +258,10 @@ years = {years}
 
 [display]
 # format = "{output_format}"
-# min_contributions = {min_contributions}
+# min-contributions = {min_contributions}
 # totals = {totals}
 # percent = {percent}
-# rank_delta = {rank_delta}
+# rank-delta = {rank_delta}
 """
 
 
@@ -240,10 +287,38 @@ def generate_default_config(config_path=None, *, overwrite=False):
     return path
 
 
+def _migrate_legacy_spellings(text):
+    """Rewrite deprecated snake_case keys to kebab-case in *text*.
+
+    Matches the key only at the start of a line, optionally commented, so a
+    snake_case word inside a help comment or a string value is left alone.
+    Returns (new_text, list_of_renames).
+    """
+    import re
+
+    renamed = []
+    for (section_name, new_key), old_key in _LEGACY_SPELLING.items():
+        pattern = re.compile(rf"^(\s*#?\s*){re.escape(old_key)}(\s*=)", re.MULTILINE)
+        text, count = pattern.subn(rf"\g<1>{new_key}\g<2>", text)
+        if count:
+            renamed.append(f"{section_name}.{old_key} -> {new_key}")
+    return text, renamed
+
+
+def _reparse(text, fallback):
+    """Re-read *text* as TOML, falling back to *fallback* if it will not parse."""
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return fallback
+
+
 def update_config(config_path=None):
     """Add missing keys from template to existing config.
 
-    Returns a list of keys added.
+    Also rewrites deprecated snake_case keys to their kebab-case spelling.
+
+    Returns a list of keys added, plus any renames performed.
     """
     import re
 
@@ -270,6 +345,14 @@ def update_config(config_path=None):
 
     active_keys = get_all_keys(active_data)
     current_text = path.read_text()
+
+    # Rewrite deprecated snake_case keys in place before looking for missing
+    # ones. Without this the template's kebab-case key looks absent and gets
+    # appended, leaving the file carrying both spellings of the same setting.
+    current_text, renamed = _migrate_legacy_spellings(current_text)
+    if renamed:
+        active_data = _reparse(current_text, active_data)
+        active_keys = get_all_keys(active_data)
 
     # Also detect commented-out keys so we don't re-add them
     commented_keys = set()
@@ -345,7 +428,8 @@ def update_config(config_path=None):
                 added_keys.append(full_key)
                 existing_keys.add(full_key)
 
-    if added_keys:
+    # Renames alone are a reason to write, even when nothing was added.
+    if added_keys or renamed:
         path.write_text(new_text)
 
-    return added_keys
+    return added_keys + renamed

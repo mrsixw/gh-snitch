@@ -454,6 +454,38 @@ def test_github_url_cli_override(runner, tmp_path, requests_mock):
     assert "alice" in result.output
 
 
+def test_show_config_labels_match_the_config_file_spellings(runner, tmp_path):
+    """Every label must be a name the reader can find in their own config.
+
+    --show-config is output, not a dump of the internal cfg dict, so it uses the
+    TOML spellings: kebab-case, and `format` rather than the internal
+    `output_format`.
+    """
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+
+    assert result.exit_code == 0
+    labels = [
+        line.split("=", 1)[0].strip()
+        for line in result.output.splitlines()
+        if "=" in line
+    ]
+    assert labels == [
+        "users",
+        "years",
+        "period",
+        "last-months",
+        "last-quarters",
+        "last-weeks",
+        "format",
+        "github-url",
+        "no-update-check",
+        "teams",
+    ]
+
+
 def test_show_config_includes_github_url(runner, tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text(
@@ -1161,6 +1193,20 @@ def test_last_quarters_rejects_zero(runner, tmp_path):
 
     assert result.exit_code == 2
     assert "not in the range" in result.output
+
+
+def test_config_last_quarters_zero_names_the_config_key(runner, tmp_path):
+    """Click's range check catches --last-quarters 0, so this message is only
+    ever reached from the config file — it must name the key as spelled there."""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nlast-quarters = 0\n'
+    )
+    result = _run(runner, cfg, tmp_path, [])
+
+    assert result.exit_code == 1
+    assert "last-quarters must be at least 1" in result.output
+    assert "last_quarters" not in result.output
 
 
 def test_last_quarters_from_config(runner, tmp_path, requests_mock):
@@ -2065,19 +2111,19 @@ def test_init_config_no_prompt_if_missing(runner, tmp_path):
 
 def test_update_config_appends_missing_key(runner, tmp_path):
     config_path = tmp_path / "config.toml"
-    # Create config missing rank_delta
+    # Create config missing rank-delta
     config_path.write_text("[display]\ntotals = false\n")
 
     result = runner.invoke(gh_snitch, ["--update-config", "--config", str(config_path)])
 
     assert result.exit_code == 0
     assert "Added" in result.output
-    assert "display.rank_delta" in result.output
+    assert "display.rank-delta" in result.output
 
     content = config_path.read_text()
     assert "[display]" in content
     assert "totals = false" in content
-    assert "# rank_delta =" in content
+    assert "# rank-delta =" in content
     assert "(added by --update-config)" in content
 
 

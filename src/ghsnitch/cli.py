@@ -467,20 +467,25 @@ def gh_snitch(  # noqa: PLR0913
     no_update_check = (
         no_update_check
         or _env_flag_is_set("GH_SNITCH_NO_UPDATE_CHECK")
-        or cfg.get("no-update-check", False)
+        or cfg.get("no_update_check", False)
     )
 
     if show_config:
         click.echo(f"users = {cfg['users']}")
         click.echo(f"years = {cfg['years']}")
         click.echo(f"period = {cfg['period']}")
-        click.echo(f"last_months = {cfg['last_months']}")
-        click.echo(f"last_quarters = {cfg['last_quarters']}")
-        click.echo(f"last_weeks = {cfg['last_weeks']}")
-        click.echo(f"output_format = {cfg.get('output_format', 'table')}")
-        click.echo(f"github_url = {cfg['github_url']}")
-        # The resolved value, not the raw config key: --show-config should say
-        # what will actually happen, flag and environment variable included.
+        click.echo(f"last-months = {cfg['last_months']}")
+        click.echo(f"last-quarters = {cfg['last_quarters']}")
+        click.echo(f"last-weeks = {cfg['last_weeks']}")
+        click.echo(f"format = {cfg.get('output_format', 'table')}")
+        click.echo(f"github-url = {cfg['github_url']}")
+        # Names are the config-file spellings, not the internal cfg keys, so a
+        # reader can grep their own config for what they see here.
+        #
+        # This one line reports the *resolved* value rather than the file's:
+        # --show-config should say what will actually happen, and the flag and
+        # environment variable can switch the check off without the file
+        # mentioning it. Its neighbours echo the file as loaded.
         click.echo(f"no-update-check = {no_update_check}")
         teams = cfg.get("teams", {})
         if teams:
@@ -664,7 +669,7 @@ def gh_snitch(  # noqa: PLR0913
         suppress_trend = True
     elif active_last_quarters is not None:
         if active_last_quarters < 1:
-            click.echo("⚠️  last_quarters must be at least 1.", err=True)
+            click.echo("⚠️  last-quarters must be at least 1.", err=True)
             sys.exit(1)
         active_year_ranges = get_rolling_quarter_ranges(active_last_quarters)
         suppress_trend = True
