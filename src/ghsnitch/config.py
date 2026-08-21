@@ -25,6 +25,8 @@ years = 3
 # period = "month"
 # Show the last N calendar months as separate columns.
 # last_months = 6
+# Show the last N calendar quarters as separate columns.
+# last_quarters = 4
 # Show the last N ISO weeks as separate columns.
 # last_weeks = 8
 
@@ -46,10 +48,10 @@ years = 3
 # Show a ± column with each operative's rank change since the last run.
 # rank_delta = true
 
-# Output format: table (default), json, csv, markdown, or graph.
+# Output format: table (default), json, csv, markdown, graph, stack, or xlsx.
 # format = "table"
 
-# Named cells (teams) — use with --team <name> to surveil a specific group.
+# Named cells (teams) — repeat --team <name> to surveil multiple groups.
 # [teams.backend]
 # users = ["octocat", "torvalds"]
 #
@@ -75,6 +77,7 @@ def load_config(config_path=None):
         "years": 3,
         "period": None,
         "last_months": None,
+        "last_quarters": None,
         "last_weeks": None,
         "github_url": "https://github.com",
         "min_contributions": 0,
@@ -116,6 +119,8 @@ def load_config(config_path=None):
         config["period"] = surveillance["period"]
     if "last_months" in surveillance:
         config["last_months"] = int(surveillance["last_months"])
+    if "last_quarters" in surveillance:
+        config["last_quarters"] = int(surveillance["last_quarters"])
     if "last_weeks" in surveillance:
         config["last_weeks"] = int(surveillance["last_weeks"])
     if "github_url" in network:
@@ -183,6 +188,7 @@ users = {users_toml}
 years = {years}
 # period = "month"      # "week", "month", or "year" — overrides years when set
 # last_months = 6       # last 6 calendar months as separate columns
+# last_quarters = 4     # last 4 calendar quarters as separate columns
 # last_weeks = 8        # last 8 ISO weeks as separate columns
 
 [network]

@@ -75,17 +75,19 @@ make uninstall PREFIX=$HOME/.local
 | Flag | Description |
 |---|---|
 | `--users` | Comma-separated usernames (overrides config) |
-| `--team` | Select a named team from config (see `[teams.*]` in config file); overridden by `--users` |
+| `--team` | Select a named team from config; repeat the flag for multiple independent team reports. Overridden by `--users` |
 | `--years` | Number of prior years (overrides config) |
 | `--period` | Report on a named window: `week`, `month`, or `year` (overrides `--years`) |
 | `--last-months N` | Show last N calendar months as separate columns |
+| `--last-quarters N` | Show last N calendar quarters as separate columns, including the current quarter-to-date |
 | `--last-weeks N` | Show last N ISO weeks as separate columns |
 | `--since DATE` | Start of a custom date range (`YYYY-MM-DD`); end defaults to today |
 | `--until DATE` | End of a custom date range (`YYYY-MM-DD`); requires `--since` |
 | `--min-contributions` | Hide operatives below this contribution count |
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
-| `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph`, `stack` |
+| `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph`, `stack`, `xlsx` |
+| `--output PATH` | Destination workbook path; required with `--format xlsx` |
 | `--no-rank-delta` | Hide the `±` rank-change column (shown by default) |
 | `--redact` | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …) for shareable reports |
 | `--delta` | Show change since last snapshot instead of current-year count |
@@ -134,4 +136,8 @@ Operative names and counts are clickable hyperlinks in supporting terminals.
 
 ## Documentation
 
-See [`docs/manual/`](docs/manual/) for full documentation.
+See [`docs/manual/`][manual-docs] for full documentation.
+
+---
+
+[manual-docs]: docs/manual/

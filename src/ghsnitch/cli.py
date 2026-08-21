@@ -1,4 +1,3 @@
-import hashlib
 import importlib.metadata
 import logging
 import os
@@ -12,6 +11,7 @@ import click
 import requests
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
+from xlsxwriter.exceptions import XlsxWriterException
 
 from . import config as config_module
 from .api import (
@@ -28,28 +28,29 @@ from .api import (
     get_graphql_rate_limit,
     get_period_range,
     get_rolling_month_ranges,
+    get_rolling_quarter_ranges,
     get_rolling_week_ranges,
     get_year_ranges,
 )
 from .config import generate_default_config, get_config_path, load_config
+from .excel import write_excel_report
 from .logger import setup_logging
-from .snapshot import (
-    clear_all_snapshots,
-    compute_scope,
-    load_snapshot,
-    save_snapshot,
-)
+from .report import build_contribution_report
+from .snapshot import clear_all_snapshots
 from .ui import (
     render_csv,
     render_graph,
     render_json,
     render_markdown,
+    render_multi_csv,
+    render_multi_json,
+    render_multi_markdown,
     render_stack,
     render_table,
 )
 from .updater import UpdateStatus, check_for_update, perform_update
 
-VALID_FORMATS = ("table", "json", "csv", "markdown", "graph", "stack")
+VALID_FORMATS = ("table", "json", "csv", "markdown", "graph", "stack", "xlsx")
 
 
 class Shell(StrEnum):
@@ -154,72 +155,6 @@ def _print_api_stats_summary(run_start, operative_count, stats, rate_limit):
     click.echo("\n".join(lines), err=True)
 
 
-def _compute_rank_metadata(rows, current_year_label):
-    """Return display ranks and movement positions for the leaderboard.
-
-    Args:
-        rows: iterable of contribution rows with a ``username`` key
-        current_year_label: year label used to sort the leaderboard
-
-    Returns:
-        tuple[dict[str, int], dict[str, int]]: competition ranks for display and
-        visible ranks for movement tracking
-    """
-    sorted_rows = sorted(
-        rows, key=lambda r: (-r.get(current_year_label, 0), r["username"])
-    )
-    ranks = {}
-    positions = {}
-    i = 0
-    while i < len(sorted_rows):
-        current_count = sorted_rows[i].get(current_year_label, 0)
-        group_end = i + 1
-        while (
-            group_end < len(sorted_rows)
-            and sorted_rows[group_end].get(current_year_label, 0) == current_count
-        ):
-            group_end += 1
-
-        competition_rank = i + 1
-        for row in sorted_rows[i:group_end]:
-            username = row["username"]
-            ranks[username] = competition_rank
-            positions[username] = competition_rank
-
-        i = group_end
-    return ranks, positions
-
-
-def _get_snapshot_ranks(snapshot, current_year_label):
-    """Return visible ranks for a previous snapshot if possible.
-
-    Persisted ranks are preferred over legacy movement positions so the ±
-    column matches the rank shown in the table when ties form or split.
-    """
-    stored_ranks = snapshot.get("ranks", {})
-    if stored_ranks:
-        return stored_ranks
-
-    snapshot_contributions = snapshot.get("contributions", {})
-    if any(
-        current_year_label in year_data for year_data in snapshot_contributions.values()
-    ):
-        snapshot_rows = []
-        for username, year_data in snapshot_contributions.items():
-            row = {"username": username}
-            row.update(year_data)
-            snapshot_rows.append(row)
-        ranks, _ = _compute_rank_metadata(snapshot_rows, current_year_label)
-        return ranks
-
-    return snapshot.get("positions", {})
-
-
-def _movement_delta(previous_rank, current_rank):
-    """Return rank movement using the visible competition ranks."""
-    return previous_rank - current_rank
-
-
 def _backup_config(path: Path):
     """Create a backup of the config file, with timestamping if .bak exists."""
     backup = path.with_suffix(path.suffix + ".bak")
@@ -228,6 +163,18 @@ def _backup_config(path: Path):
         backup = path.with_suffix(f"{path.suffix}.{timestamp}.bak")
     shutil.copy(path, backup)
     return backup
+
+
+def _stable_unique(values):
+    """Return values de-duplicated in their original order.
+
+    Args:
+        values: Iterable of hashable values.
+
+    Returns:
+        list: Stable list containing each value once.
+    """
+    return list(dict.fromkeys(values))
 
 
 @click.group(invoke_without_command=True)
@@ -240,8 +187,11 @@ def _backup_config(path: Path):
 )
 @click.option(
     "--team",
-    default=None,
-    help="Surveil a named team from config (see [teams.*] in config file).",
+    multiple=True,
+    help=(
+        "Surveil a named team from config. Repeat to report multiple teams "
+        "independently."
+    ),
 )
 @click.option(
     "--years",
@@ -260,6 +210,12 @@ def _backup_config(path: Path):
     default=None,
     type=int,
     help="Show the last N calendar months as separate columns.",
+)
+@click.option(
+    "--last-quarters",
+    default=None,
+    type=click.IntRange(min=1),
+    help="Show the last N calendar quarters as separate columns.",
 )
 @click.option(
     "--last-weeks",
@@ -377,7 +333,14 @@ def _backup_config(path: Path):
     "output_format",
     default=None,
     type=click.Choice(list(VALID_FORMATS), case_sensitive=False),
-    help="Output format: table (default), json, csv, markdown, or graph.",
+    help="Output format: table, json, csv, markdown, graph, stack, or xlsx.",
+)
+@click.option(
+    "--output",
+    default=None,
+    type=click.Path(path_type=Path, dir_okay=False),
+    metavar="PATH",
+    help="Destination workbook path. Required with --format xlsx.",
 )
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
@@ -388,6 +351,7 @@ def gh_snitch(  # noqa: PLR0913
     years,
     period,
     last_months,
+    last_quarters,
     last_weeks,
     since,
     until,
@@ -407,6 +371,7 @@ def gh_snitch(  # noqa: PLR0913
     delta,
     reset_snapshot,
     output_format,
+    output,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     # This callback body *is* the program — without this guard, `gh-snitch
@@ -420,17 +385,21 @@ def gh_snitch(  # noqa: PLR0913
     configure_api_stats(api_stats)
     setup_logging()
     logger.info(
-        "gh-snitch started config=%s users=%s years=%s period=%s "
-        "last_months=%s last_weeks=%s since=%s until=%s github_url=%s",
+        "gh-snitch started config=%s users=%s teams=%s years=%s period=%s "
+        "last_months=%s last_quarters=%s last_weeks=%s since=%s until=%s "
+        "github_url=%s output=%s",
         config,
         users,
+        team,
         years,
         period,
         last_months,
+        last_quarters,
         last_weeks,
         since,
         until,
         github_url,
+        output,
     )
 
     if init_config:
@@ -477,6 +446,7 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"years = {cfg['years']}")
         click.echo(f"period = {cfg['period']}")
         click.echo(f"last_months = {cfg['last_months']}")
+        click.echo(f"last_quarters = {cfg['last_quarters']}")
         click.echo(f"last_weeks = {cfg['last_weeks']}")
         click.echo(f"output_format = {cfg.get('output_format', 'table')}")
         click.echo(f"github_url = {cfg['github_url']}")
@@ -493,21 +463,62 @@ def gh_snitch(  # noqa: PLR0913
         click.echo("⚠️  --until requires --since to be set.", err=True)
         sys.exit(1)
 
-    # Merge CLI overrides
+    if last_quarters is not None:
+        conflicting_options = [
+            option
+            for option, value in (
+                ("--years", years),
+                ("--period", period),
+                ("--last-months", last_months),
+                ("--last-weeks", last_weeks),
+                ("--since", since),
+                ("--until", until),
+            )
+            if value is not None
+        ]
+        if conflicting_options:
+            conflicts = ", ".join(conflicting_options)
+            raise click.UsageError(
+                f"--last-quarters cannot be combined with {conflicts}."
+            )
+
+    selected_team_names = _stable_unique(team)
+    configured_teams = cfg.get("teams", {})
+
+    # Resolve ordered report cohorts. An explicit user list retains the legacy
+    # behaviour of overriding every --team selection.
     if users is not None:
-        cfg["users"] = [u.strip() for u in users.split(",") if u.strip()]
-    elif team is not None:
-        teams = cfg.get("teams", {})
-        if team not in teams:
-            available = ", ".join(sorted(teams.keys())) or "none"
+        direct_users = _stable_unique(
+            user.strip() for user in users.split(",") if user.strip()
+        )
+        report_cohorts = [(None, direct_users)]
+    elif selected_team_names:
+        unknown_teams = [
+            name for name in selected_team_names if name not in configured_teams
+        ]
+        if unknown_teams:
+            available = ", ".join(sorted(configured_teams.keys())) or "none"
+            if len(unknown_teams) == 1:
+                message = f"Team '{unknown_teams[0]}' not found"
+            else:
+                missing = ", ".join(f"'{name}'" for name in unknown_teams)
+                message = f"Teams {missing} not found"
             click.echo(
-                f"🚨 Team '{team}' not found in config. Known cells: {available}.",
+                f"🚨 {message} in config. Known cells: {available}.",
                 err=True,
             )
             sys.exit(1)
-        cfg["users"] = teams[team]
+        report_cohorts = [
+            (name, _stable_unique(configured_teams[name]))
+            for name in selected_team_names
+        ]
+    else:
+        report_cohorts = [(None, _stable_unique(cfg["users"]))]
 
-    operative_list = cfg["users"]
+    operative_list = _stable_unique(
+        username for _, cohort_users in report_cohorts for username in cohort_users
+    )
+    cfg["users"] = operative_list
 
     # Build redact map: sorted usernames → NATO codenames (deterministic).
     redact_map: dict[str, str] = {}
@@ -516,15 +527,16 @@ def gh_snitch(  # noqa: PLR0913
             suffix = f"-{i // 26 + 1}" if i >= 26 else ""
             redact_map[username] = f"Operative {_NATO_ALPHABET[i % 26]}{suffix}"
 
-    # Calculate context ID for partitioned snapshot caching.
-    context_id = None
-    if team:
-        context_id = f"team-{team}"
-    elif operative_list:
-        # For ad-hoc user lists, use a hash of the sorted members.
-        user_key = ",".join(sorted(operative_list))
-        user_hash = hashlib.sha256(user_key.encode()).hexdigest()[:12]
-        context_id = f"u-{user_hash}"
+    # Explicit CLI time selectors override a configured quarterly default.
+    if last_quarters is not None:
+        cfg["last_quarters"] = last_quarters
+        cfg["period"] = None
+        cfg["last_months"] = None
+        cfg["last_weeks"] = None
+    elif any(
+        value is not None for value in (years, period, last_months, last_weeks, since)
+    ):
+        cfg["last_quarters"] = None
 
     if years is not None:
         cfg["years"] = years
@@ -532,6 +544,8 @@ def gh_snitch(  # noqa: PLR0913
         cfg["period"] = period.lower()
     if last_months is not None:
         cfg["last_months"] = last_months
+    if last_quarters is not None:
+        cfg["last_quarters"] = last_quarters
     if last_weeks is not None:
         cfg["last_weeks"] = last_weeks
     if github_url is not None:
@@ -556,6 +570,20 @@ def gh_snitch(  # noqa: PLR0913
         click.echo("🗑️  All snapshots cleared. Operative history wiped.", err=True)
         return
 
+    active_format = cfg.get("output_format", "table")
+    if active_format == "xlsx":
+        if output is None:
+            raise click.UsageError("--format xlsx requires --output PATH.")
+        if output.exists():
+            click.echo(
+                f"🚨 Excel dossier already exists at {output}. "
+                "Choose a new --output path.",
+                err=True,
+            )
+            sys.exit(1)
+    elif output is not None:
+        raise click.UsageError("--output is only supported with --format xlsx.")
+
     if not SECRET_GITHUB_TOKEN:
         click.echo(
             "🚨 GH_TOKEN or GITHUB_TOKEN not set. "
@@ -564,30 +592,28 @@ def gh_snitch(  # noqa: PLR0913
         )
         sys.exit(1)
 
-    active_format = cfg.get("output_format", "table")
-
     num_years = cfg["years"]
     active_period = cfg.get("period")
     active_last_months = cfg.get("last_months")
+    active_last_quarters = cfg.get("last_quarters")
     active_last_weeks = cfg.get("last_weeks")
     operative_github_url = cfg["github_url"]
 
-    # Scope snapshots by the resolved user cohort + GitHub instance so rank
-    # movement only compares against the same group of operatives.
-    snapshot_scope = compute_scope(operative_list, operative_github_url)
-
     logger.info(
         "effective config operatives=%s years=%s period=%s "
-        "last_months=%s last_weeks=%s github_url=%s",
+        "last_months=%s last_quarters=%s last_weeks=%s github_url=%s teams=%s",
         operative_list,
         num_years,
         active_period,
         active_last_months,
+        active_last_quarters,
         active_last_weeks,
         operative_github_url,
+        selected_team_names,
     )
 
-    if not operative_list:
+    multiple_team_reports = len(report_cohorts) > 1
+    if not operative_list and not multiple_team_reports:
         click.echo(
             "⚠️  No operatives configured. Add users to your config or use --users.",
             err=True,
@@ -603,6 +629,12 @@ def gh_snitch(  # noqa: PLR0913
         except ValueError as e:
             click.echo(f"⚠️  {e}", err=True)
             sys.exit(1)
+        suppress_trend = True
+    elif active_last_quarters is not None:
+        if active_last_quarters < 1:
+            click.echo("⚠️  last_quarters must be at least 1.", err=True)
+            sys.exit(1)
+        active_year_ranges = get_rolling_quarter_ranges(active_last_quarters)
         suppress_trend = True
     elif active_last_months is not None:
         active_year_ranges = get_rolling_month_ranges(active_last_months)
@@ -710,110 +742,75 @@ def gh_snitch(  # noqa: PLR0913
     duration = time.monotonic() - sweep_start
     logger.info("sweep complete duration=%.3fs", duration)
 
-    year_labels = [label for label, _, _ in active_year_ranges]
-
-    rows = []
-    for username, year_data in data.items():
-        row = {"username": username}
-        row.update(year_data)
-        rows.append(row)
-
-    # Load the previous snapshot before potentially overwriting it.
-    # Snapshot is only saved on non-delta runs so the baseline stays pinned;
-    # repeated --delta invocations compare against the same fixed point.
-    prev_snapshot = load_snapshot(scope=snapshot_scope, context_id=context_id)
-
-    # Compute current rank metadata using the same sort order as render_table.
-    current_year_label = year_labels[0]
-    current_ranks, current_positions = _compute_rank_metadata(rows, current_year_label)
-
-    if not delta:
-        save_snapshot(
-            {
-                row["username"]: {lbl: row.get(lbl, 0) for lbl in year_labels}
-                for row in rows
-            },
-            ranks=current_ranks,
-            positions=current_positions,
-            scope=snapshot_scope,
-            context_id=context_id,
+    period_labels = [label for label, _, _ in active_year_ranges]
+    reports = [
+        build_contribution_report(
+            name,
+            cohort_users,
+            data,
+            period_labels,
+            operative_github_url,
+            delta=delta,
+            min_contributions=cfg["min_contributions"],
         )
+        for name, cohort_users in report_cohorts
+    ]
 
-    # Compute visible leaderboard movement from displayed competition ranks.
-    rank_deltas = None
-    if prev_snapshot is not None:
-        prev_ranks = _get_snapshot_ranks(prev_snapshot, current_year_label)
-        if prev_ranks:
-            rank_deltas = {}
-            for username, curr_position in current_positions.items():
-                if username not in prev_ranks:
-                    rank_deltas[username] = None  # new operative
-                else:
-                    rank_deltas[username] = _movement_delta(
-                        prev_ranks[username], curr_position
-                    )
-
-    threshold = cfg["min_contributions"]
-    suppressed = 0
-    if threshold > 0 and year_labels:
-        current_year_label = year_labels[0]
-        filtered_rows = []
-        for row in rows:
-            if row.get(current_year_label, 0) >= threshold:
-                filtered_rows.append(row)
+    for report in reports:
+        if report.missing_delta_snapshot:
+            if multiple_team_reports:
+                prefix = f"Team '{report.name}': "
             else:
-                suppressed += 1
-        rows = filtered_rows
-
-    # Detect ghost operatives: zero contributions across every surveilled window.
-    ghost_usernames = {
-        row["username"]
-        for row in rows
-        if all(row.get(lbl, 0) == 0 for lbl in year_labels)
-    }
-
-    # Apply delta transformation if requested.
-    delta_col = None
-    if delta:
-        current_label = year_labels[0]
-        if prev_snapshot is None:
+                prefix = ""
             click.echo(
-                "📸 No prior snapshot found — showing absolute counts. "
+                f"📸 {prefix}No prior snapshot found — showing absolute counts. "
                 "Run again with --delta to see changes.",
                 err=True,
             )
-        else:
-            prev_data = prev_snapshot.get("contributions", {})
-            for row in rows:
-                username = row["username"]
-                prev_count = prev_data.get(username, {}).get(current_label, 0)
-                row[current_label] = row.get(current_label, 0) - prev_count
-            year_labels = ["Δ Today"]
-            # Rename key in each row so render_table can look it up
-            for row in rows:
-                row["Δ Today"] = row.pop(current_label)
-            delta_col = "Δ Today"
-            # Rank deltas are not meaningful when showing contribution deltas
-            rank_deltas = None
 
     show_totals = cfg.get("totals", False)
-
     _redact = redact_map or None
+    primary_report = reports[0]
+
     if active_format == "json":
-        click.echo(
-            render_json(rows, year_labels, show_totals=show_totals, redact_map=_redact)
-        )
-    elif active_format == "csv":
-        click.echo(
-            render_csv(rows, year_labels, show_totals=show_totals, redact_map=_redact),
-            nl=False,
-        )
-    elif active_format == "markdown":
-        click.echo(
-            render_markdown(
-                rows, year_labels, show_totals=show_totals, redact_map=_redact
+        if multiple_team_reports:
+            rendered_output = render_multi_json(
+                reports, show_totals=show_totals, redact_map=_redact
             )
-        )
+        else:
+            rendered_output = render_json(
+                primary_report.rows,
+                primary_report.period_labels,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        click.echo(rendered_output)
+    elif active_format == "csv":
+        if multiple_team_reports:
+            rendered_output = render_multi_csv(
+                reports, show_totals=show_totals, redact_map=_redact
+            )
+        else:
+            rendered_output = render_csv(
+                primary_report.rows,
+                primary_report.period_labels,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        click.echo(rendered_output, nl=False)
+    elif active_format == "markdown":
+        if multiple_team_reports:
+            rendered_output = render_multi_markdown(
+                reports, show_totals=show_totals, redact_map=_redact
+            )
+        else:
+            rendered_output = render_markdown(
+                primary_report.rows,
+                primary_report.period_labels,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        click.echo(rendered_output)
     elif active_format == "graph":
         if cfg.get("percent"):
             click.echo(
@@ -825,44 +822,103 @@ def gh_snitch(  # noqa: PLR0913
                 "⚠️  --totals is ignored in graph format (no footer rows in charts).",
                 err=True,
             )
-        click.echo(
-            render_graph(rows, year_labels, show_totals=show_totals, redact_map=_redact)
-        )
+        if multiple_team_reports:
+            sections = []
+            for report in reports:
+                graph = render_graph(
+                    report.rows,
+                    report.period_labels,
+                    show_totals=show_totals,
+                    redact_map=_redact,
+                )
+                sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{graph}")
+            click.echo("\n\n".join(sections))
+        else:
+            click.echo(
+                render_graph(
+                    primary_report.rows,
+                    primary_report.period_labels,
+                    show_totals=show_totals,
+                    redact_map=_redact,
+                )
+            )
     elif active_format == "stack":
         if cfg.get("percent"):
             click.echo("⚠️  --percent is ignored in stack format.", err=True)
         if show_totals:
             click.echo("⚠️  --totals is ignored in stack format.", err=True)
-        click.echo(render_stack(rows, year_labels, redact_map=_redact))
+        if multiple_team_reports:
+            sections = []
+            for report in reports:
+                stack = render_stack(
+                    report.rows, report.period_labels, redact_map=_redact
+                )
+                sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{stack}")
+            click.echo("\n\n".join(sections))
+        else:
+            click.echo(
+                render_stack(
+                    primary_report.rows,
+                    primary_report.period_labels,
+                    redact_map=_redact,
+                )
+            )
+    elif active_format == "xlsx":
+        try:
+            workbook_path = write_excel_report(
+                reports,
+                output,
+                operative_github_url,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        except (XlsxWriterException, OSError) as error:
+            click.echo(
+                f"🚨 Excel dossier could not be secured: "
+                f"{_bounded_error_detail(error)}",
+                err=True,
+            )
+            sys.exit(1)
+        click.echo(f"📊 Excel dossier secured at: {workbook_path}", err=True)
     else:
-        table = render_table(
-            rows,
-            year_labels,
-            year_fraction=current_year_fraction(),
-            show_trend=not no_trend and delta_col is None and not suppress_trend,
-            show_totals=show_totals,
-            show_percent=cfg.get("percent", False),
-            show_rank_delta=cfg.get("rank_delta", True),
-            delta_col=delta_col,
-            rank_deltas=rank_deltas,
-            ghost_usernames=ghost_usernames if not delta else None,
-            redact_map=_redact,
-            github_url=operative_github_url,
-        )
-        click.echo(table)
+        tables = []
+        for report in reports:
+            table = render_table(
+                report.rows,
+                report.period_labels,
+                year_fraction=current_year_fraction(),
+                show_trend=(
+                    not no_trend and report.delta_column is None and not suppress_trend
+                ),
+                show_totals=show_totals,
+                show_percent=cfg.get("percent", False),
+                show_rank_delta=cfg.get("rank_delta", True),
+                delta_col=report.delta_column,
+                rank_deltas=report.rank_deltas,
+                ghost_usernames=report.ghost_usernames if not delta else None,
+                redact_map=_redact,
+                github_url=operative_github_url,
+            )
+            if multiple_team_reports:
+                table = f"🕵️  TEAM DOSSIER: {report.name}\n{table}"
+            tables.append(table)
+        click.echo("\n\n".join(tables))
 
-    if suppressed > 0:
-        click.echo(
-            f"🔕 {suppressed} operative(s) below threshold suppressed.",
-            err=True,
-        )
+    for report in reports:
+        team_prefix = f"Team '{report.name}': " if multiple_team_reports else ""
+        if report.suppressed_count > 0:
+            click.echo(
+                f"🔕 {team_prefix}{report.suppressed_count} operative(s) "
+                "below threshold suppressed.",
+                err=True,
+            )
 
-    if ghost_usernames:
-        click.echo(
-            f"👻 {len(ghost_usernames)} ghost operative(s) detected — "
-            "zero activity across all surveilled windows.",
-            err=True,
-        )
+        if report.ghost_usernames:
+            click.echo(
+                f"👻 {team_prefix}{len(report.ghost_usernames)} ghost operative(s) "
+                "detected — zero activity across all surveilled windows.",
+                err=True,
+            )
 
     if not_found:
         for username in sorted(not_found):

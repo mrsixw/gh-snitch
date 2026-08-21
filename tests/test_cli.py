@@ -1,5 +1,9 @@
+import csv
 import hashlib
+import io
 import json
+import re
+import zipfile
 from datetime import date
 from unittest.mock import patch
 
@@ -240,7 +244,7 @@ def test_resource_limit_exits_cleanly_without_partial_output_or_snapshot(
     with (
         patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
         patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
-        patch("ghsnitch.cli.save_snapshot") as save_snapshot,
+        patch("ghsnitch.report.save_snapshot") as save_snapshot,
     ):
         result = runner.invoke(
             gh_snitch,
@@ -294,7 +298,7 @@ def test_multi_range_fatal_error_discards_successful_partial_data(
     with (
         patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
         patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
-        patch("ghsnitch.cli.save_snapshot") as save_snapshot,
+        patch("ghsnitch.report.save_snapshot") as save_snapshot,
     ):
         result = runner.invoke(
             gh_snitch,
@@ -1030,7 +1034,7 @@ def test_period_makes_single_api_call(runner, tmp_path, requests_mock):
 
 
 # ---------------------------------------------------------------------------
-# --last-months / --last-weeks / --since / --until
+# --last-months / --last-quarters / --last-weeks / --since / --until
 # ---------------------------------------------------------------------------
 
 
@@ -1095,6 +1099,126 @@ def test_last_months_makes_n_api_calls(runner, tmp_path, requests_mock):
     result = _run(runner, cfg, tmp_path, ["--last-months", "4"])
     assert result.exit_code == 0
     assert adapter.call_count == 4
+
+
+def test_last_quarters_renders_quarter_columns(runner, tmp_path, requests_mock):
+    requests_mock.post("https://api.github.com/graphql", json=_GRAPHQL_RESPONSE)
+    cfg = _make_config(tmp_path)
+
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 8, 10)
+        mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
+        result = _run(runner, cfg, tmp_path, ["--last-quarters", "3"])
+
+    assert result.exit_code == 0
+    assert "Trend" not in result.stdout
+    assert result.stdout.index("Q3 2026") < result.stdout.index("Q2 2026")
+    assert result.stdout.index("Q2 2026") < result.stdout.index("Q1 2026")
+
+
+def test_last_quarters_makes_n_api_calls(runner, tmp_path, requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+    cfg = _make_config(tmp_path)
+
+    result = _run(runner, cfg, tmp_path, ["--last-quarters", "4"])
+
+    assert result.exit_code == 0
+    assert adapter.call_count == 4
+
+
+@pytest.mark.parametrize(
+    "conflicting_args",
+    [
+        ["--years", "2"],
+        ["--period", "month"],
+        ["--last-months", "2"],
+        ["--last-weeks", "2"],
+        ["--since", "2026-01-01"],
+    ],
+)
+def test_last_quarters_rejects_explicit_time_conflicts(
+    runner, tmp_path, conflicting_args
+):
+    cfg = _make_config(tmp_path)
+
+    result = _run(
+        runner,
+        cfg,
+        tmp_path,
+        ["--last-quarters", "2", *conflicting_args],
+    )
+
+    assert result.exit_code == 2
+    assert "--last-quarters cannot be combined" in result.output
+
+
+def test_last_quarters_rejects_zero(runner, tmp_path):
+    cfg = _make_config(tmp_path)
+
+    result = _run(runner, cfg, tmp_path, ["--last-quarters", "0"])
+
+    assert result.exit_code == 2
+    assert "not in the range" in result.output
+
+
+def test_last_quarters_from_config(runner, tmp_path, requests_mock):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n'
+        "[surveillance]\nyears = 3\nlast_quarters = 2\n"
+    )
+
+    result = _run(runner, cfg, tmp_path, [])
+
+    assert result.exit_code == 0
+    assert adapter.call_count == 2
+
+
+def test_explicit_period_overrides_configured_last_quarters(
+    runner, tmp_path, requests_mock
+):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n'
+        "[surveillance]\nyears = 3\nlast_quarters = 4\n"
+    )
+
+    result = _run(runner, cfg, tmp_path, ["--period", "month"])
+
+    assert result.exit_code == 0
+    assert "This Month" in result.output
+    assert adapter.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "configured_selector",
+    ['period = "month"', "last_months = 6", "last_weeks = 8"],
+)
+def test_explicit_last_quarters_overrides_configured_legacy_selector(
+    runner, tmp_path, requests_mock, configured_selector
+):
+    adapter = requests_mock.post(
+        "https://api.github.com/graphql", json=_GRAPHQL_RESPONSE
+    )
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[operatives]\nusers = ["alice"]\n'
+        f"[surveillance]\nyears = 3\n{configured_selector}\n"
+    )
+
+    result = _run(runner, cfg, tmp_path, ["--last-quarters", "2"])
+
+    assert result.exit_code == 0
+    assert adapter.call_count == 2
+    assert "Q" in result.stdout
 
 
 def test_last_weeks_renders_week_columns(runner, tmp_path, requests_mock):
@@ -1355,6 +1479,399 @@ def test_users_overrides_team(runner, tmp_path, requests_mock):
     assert result.exit_code == 0
     assert "bob" in result.output
     assert "alice" not in result.output
+
+
+def _multi_team_config(tmp_path, *, empty_alpha=False, empty_beta=False):
+    """Create a two-team config with one overlapping operative."""
+    alpha_users = "[]" if empty_alpha else '["alice", "shared"]'
+    beta_users = "[]" if empty_beta else '["bob", "shared"]'
+    config_file = tmp_path / "multi-team.toml"
+    config_file.write_text(
+        f"[teams.alpha]\nusers = {alpha_users}\n"
+        f"[teams.beta]\nusers = {beta_users}\n"
+        "[surveillance]\nyears = 0\n"
+    )
+    return config_file
+
+
+def _register_multi_team_response(requests_mock):
+    """Register a response that mirrors whichever union users were queried."""
+    queried_logins = []
+    counts = {"alice": 40, "bob": 10, "shared": 30}
+
+    def handler(request, _context):
+        logins = re.findall(r'user\(login: "([^"]+)"\)', request.json()["query"])
+        queried_logins.append(logins)
+        return _graphql_response(*((login, counts[login]) for login in logins))
+
+    adapter = requests_mock.post("https://api.github.com/graphql", json=handler)
+    return adapter, queried_logins
+
+
+def test_multiple_teams_json_retains_order_and_independent_rankings(
+    runner, tmp_path, requests_mock
+):
+    config_file = _multi_team_config(tmp_path)
+    adapter, queried_logins = _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--team", "beta", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [team["team"] for team in payload["teams"]] == ["alpha", "beta"]
+    assert [row["operative"] for row in payload["teams"][0]["operatives"]] == [
+        "alice",
+        "shared",
+    ]
+    assert payload["teams"][0]["operatives"][1]["rank"] == 2
+    assert payload["teams"][1]["operatives"][0] == {
+        "rank": 1,
+        "operative": "shared",
+        str(date.today().year): 30,
+    }
+    assert adapter.call_count == 1
+    assert queried_logins == [["alice", "shared", "bob"]]
+
+
+def test_multiple_teams_csv_adds_team_to_every_row(runner, tmp_path, requests_mock):
+    config_file = _multi_team_config(tmp_path)
+    _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--team", "beta", "--format", "csv"],
+    )
+
+    assert result.exit_code == 0
+    rows = list(csv.DictReader(io.StringIO(result.stdout)))
+    assert rows
+    assert {row["team"] for row in rows} == {"alpha", "beta"}
+    assert all(row["team"] for row in rows)
+
+
+@pytest.mark.parametrize("output_format", ["json", "csv"])
+def test_single_team_structured_output_retains_legacy_shape(
+    runner, tmp_path, requests_mock, output_format
+):
+    config_file = _multi_team_config(tmp_path)
+    _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--format", output_format],
+    )
+
+    assert result.exit_code == 0
+    if output_format == "json":
+        payload = json.loads(result.stdout)
+        assert isinstance(payload, list)
+        assert all("team" not in row for row in payload)
+    else:
+        assert "team" not in next(csv.reader(io.StringIO(result.stdout)))
+
+
+@pytest.mark.parametrize(
+    ("output_format", "alpha_heading", "beta_heading"),
+    [
+        ("table", "TEAM DOSSIER: alpha", "TEAM DOSSIER: beta"),
+        ("markdown", "## Team: alpha", "## Team: beta"),
+        ("graph", "TEAM DOSSIER: alpha", "TEAM DOSSIER: beta"),
+        ("stack", "TEAM DOSSIER: alpha", "TEAM DOSSIER: beta"),
+    ],
+)
+def test_multiple_teams_text_formats_render_one_section_per_team(
+    runner,
+    tmp_path,
+    requests_mock,
+    output_format,
+    alpha_heading,
+    beta_heading,
+):
+    config_file = _multi_team_config(tmp_path)
+    _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--team", "beta", "--format", output_format],
+    )
+
+    assert result.exit_code == 0
+    assert alpha_heading in result.stdout
+    assert beta_heading in result.stdout
+    assert result.stdout.index(alpha_heading) < result.stdout.index(beta_heading)
+
+
+def test_repeated_team_name_is_deduplicated(runner, tmp_path, requests_mock):
+    config_file = _multi_team_config(tmp_path)
+    _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        [
+            "--team",
+            "alpha",
+            "--team",
+            "alpha",
+            "--team",
+            "beta",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert [team["team"] for team in json.loads(result.stdout)["teams"]] == [
+        "alpha",
+        "beta",
+    ]
+
+
+def test_multiple_unknown_teams_fail_before_sweep(runner, tmp_path, requests_mock):
+    config_file = _multi_team_config(tmp_path)
+    adapter, _ = _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "missing", "--team", "vanished"],
+    )
+
+    assert result.exit_code != 0
+    assert "'missing'" in result.output
+    assert "'vanished'" in result.output
+    assert "Known cells: alpha, beta" in result.output
+    assert adapter.call_count == 0
+
+
+def test_empty_team_is_retained_in_multi_team_json(runner, tmp_path, requests_mock):
+    config_file = _multi_team_config(tmp_path, empty_alpha=True)
+    _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--team", "beta", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["teams"][0] == {"team": "alpha", "operatives": []}
+    assert payload["teams"][1]["team"] == "beta"
+
+
+@pytest.mark.parametrize("output_format", ["table", "markdown", "graph", "stack"])
+def test_empty_team_has_zero_state_in_multi_team_text_formats(
+    runner, tmp_path, requests_mock, output_format
+):
+    config_file = _multi_team_config(tmp_path, empty_alpha=True)
+    _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--team", "beta", "--format", output_format],
+    )
+
+    assert result.exit_code == 0
+    assert "alpha" in result.stdout
+    assert "(no operatives configured)" in result.stdout
+
+
+def test_all_empty_teams_skip_graphql_and_remain_in_json(
+    runner, tmp_path, requests_mock
+):
+    config_file = _multi_team_config(tmp_path, empty_alpha=True, empty_beta=True)
+    adapter, _ = _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--team", "beta", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "teams": [
+            {"team": "alpha", "operatives": []},
+            {"team": "beta", "operatives": []},
+        ]
+    }
+    assert adapter.call_count == 0
+
+
+def test_all_empty_teams_use_delta_header_in_csv(runner, tmp_path, requests_mock):
+    config_file = _multi_team_config(tmp_path, empty_alpha=True, empty_beta=True)
+    adapter, _ = _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        [
+            "--team",
+            "alpha",
+            "--team",
+            "beta",
+            "--delta",
+            "--format",
+            "csv",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert next(csv.reader(io.StringIO(result.stdout))) == [
+        "team",
+        "rank",
+        "operative",
+        "Δ Today",
+    ]
+    assert adapter.call_count == 0
+
+
+def test_multiple_team_snapshots_are_written_in_one_run(
+    runner, tmp_path, requests_mock
+):
+    config_file = _multi_team_config(tmp_path)
+    _register_multi_team_response(requests_mock)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--team", "alpha", "--team", "beta"],
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / "snapshot-team-alpha.json").exists()
+    assert (tmp_path / "snapshot-team-beta.json").exists()
+
+
+def test_multiple_team_delta_uses_independent_snapshots(
+    runner, tmp_path, requests_mock
+):
+    config_file = _multi_team_config(tmp_path)
+    _register_multi_team_response(requests_mock)
+    team_args = ["--team", "alpha", "--team", "beta", "--format", "json"]
+
+    baseline = _run(runner, config_file, tmp_path, team_args)
+    result = _run(runner, config_file, tmp_path, [*team_args, "--delta"])
+
+    assert baseline.exit_code == 0
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [team["team"] for team in payload["teams"]] == ["alpha", "beta"]
+    for team in payload["teams"]:
+        assert all(row["Δ Today"] == 0 for row in team["operatives"])
+
+
+def test_empty_team_does_not_add_absolute_period_to_multi_delta_csv(
+    runner, tmp_path, requests_mock
+):
+    config_file = _multi_team_config(tmp_path, empty_alpha=True)
+    _register_multi_team_response(requests_mock)
+    team_args = ["--team", "alpha", "--team", "beta"]
+
+    baseline = _run(runner, config_file, tmp_path, team_args)
+    result = _run(
+        runner, config_file, tmp_path, [*team_args, "--delta", "--format", "csv"]
+    )
+
+    assert baseline.exit_code == 0
+    assert result.exit_code == 0
+    assert next(csv.reader(io.StringIO(result.stdout))) == [
+        "team",
+        "rank",
+        "operative",
+        "Δ Today",
+    ]
+
+
+def test_multiple_teams_xlsx_writes_one_sheet_per_team(runner, tmp_path, requests_mock):
+    config_file = _multi_team_config(tmp_path)
+    _register_multi_team_response(requests_mock)
+    output = tmp_path / "multi-team.xlsx"
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        [
+            "--team",
+            "alpha",
+            "--team",
+            "beta",
+            "--last-quarters",
+            "2",
+            "--format",
+            "xlsx",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == ""
+    assert "Excel dossier secured" in result.stderr
+    with zipfile.ZipFile(output) as archive:
+        workbook_xml = archive.read("xl/workbook.xml").decode()
+    assert re.findall(r'<sheet name="([^"]+)"', workbook_xml) == ["alpha", "beta"]
+
+
+def test_xlsx_requires_output_path(runner, tmp_path):
+    config_file = _make_config(tmp_path)
+
+    result = _run(runner, config_file, tmp_path, ["--format", "xlsx"])
+
+    assert result.exit_code == 2
+    assert "--format xlsx requires --output" in result.output
+
+
+def test_output_is_rejected_for_non_xlsx_format(runner, tmp_path):
+    config_file = _make_config(tmp_path)
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--format", "json", "--output", str(tmp_path / "report.json")],
+    )
+
+    assert result.exit_code == 2
+    assert "--output is only supported with --format xlsx" in result.output
+
+
+def test_xlsx_refuses_to_overwrite_existing_output(runner, tmp_path):
+    config_file = _make_config(tmp_path)
+    output = tmp_path / "existing.xlsx"
+    output.write_bytes(b"existing dossier")
+
+    result = _run(
+        runner,
+        config_file,
+        tmp_path,
+        ["--format", "xlsx", "--output", str(output)],
+    )
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+    assert output.read_bytes() == b"existing dossier"
 
 
 def test_team_empty_users_shows_no_operatives_warning(runner, tmp_path):

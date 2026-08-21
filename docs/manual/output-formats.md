@@ -16,9 +16,9 @@ gh-snitch renders a plain-text table using `tabulate` with `simple` format:
 
 - **#** — leaderboard rank, based on the current year's contribution count. Ties share the same rank; the next rank skips accordingly (competition ranking: 1, 2, 2, 4, …).
 - **Operative** — GitHub username, hyperlinked to the user's profile (in TTY mode)
-- **Year columns** — total contribution count for that calendar year
+- **Period columns** — contribution count for each requested year, month, quarter, week, or custom window
 
-The current (partial) year appears first. Prior complete years follow in descending order.
+The newest period appears first. For `--last-quarters`, that means the current quarter-to-date followed by complete prior quarters.
 
 ### Colour Grading
 
@@ -40,14 +40,64 @@ In TTY mode (with a supporting terminal), operative names and contribution count
 
 Set `NO_COLOR=1` to disable all ANSI output and hyperlinks.
 
+## Multiple Teams
+
+Repeating `--team` preserves team boundaries rather than combining everyone into one leaderboard:
+
+```bash
+gh-snitch --team platform --team backend
+```
+
+Table, Markdown, graph, and stack output render one labelled section per team in command-line order. JSON returns a top-level `teams` array:
+
+```json
+{
+  "teams": [
+    {
+      "team": "platform",
+      "operatives": [
+        {"rank": 1, "operative": "alice", "Q3 2026": 312}
+      ]
+    }
+  ]
+}
+```
+
+CSV remains a single stream and adds team identity to every row:
+
+```csv
+team,rank,operative,Q3 2026
+platform,1,alice,312
+backend,1,bob,205
+```
+
+Rankings, filtering, totals, ghost detection, and snapshots are calculated independently for each team. An operative shared by two teams appears in both reports.
+
+Direct-user and single-team runs retain the original JSON array and CSV columns for compatibility.
+
+## Excel Workbooks
+
+Excel output uses XlsxWriter and requires a destination path:
+
+```bash
+gh-snitch --team platform --team backend --last-quarters 4 \
+  --format xlsx --output quarterly-teams.xlsx
+```
+
+Each selected team becomes one worksheet, in command-line order, with all requested periods as columns. A direct `--users` report uses a single worksheet named `Dossier`. Worksheet names are made Excel-safe and disambiguated when team names would otherwise collide.
+
+The workbook uses typed contribution counts, frozen headings and identity columns, filters, GitHub profile links, and a restrained contribution colour scale. `--redact` replaces operative names and removes those links. `--totals` adds formula-driven row and column totals. An empty team in a multi-team report still receives a labelled zero-state worksheet.
+
+gh-snitch creates missing parent directories but refuses to overwrite an existing workbook. `--output` is rejected for every non-Excel format.
+
 ## Status Messages
 
-gh-snitch prints status messages to stdout during a run:
+gh-snitch prints status messages to stderr during a run, keeping stdout clean for text data formats:
 
 ```
 🔍 Initiating surveillance sweep...
 📡 Intercepting field reports for 3 operatives...
-[table]
+[report data or workbook status]
 🗂️  Dossier compiled. Handler review recommended.
 ```
 

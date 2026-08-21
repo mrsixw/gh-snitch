@@ -22,6 +22,7 @@ from ghsnitch.api import (
     get_graphql_rate_limit,
     get_period_range,
     get_rolling_month_ranges,
+    get_rolling_quarter_ranges,
     get_rolling_week_ranges,
     get_year_ranges,
     graphql_url_for,
@@ -185,6 +186,46 @@ def test_get_rolling_month_ranges_crosses_year_boundary():
         ranges = get_rolling_month_ranges(3)
     labels = [r[0] for r in ranges]
     assert labels == ["Feb 2026", "Jan 2026", "Dec 2025"]
+
+
+# --- get_rolling_quarter_ranges ---
+
+
+def test_get_rolling_quarter_ranges_labels_descending_across_year_boundary():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 2, 10)
+        mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
+        ranges = get_rolling_quarter_ranges(4)
+
+    assert [quarter[0] for quarter in ranges] == [
+        "Q1 2026",
+        "Q4 2025",
+        "Q3 2025",
+        "Q2 2025",
+    ]
+
+
+def test_get_rolling_quarter_ranges_current_quarter_ends_today():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 8, 10)
+        mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
+        ranges = get_rolling_quarter_ranges(1)
+
+    label, from_iso, to_iso = ranges[0]
+    assert label == "Q3 2026"
+    assert datetime.fromisoformat(from_iso).date() == date(2026, 7, 1)
+    assert datetime.fromisoformat(to_iso).date() == date(2026, 8, 10)
+
+
+def test_get_rolling_quarter_ranges_prior_quarter_uses_calendar_boundary():
+    with patch("ghsnitch.api.date") as mock_date:
+        mock_date.today.return_value = date(2026, 8, 10)
+        mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
+        ranges = get_rolling_quarter_ranges(2)
+
+    _, from_iso, to_iso = ranges[1]
+    assert datetime.fromisoformat(from_iso).date() == date(2026, 4, 1)
+    assert datetime.fromisoformat(to_iso).date() == date(2026, 6, 30)
 
 
 # --- get_rolling_week_ranges ---

@@ -37,6 +37,14 @@ gh-snitch --team backend
 
 This is equivalent to passing `--users alice,bob` (or whichever users are listed under that team), but lets you switch between pre-defined groups without editing config or typing out usernames each time.
 
+Repeat `--team` to compile several independent dossiers in one sweep:
+
+```bash
+gh-snitch --team platform --team backend
+```
+
+Teams remain in the requested order. Each team has its own rankings, totals, snapshot history, and output section. If an operative belongs to both teams, the operative appears in both and is ranked independently within each cohort. A repeated team name is reported only once.
+
 If you pass both `--team` and `--users`, `--users` wins — the team is ignored.
 
 If the team name is not found, gh-snitch exits with an error listing the known cells:
@@ -77,30 +85,37 @@ You can set a default period in your config file:
 period = "month"
 ```
 
-## Rolling Monthly or Weekly Columns
+## Rolling Monthly, Quarterly, or Weekly Columns
 
-Use `--last-months N` or `--last-weeks N` to produce a multi-column view where each column is one calendar month or one ISO week:
+Use `--last-months N`, `--last-quarters N`, or `--last-weeks N` to produce a multi-column view where each column is one calendar period:
 
 ```bash
 # Last 6 calendar months as separate columns
 gh-snitch --users alice,bob --last-months 6
+
+# Last 4 calendar quarters as separate columns
+gh-snitch --users alice,bob --last-quarters 4
 
 # Last 8 ISO weeks as separate columns
 gh-snitch --users alice,bob --last-weeks 8
 ```
 
 Month columns are labelled `Apr 2026`, `Mar 2026`, … most-recent first.
+Quarter columns are labelled `Q2 2026`, `Q1 2026`, … most-recent first.
 Week columns are labelled `2026-W15`, `2026-W14`, … most-recent first.
 
-The current (partial) month or week is always the first column.  The Trend column is suppressed because month-to-month and week-to-week comparisons are not annualised.
+The current partial month, quarter, or week is always the first column. The Trend column is suppressed because these periods are not annualised. `--last-quarters` must be at least 1 and cannot be combined with another command-line time selector.
 
 Set defaults in your config file:
 
 ```toml
 [surveillance]
 last_months = 6
+last_quarters = 4
 last_weeks = 8
 ```
+
+Only one rolling default should be active in the config. An explicit command-line time selector overrides a configured `last_quarters` value.
 
 ## Custom Date Range
 
@@ -170,6 +185,7 @@ users = ["alice", "bob", "carol"]
 years = 3
 # period = "month"      # "week", "month", or "year" — overrides years when set
 # last_months = 6       # last 6 calendar months as separate columns
+# last_quarters = 4     # last 4 calendar quarters as separate columns
 # last_weeks = 8        # last 8 ISO weeks as separate columns
 
 [network]
@@ -295,7 +311,7 @@ If you have more than 26 operatives the sequence continues as Operative Alpha-2,
 
 In redact mode:
 - OSC 8 terminal hyperlinks are suppressed — no clickable links that could reveal the real handle
-- The codename replaces the username in all output formats (`table`, `json`, `csv`, `markdown`, `graph`, `stack`)
+- The codename replaces the username in all output formats (`table`, `json`, `csv`, `markdown`, `graph`, `stack`, `xlsx`)
 - Ghost indicators (`👻` / `[ghost]`) are still shown alongside the codename
 - Error messages for not-found operatives also use the codename
 
@@ -397,7 +413,7 @@ totals = true
 percent = true
 ```
 
-## Machine-Readable Output
+## Alternative Output Formats
 
 By default gh-snitch renders a coloured terminal table. Use `--format` to get clean, scriptable output instead:
 
@@ -413,22 +429,28 @@ gh-snitch --users alice,bob --format markdown
 
 # Terminal line graph — contribution trend over time
 gh-snitch --users alice,bob --years 4 --format graph
+
+# Excel workbook — one worksheet per selected team
+gh-snitch --team platform --team backend --format xlsx --output teams.xlsx
 ```
 
 The `graph` format renders a colour-coded time-series chart in the terminal showing each operative's contribution trend. The X-axis spans the requested years in chronological order and the Y-axis scales to the data. The chart is sized to your terminal width and height automatically.
 
 Note: `--percent` and `--totals` are not applicable in graph format and are silently ignored.
 
-All non-`table` formats:
-- Write **only data** to stdout (no ANSI codes, no emoji status lines)
-- Send status messages (`🔍 Initiating…`, `🗂️ Dossier compiled…`) to **stderr** so pipes stay clean
-- Skip the update-check footer
+JSON, CSV, Markdown, graph, and stack write only report data to stdout and send status messages (`🔍 Initiating…`, `🗂️ Dossier compiled…`) to stderr. Excel writes no report data to stdout; it creates the path supplied with `--output` and refuses to replace an existing file.
+
+With several teams, table, Markdown, graph, and stack output contains one labelled section per team. JSON uses a top-level `teams` array, with each item carrying the team name and its `operatives` array. CSV adds a `team` column to every row. Single-team and direct-user JSON and CSV retain their existing shapes.
 
 Works with every time-period option:
 
 ```bash
 # JSON for the last 6 months
 gh-snitch --users alice,bob --last-months 6 --format json
+
+# Excel workbook with quarter columns and a worksheet per team
+gh-snitch --team platform --team backend --last-quarters 4 \
+  --format xlsx --output quarterly-teams.xlsx
 
 # CSV for a custom date range
 gh-snitch --users alice,bob --since 2025-01-01 --until 2025-06-30 --format csv
@@ -443,6 +465,8 @@ Set a permanent default in your config file:
 [display]
 format = "json"
 ```
+
+When `format = "xlsx"` is configured, each invocation still needs an explicit `--output PATH`.
 
 ## Terminal Graph Output
 
@@ -464,8 +488,8 @@ It supports all time-period options:
 # Graph of the last 6 months
 gh-snitch --users alice,bob --last-months 6 --format graph
 
-# Comparison of named teams
-gh-snitch --team platform --delta --format graph
+# Comparison of named teams, rendered as independent graph sections
+gh-snitch --team platform --team backend --format graph
 ```
 
 **Note:** The `--totals` and `--percent` flags are ignored in graph mode.
