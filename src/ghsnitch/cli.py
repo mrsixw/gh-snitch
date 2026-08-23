@@ -50,8 +50,8 @@ from .ui import (
 from .updater import UpdateStatus, check_for_update, perform_update
 
 __all__ = [
-    "VALID_FORMATS",
     "Shell",
+    "VALID_FORMATS",
     "completions",
     "gh_snitch",
     "update",

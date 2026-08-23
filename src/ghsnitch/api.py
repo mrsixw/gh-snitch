@@ -11,11 +11,11 @@ import requests
 
 __all__ = [
     "DEFAULT_GITHUB_URL",
-    "SECRET_GITHUB_TOKEN",
-    "VALID_PERIODS",
     "GitHubGraphQLError",
     "GitHubGraphQLRateLimitError",
     "GitHubGraphQLResourceLimitError",
+    "SECRET_GITHUB_TOKEN",
+    "VALID_PERIODS",
     "build_contributions_query",
     "configure_api_stats",
     "current_year_fraction",
