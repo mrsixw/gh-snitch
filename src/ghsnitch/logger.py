@@ -2,6 +2,10 @@ import logging
 
 from .xdg import LOG_DIR
 
+__all__ = [
+    "setup_logging",
+]
+
 _LOG_FILE = LOG_DIR / "run.log"
 _FMT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 _DATE_FMT = "%Y-%m-%dT%H:%M:%S"

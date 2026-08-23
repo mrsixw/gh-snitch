@@ -61,3 +61,10 @@ When updating project rules, update **all four files** to keep them consistent.
   - `README.md` — the options table
   - `docs/manual/options.md` — the full options reference
   - `docs/manual/usage.md` — the relevant usage section
+
+## Module API contract
+- A leading `_` means "internal to this module". Anything a sibling module
+  imports must not have one, and must appear in that module's `__all__`.
+- Every module in `src/ghsnitch/` declares `__all__`. Add new public names to it.
+- `tests/test_public_api.py` enforces both. Tests may still reach into the
+  internals of the module they test — that boundary is not policed.

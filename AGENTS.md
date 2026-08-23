@@ -60,6 +60,13 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - **A GitHub issue MUST exist before any work begins.** If the user requests a change and no issue exists yet, create one before starting implementation. Every branch, commit, and PR must reference an issue number.
 - **One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR. If changes are related and depend on each other, open them as a stack of PRs (one per issue) rather than bundling.
 
+## Module API contract
+- A leading `_` means "internal to this module". Anything a sibling module
+  imports must not have one, and must appear in that module's `__all__`.
+- Every module in `src/ghsnitch/` declares `__all__`. Add new public names to it.
+- `tests/test_public_api.py` enforces both. Tests may still reach into the
+  internals of the module they test — that boundary is not policed.
+
 ## Commit Messages
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`).
 - Keep the summary short and imperative.

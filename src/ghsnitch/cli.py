@@ -49,6 +49,14 @@ from .ui import (
 )
 from .updater import UpdateStatus, check_for_update, perform_update
 
+__all__ = [
+    "VALID_FORMATS",
+    "Shell",
+    "completions",
+    "gh_snitch",
+    "update",
+]
+
 VALID_FORMATS = ("table", "json", "csv", "markdown", "graph", "stack")
 
 

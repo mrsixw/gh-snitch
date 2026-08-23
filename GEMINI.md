@@ -46,6 +46,13 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Run `make test` before committing.
 - **Never use bare `except Exception`.** Catch specific exception types.
 
+## Module API contract
+- A leading `_` means "internal to this module". Anything a sibling module
+  imports must not have one, and must appear in that module's `__all__`.
+- Every module in `src/ghsnitch/` declares `__all__`. Add new public names to it.
+- `tests/test_public_api.py` enforces both. Tests may still reach into the
+  internals of the module they test — that boundary is not policed.
+
 ## Commit Messages
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`).
 - Keep the summary short and imperative.
