@@ -67,6 +67,13 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Before committing, run `make test`, `make lint`.
 - Before committing a feature or fix, confirm docs have been updated if any CLI options or user-visible behaviour changed.
 
+## Module API contract
+- A leading `_` means "internal to this module". Anything a sibling module
+  imports must not have one, and must appear in that module's `__all__`.
+- Every module in `src/ghsnitch/` declares `__all__`. Add new public names to it.
+- `tests/test_public_api.py` enforces both. Tests may still reach into the
+  internals of the module they test — that boundary is not policed.
+
 ## Agent Instruction Files
 This project maintains per-agent instruction files that all convey the same rules:
 - `.claude/CLAUDE.md` — Claude Code (this file)
