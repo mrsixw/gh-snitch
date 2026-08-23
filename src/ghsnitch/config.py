@@ -5,6 +5,15 @@ from pathlib import Path
 
 from .xdg import CONFIG_DIR
 
+__all__ = [
+    "generate_default_config",
+    "get_config_path",
+    "load_config",
+    "logger",
+    "render_config",
+    "update_config",
+]
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_TEMPLATE = """\

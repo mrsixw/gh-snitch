@@ -5,6 +5,15 @@ from datetime import datetime, timezone
 
 from .xdg import CACHE_DIR
 
+__all__ = [
+    "clear_all_snapshots",
+    "clear_snapshot",
+    "compute_scope",
+    "load_snapshot",
+    "logger",
+    "save_snapshot",
+]
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SNAPSHOT_FILE = CACHE_DIR / "snapshot.json"
