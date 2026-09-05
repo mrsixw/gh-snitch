@@ -12,7 +12,10 @@ uv sync --extra dev
 
 ```bash
 make test      # run pytest
-make lint      # ruff check + black --check
+make bats      # run the shell script tests
+make lint      # ruff check + black --check + shellcheck + typos
+make shellcheck# static analysis for every shell source
+make spell     # spell check, the same one CI runs
 make format    # auto-fix lint and formatting
 make build     # build shiv binary to dist/gh-snitch
 make smoketest # run built binary with --version
@@ -42,6 +45,26 @@ Tests live in `tests/`. Use `pytest` with `monkeypatch` and `click.testing.CliRu
 ```bash
 make test
 ```
+
+### The shell scripts
+
+`install.sh` is the published `curl | bash` install path, and `utils/` holds the
+scripts that cut releases. They are covered by a
+[bats](https://github.com/bats-core/bats-core) suite in `tests/bats/`:
+
+```bash
+make bats
+```
+
+Each test runs the **real script as a subprocess** with its collaborators —
+`gh`, `git`, `curl`, `tar`, `install` — replaced by stubs on `PATH`, and with
+`HOME` redirected into the test's temporary directory. Nothing reaches the
+network, and an installer test cannot scribble on the machine running it. The
+stubs record their arguments, so a test can assert *what the script asked for*
+rather than only what it printed.
+
+`bats` and `shellcheck` are fetched on demand with `npx`, and `typos` with
+`uvx` — nothing to install by hand beyond `node`.
 
 ## Pull Requests
 
