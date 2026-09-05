@@ -40,7 +40,10 @@ When updating project rules, update **all four files** to keep them consistent.
 
 ## Common Commands
 - `make test` — run tests (`uv run pytest -v`)
-- `make lint` — check linting and formatting (`ruff check` + `black --check`)
+- `make bats` — run the shell script tests (`npx --yes bats tests/bats`)
+- `make lint` — check linting and formatting (`ruff check` + `black --check` + `shellcheck` + `spell`)
+- `make shellcheck` — static analysis for every shell source
+- `make spell` — spell check (`typos`, pinned to the version CI runs)
 - `make format` — auto-fix lint and formatting (`ruff check --fix` + `black`)
 - `make build` — build a shiv executable to `dist/gh-snitch`
 - `make smoketest` — run the built binary with `--version`

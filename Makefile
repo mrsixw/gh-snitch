@@ -1,11 +1,18 @@
 .ONESHELL:
 SHELL = /bin/bash
 
+# Pinned to the version the CI spell job uses, so the two cannot drift apart.
+TYPOS_VERSION := 1.48.0
+
+# Every shell source we ship, plus the test helper, which is shell too and just
+# as capable of being wrong.
+SHELL_SOURCES := install.sh $(wildcard utils/*.sh) tests/bats/helpers/common.bash
+
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 DESTDIR ?=
 
-.PHONY: activate build version-bump release gh-snitch smoketest test lint format man completions install uninstall
+.PHONY: activate build version-bump release gh-snitch smoketest test bats lint shellcheck spell format man completions install uninstall
 
 .venv:
 	uv venv .venv
@@ -58,10 +65,24 @@ test: .venv
 	uv sync --extra test
 	uv run pytest -v
 
-lint: .venv
+lint: .venv shellcheck spell
 	uv sync --extra lint
 	uv run ruff check .
 	uv run black --check .
+
+# Static analysis for every shell source.
+shellcheck:
+	npx --yes shellcheck $(SHELL_SOURCES)
+
+# The shell test suite. bats and shellcheck arrive via npx — nothing to install
+# by hand beyond node.
+bats:
+	npx --yes bats tests/bats
+
+# Spelling. uvx fetches typos on demand; uv is already this project's package
+# manager.
+spell:
+	uvx --from typos==$(TYPOS_VERSION) typos
 
 format: .venv
 	uv sync --extra lint
