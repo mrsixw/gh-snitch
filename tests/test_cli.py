@@ -2466,3 +2466,112 @@ def test_current_executable_path_is_absolute(monkeypatch):
     monkeypatch.setattr(cli_mod.shutil, "which", lambda _name: None)
     monkeypatch.setattr(cli_mod.sys, "argv", ["./gh-snitch"])
     assert cli_mod._current_executable_path().startswith("/")
+
+
+# --- Silencing the update check (issue #144) --------------------------------
+
+
+def _resolved_no_update_check(runner, tmp_path, body="", extra_args=()):
+    """Return the resolved no_update_check value --show-config reports."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[operatives]\nusers = []\n" + body)
+    result = runner.invoke(
+        gh_snitch,
+        ["--show-config", "--config", str(config_file), *extra_args],
+    )
+    assert result.exit_code == 0, result.output
+    line = next(
+        ln for ln in result.output.splitlines() if ln.startswith("no-update-check")
+    )
+    return line.split("=", 1)[1].strip() == "True"
+
+
+def test_update_check_on_by_default(runner, tmp_path, monkeypatch):
+    monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
+    assert _resolved_no_update_check(runner, tmp_path) is False
+
+
+def test_config_key_disables_update_check(runner, tmp_path, monkeypatch):
+    monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
+    body = "[updates]\nno-update-check = true\n"
+    assert _resolved_no_update_check(runner, tmp_path, body) is True
+
+
+def test_config_key_false_leaves_update_check_enabled(runner, tmp_path, monkeypatch):
+    monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
+    body = "[updates]\nno-update-check = false\n"
+    assert _resolved_no_update_check(runner, tmp_path, body) is False
+
+
+@pytest.mark.parametrize("value", ["1", "0", "false", "off", "banana"])
+def test_env_var_any_non_empty_value_disables_update_check(
+    runner, tmp_path, monkeypatch, value
+):
+    # Presence semantics, per no-color.org: the value is never parsed, so a
+    # stray GH_SNITCH_NO_UPDATE_CHECK=banana is harmless rather than fatal.
+    monkeypatch.setenv("GH_SNITCH_NO_UPDATE_CHECK", value)
+    assert _resolved_no_update_check(runner, tmp_path) is True
+
+
+def test_env_var_empty_leaves_update_check_enabled(runner, tmp_path, monkeypatch):
+    monkeypatch.setenv("GH_SNITCH_NO_UPDATE_CHECK", "")
+    assert _resolved_no_update_check(runner, tmp_path) is False
+
+
+def test_flag_beats_a_false_config_key(runner, tmp_path, monkeypatch):
+    # None of the three can switch the check back on once another has
+    # switched it off.
+    monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
+    body = "[updates]\nno-update-check = false\n"
+    assert (
+        _resolved_no_update_check(runner, tmp_path, body, ["--no-update-check"]) is True
+    )
+
+
+def test_env_var_beats_a_false_config_key(runner, tmp_path, monkeypatch):
+    monkeypatch.setenv("GH_SNITCH_NO_UPDATE_CHECK", "1")
+    body = "[updates]\nno-update-check = false\n"
+    assert _resolved_no_update_check(runner, tmp_path, body) is True
+
+
+def _run_to_completion(runner, tmp_path, requests_mock, body=""):
+    """Full run reaching the update-check call site, mirroring the flag's test."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n' + body
+    )
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json=_graphql_response(("alice", 10)),
+    )
+    with (
+        patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"),
+        patch("ghsnitch.cli.check_for_update") as mock_update,
+    ):
+        result = runner.invoke(gh_snitch, ["--config", str(config_file)])
+    assert result.exit_code == 0, result.output
+    return mock_update
+
+
+def test_config_key_skips_update_end_to_end(
+    runner, tmp_path, requests_mock, monkeypatch
+):
+    # --show-config returns early, so pin the real call site too.
+    monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
+    body = "[updates]\nno-update-check = true\n"
+    _run_to_completion(runner, tmp_path, requests_mock, body).assert_not_called()
+
+
+def test_env_var_skips_update_end_to_end(runner, tmp_path, requests_mock, monkeypatch):
+    monkeypatch.setenv("GH_SNITCH_NO_UPDATE_CHECK", "1")
+    _run_to_completion(runner, tmp_path, requests_mock).assert_not_called()
+
+
+def test_update_check_runs_when_nothing_disables_it(
+    runner, tmp_path, requests_mock, monkeypatch
+):
+    # The counterweight: without this, the two tests above would pass even if
+    # the check had been removed entirely.
+    monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
+    _run_to_completion(runner, tmp_path, requests_mock).assert_called_once()

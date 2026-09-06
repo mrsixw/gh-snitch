@@ -102,6 +102,20 @@ _NATO_ALPHABET = [
 logger = logging.getLogger(__name__)
 
 
+def _env_flag_is_set(name):
+    """Report whether an environment variable is set to any non-empty value.
+
+    This is the no-color.org convention gh-snitch already follows for
+    NO_COLOR: presence is the signal and the value is deliberately ignored,
+    so GH_SNITCH_NO_UPDATE_CHECK=0 disables the check just as =1 does.
+
+    Click's envvar= on a boolean flag cannot express this. It routes the value
+    through the BOOL converter, so an unrecognised one aborts the whole run —
+    a typo in a shell profile would break the tool rather than be ignored.
+    """
+    return bool(os.environ.get(name))
+
+
 def _bounded_error_detail(error, limit=200):
     """Return a concise single-line detail for terminal error messages.
 
@@ -269,7 +283,14 @@ def _stable_unique(values):
     "--no-update-check",
     is_flag=True,
     default=False,
-    help="Skip checking for updates.",
+    # No envvar= here: Click would route GH_SNITCH_NO_UPDATE_CHECK through its
+    # BOOL converter, so unrecognised values abort the run. Resolved by
+    # presence in the callback instead — see _env_flag_is_set.
+    help=(
+        "Skip checking for updates."
+        " Also honoured via the GH_SNITCH_NO_UPDATE_CHECK environment"
+        " variable, set to any non-empty value."
+    ),
 )
 @click.option(
     "--api-stats",
@@ -441,6 +462,14 @@ def gh_snitch(  # noqa: PLR0913
 
     cfg = load_config(config)
 
+    # Any one of the flag, the environment variable, or the config key
+    # switching the check off is enough; none of them can switch it back on.
+    no_update_check = (
+        no_update_check
+        or _env_flag_is_set("GH_SNITCH_NO_UPDATE_CHECK")
+        or cfg.get("no-update-check", False)
+    )
+
     if show_config:
         click.echo(f"users = {cfg['users']}")
         click.echo(f"years = {cfg['years']}")
@@ -450,6 +479,9 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"last_weeks = {cfg['last_weeks']}")
         click.echo(f"output_format = {cfg.get('output_format', 'table')}")
         click.echo(f"github_url = {cfg['github_url']}")
+        # The resolved value, not the raw config key: --show-config should say
+        # what will actually happen, flag and environment variable included.
+        click.echo(f"no-update-check = {no_update_check}")
         teams = cfg.get("teams", {})
         if teams:
             for team_name, members in sorted(teams.items()):
