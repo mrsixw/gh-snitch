@@ -114,16 +114,26 @@ STUB
   refute_called git "commit"
 }
 
-@test "fails when the push is rejected" {
-  # `set -e` aborts the run, so the release does stop. It stops without a
-  # diagnostic of its own, though — see #154.
+@test "fails loudly when the push is rejected" {
+  # `set -e` alone stops the release, but says nothing about which step gave up
+  # or what state the repository is in: the bump commit exists locally, the tag
+  # does not, and the remote has neither. The CI log should not require reading
+  # the script to work that out.
   export GIT_TAG_EXISTS=1 GIT_BRANCH=main GIT_PUSH_FAILS=1
 
   run "${REPO_ROOT}/utils/bump_version_if_tag_exists.sh" 1.2.3
 
-  [ "$status" -ne 0 ]
-  # ...and crucially, it does not print the bumped version as though it had
-  # succeeded. Whatever consumes this stdout must not tag a version that was
-  # never pushed.
+  [ "$status" -eq 1 ]
+  assert_output_contains "git push failed"
+  assert_output_contains "version bump commit not pushed"
+}
+
+@test "does not print the bumped version when the push failed" {
+  # Whatever consumes this stdout tags the version it names. Printing one that
+  # never reached the remote is how a tag ends up pointing at nothing.
+  export GIT_TAG_EXISTS=1 GIT_BRANCH=main GIT_PUSH_FAILS=1
+
+  run "${REPO_ROOT}/utils/bump_version_if_tag_exists.sh" 1.2.3
+
   [ "$output" != "1.2.4" ]
 }
