@@ -22,7 +22,13 @@ echo -e "${BOLD}${BLUE}🕵️ Deploying operative...${RESET}"
 
 # Find the latest release
 echo -e "${YELLOW}Locating latest intelligence package...${RESET}"
-LATEST_RELEASE_JSON=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest")
+# -f so an HTTP error is a failure rather than an error page to parse. Without
+# it a rate-limited run looks identical to a release with no assets, and the
+# user gets told the wrong thing.
+if ! LATEST_RELEASE_JSON=$(curl -sf "https://api.github.com/repos/${REPO}/releases/latest"); then
+    echo -e "${BOLD}\033[31m❌ Failed to fetch release info for ${REPO}.${RESET}"
+    exit 1
+fi
 LATEST_RELEASE_URL=$(echo "${LATEST_RELEASE_JSON}" | grep -o "https://github.com/${REPO}/releases/download/[^/ ]*/${BINARY_NAME}" | head -n 1)
 
 if [ -z "${LATEST_RELEASE_URL}" ]; then
@@ -40,8 +46,15 @@ RELEASE_BASE_URL="${LATEST_RELEASE_URL%/*}"
 # Create install directory if it doesn't exist
 mkdir -p "${INSTALL_DIR}"
 
-# Download the binary
-curl -sL "${LATEST_RELEASE_URL}" -o "${EXECUTABLE_PATH}"
+# Download the binary. -f so a 404 is a failure rather than an error page
+# written to disk; the file is removed on failure because curl opens it before
+# it knows the request succeeded, and a junk file here shadows any previously
+# working copy on PATH.
+if ! curl -sfL "${LATEST_RELEASE_URL}" -o "${EXECUTABLE_PATH}"; then
+    rm -f "${EXECUTABLE_PATH}"
+    echo -e "${BOLD}\033[31m❌ Failed to download binary from ${LATEST_RELEASE_URL}.${RESET}"
+    exit 1
+fi
 chmod +x "${EXECUTABLE_PATH}"
 
 echo -e "${BOLD}${GREEN}✅ Operative deployed to ${EXECUTABLE_PATH}!${RESET}"

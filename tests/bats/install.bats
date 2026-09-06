@@ -25,9 +25,8 @@ done
 
 case "${url}" in
   *api.github.com*)
-    # `curl -s` without -f prints nothing useful on an HTTP error, so an empty
-    # body is what a rate-limited or offline run actually sees.
-    [[ -n "${API_FAILS:-}" ]] && exit 0
+    # With -f, an HTTP error is a non-zero exit rather than a body to parse.
+    [[ -n "${API_FAILS:-}" ]] && exit 22
     if [[ -n "${NO_ASSET:-}" ]]; then
       printf '{"tag_name": "v1.2.3", "assets": []}\n'
     else
@@ -41,7 +40,14 @@ case "${url}" in
     [[ -n "${COMPLETIONS_FAIL:-}" ]] && exit 22
     printf 'completion\n' > "${out}"; exit 0 ;;
   *)
-    [[ -n "${BINARY_FAILS:-}" ]] && exit 22
+    if [[ -n "${BINARY_FAILS:-}" ]]; then
+      # curl opens (and truncates) the -o file before it knows the request
+      # failed, so a failed download leaves a file behind unless the caller
+      # removes it. The stub has to behave the same way or the test that
+      # checks for leftovers proves nothing.
+      printf '<html>404 Not Found</html>\n' > "${out}"
+      exit 22
+    fi
     {
       printf '#!/usr/bin/env bash\n'
       printf 'printf "%%s\\n" "$*" >> "%s/binary.log"\n' "${STUB_LOG}"
@@ -86,15 +92,15 @@ binary_calls() { cat "${STUB_LOG}/binary.log" 2>/dev/null || true; }
   [ ! -e "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
 }
 
-@test "fails when the release API answers with nothing" {
-  # `curl -s` has no -f, so an HTTP error is an empty body rather than a
-  # non-zero exit. The grep then finds no URL, which is what stops the install.
+@test "fails when the release API is unreachable" {
+  # Distinct from "the release has no matching asset": a rate-limited or
+  # offline run is a different problem and deserves a different message.
   export API_FAILS=1
 
   run bash "${REPO_ROOT}/install.sh"
 
   [ "$status" -eq 1 ]
-  assert_output_contains "Failed to locate latest release"
+  assert_output_contains "Failed to fetch release info"
 }
 
 # ---------------------------------------------------------------------------
@@ -126,16 +132,33 @@ binary_calls() { cat "${STUB_LOG}/binary.log" 2>/dev/null || true; }
   [ -f "${FAKE_HOME}/.config/fish/completions/${BINARY_NAME}.fish" ]
 }
 
-@test "a failed binary download is not caught at the download step" {
-  # Documents current behaviour rather than endorsing it. `curl -sL` has no -f
-  # and no failure check, so a 404 writes the error body to the executable
-  # path; the run only fails later, when that file is run. See #155.
+@test "fails when the binary download fails" {
   export BINARY_FAILS=1
 
   run bash "${REPO_ROOT}/install.sh"
 
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
+  assert_output_contains "Failed to download binary"
   refute_output_contains "Operative deployed"
+}
+
+@test "leaves no file behind when the binary download fails" {
+  # `curl -o` creates the file before it knows whether the request succeeded,
+  # so an unguarded failure leaves junk at the install path — shadowing any
+  # previously working copy on PATH.
+  export BINARY_FAILS=1
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ ! -e "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
+}
+
+@test "does not run a binary it failed to download" {
+  export BINARY_FAILS=1
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  refute_output_contains "Deployed version"
 }
 
 @test "treats a missing man page as non-fatal" {
