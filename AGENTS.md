@@ -1,6 +1,4 @@
-# Codex Instructions: gh-snitch
-
-Instructions found in this file are foundational mandates. They take absolute precedence over general workflows and tool defaults.
+# Agent Instructions
 
 ## Project Overview
 - **gh-snitch** is a spy-themed CLI tool that surveys GitHub contribution counts for configured operatives (users) and renders a ranked, colour-graded table in the terminal.
@@ -24,15 +22,6 @@ Instructions found in this file are foundational mandates. They take absolute pr
   - `docs/manual/` — user-facing manual
   - `docs/design/` — technical design documents
 
-## Agent Instruction Files
-This project maintains per-agent instruction files that all convey the same rules:
-- `.claude/CLAUDE.md` — Claude Code
-- `GEMINI.md` — Gemini
-- `AGENTS.md` — OpenAI Codex (this file)
-- `.github/copilot-instructions.md` — GitHub Copilot
-
-When updating project rules, update **all four files** to keep them consistent.
-
 ## Environment
 - Python >= 3.11
 - Package manager: **uv** (not pip). Use `uv sync`, `uv run`, etc.
@@ -55,18 +44,9 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Run `make test` before committing.
 - **Never use bare `except Exception`.** Catch specific exception types.
 
-## Work Items
-- This project uses GitHub issues. Reference the GitHub issue number in branch names and PR titles.
-- **A GitHub issue MUST exist before any work begins.** If the user requests a change and no issue exists yet, create one before starting implementation. Every branch, commit, and PR must reference an issue number.
-- **One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR. If changes are related and depend on each other, open them as a stack of PRs (one per issue) rather than bundling.
-
 ## Commit Messages
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`).
 - Keep the summary short and imperative.
-
-## Pull Requests
-- Always include `Closes #N` in the PR body so the issue is automatically closed when the PR is merged.
-- **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
 
 ## Tone and Personality
 - This project embraces spy theming. Operatives, surveillance, handlers, dossiers — lean into it.
@@ -86,3 +66,43 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 - Never use bare `except Exception`.
 - Before committing, run `make test`, `make lint`.
 - Before committing a feature or fix, confirm docs have been updated if any CLI options or user-visible behaviour changed.
+
+## Module API contract
+- A leading `_` means "internal to this module". Anything a sibling module
+  imports must not have one, and must appear in that module's `__all__`.
+- Every module in `src/ghsnitch/` declares `__all__`. Add new public names to it.
+- Reach other modules through their public names only. If you need something a
+  module keeps private, widen that module's API deliberately — rename it and add
+  it to `__all__` — rather than reaching past the underscore. A private name you
+  had to import was never really private.
+- The same applies to third-party libraries: depend on their documented API, not
+  on internals that can change in a patch release.
+- `tests/test_public_api.py` enforces the first two. Tests may still reach into
+  the internals of the module they test — that boundary is not policed.
+
+## Agent Instruction Files
+`AGENTS.md` is the single source of truth. `CLAUDE.md`, `GEMINI.md` and
+`.github/copilot-instructions.md` are symlinks to it, so there is one file to
+edit and drift between them is impossible.
+
+- `AGENTS.md` — canonical. Read natively by Codex and most other agents
+- `CLAUDE.md` → symlink — Claude Code
+- `GEMINI.md` → symlink — Gemini
+- `.github/copilot-instructions.md` → symlink — GitHub Copilot
+
+`AGENTS.md` is the canonical file because Codex, Copilot and others read that
+name natively, and it is the emerging cross-tool convention. The three tools
+that insist on their own filename get a symlink instead of a copy.
+
+On Windows, git checks symlinks out as plain text files containing the target
+path unless `core.symlinks=true` and Developer Mode are both enabled.
+
+## GitHub Workflow
+- **MANDATORY: Always create a GitHub issue before writing code or opening a PR.** This is a non-negotiable first step to confirm diagnosis and scope.
+- **MANDATORY: One issue = one branch = one PR.** Never combine fixes for multiple issues into a single PR. If changes are related and depend on each other, open them as a stack of PRs (one per issue) rather than bundling.
+- **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
+- Always include `Closes #N` in the PR body so the issue closes automatically on merge.
+
+## Branch Naming
+- **MANDATORY: Feature branches must follow the format `issue_<N>_<short_description>`**, e.g. `issue_44_export_config`, `issue_22_brief_mode`.
+- Use the `/start-issue` skill to create a correctly-named branch from an issue number. It checks out main, pulls, and creates the branch automatically.

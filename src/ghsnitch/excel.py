@@ -9,6 +9,10 @@ from pathlib import Path
 import xlsxwriter
 from xlsxwriter.utility import xl_rowcol_to_cell
 
+__all__ = [
+    "write_excel_report",
+]
+
 _INVALID_WORKSHEET_CHARACTERS = re.compile(r"[\[\]:*?/\\]")
 _MAX_WORKSHEET_NAME_LENGTH = 31
 

@@ -12,6 +12,13 @@ import requests
 from .api import SECRET_GITHUB_TOKEN
 from .xdg import CACHE_DIR
 
+__all__ = [
+    "UpdateStatus",
+    "check_for_update",
+    "get_latest_version",
+    "perform_update",
+]
+
 _UPDATE_CHECK_REPO = "mrsixw/gh-snitch"
 _PACKAGE_NAME = "ghsnitch"
 _BINARY_NAME = "gh-snitch"
