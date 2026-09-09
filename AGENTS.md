@@ -103,6 +103,12 @@ path unless `core.symlinks=true` and Developer Mode are both enabled.
 - **MANDATORY: Before opening a PR, you MUST run `make test`, `make build`, and `make lint`** to ensure the code is functional, buildable, and compliant with project standards.
 - Always include `Closes #N` in the PR body so the issue closes automatically on merge.
 
+## Rewriting Published History
+- **MANDATORY: Ask before every force push.** Rebasing and force pushing are allowed, but one approval does not cover the next branch or the next push in the same task. Say what you are about to overwrite and why, and wait.
+- Rebasing a branch onto a new base is a choice, not a necessity — merging the new base in resolves the same conflict without rewriting history. Which one to use is the maintainer's call.
+- `--force-with-lease` is not a safety net here. It stops you clobbering *someone else's* work; it does nothing about wrong arguments of your own.
+- When restacking, `git rebase --onto <new-base> <OLD BASE>` — the second argument is the branch's old **base**, never its old tip. Passing the tip makes the replay range empty, and the force push then overwrites the branch with its own base commit. GitHub auto-closes a PR whose head equals its base, so this silently closes the PR too.
+
 ## Branch Naming
 - **MANDATORY: Feature branches must follow the format `issue_<N>_<short_description>`**, e.g. `issue_44_export_config`, `issue_22_brief_mode`.
 - Use the `/start-issue` skill to create a correctly-named branch from an issue number. It checks out main, pulls, and creates the branch automatically.
