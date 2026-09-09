@@ -189,21 +189,58 @@ years = 3
 # last-weeks = 8        # last 8 ISO weeks as separate columns
 
 [network]
-# github-url = "https://github.example.com"  # omit for github.com
+# github-url = "https://github.example.com" # omit for github.com
+
+[updates]
+# no-update-check = false # skip the automatic check for newer releases
 
 [display]
-# format = "table"
-# min-contributions = 0
-# totals = false
-# percent = false
-# rank-delta = true
+# format = "table"      # table, json, csv, markdown, graph, stack, or xlsx
+# min-contributions = 10 # hide operatives below this threshold
+# totals = false        # show Total column and footer row
+# percent = false       # annotate cells with (N%) share of period total
+# rank-delta = true     # show ± rank-change column
 ```
+
+Any setting that differs from its default is written as a live key, so the
+exported file reproduces your configuration exactly when loaded back. Settings
+still at their default are written as commented examples, so the file keeps
+documenting what else you can set.
 
 CLI overrides are reflected in the output:
 
 ```bash
 gh-snitch --users alice,bob --years 5 --github-url https://ghe.corp.com --export-config
 ```
+
+```toml
+[operatives]
+users = ["alice", "bob"]
+
+[surveillance]
+years = 5
+# period = "month"      # "week", "month", or "year" — overrides years when set
+# last-months = 6       # last 6 calendar months as separate columns
+# last-quarters = 4     # last 4 calendar quarters as separate columns
+# last-weeks = 8        # last 8 ISO weeks as separate columns
+
+[network]
+github-url = "https://ghe.corp.com"
+
+[updates]
+# no-update-check = false # skip the automatic check for newer releases
+
+[display]
+# format = "table"      # table, json, csv, markdown, graph, stack, or xlsx
+# min-contributions = 10 # hide operatives below this threshold
+# totals = false        # show Total column and footer row
+# percent = false       # annotate cells with (N%) share of period total
+# rank-delta = true     # show ± rank-change column
+```
+
+`github-url` is now a live key rather than a commented example, because it differs
+from the default — load this file back and you get the same configuration you
+exported.
 
 Pipe directly to your config file to save it:
 
