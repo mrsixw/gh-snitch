@@ -18,7 +18,7 @@ build: .venv
 
 	uv sync --extra build
 	mkdir -p dist
-	uv run shiv -c gh-snitch -o dist/gh-snitch --python '/usr/bin/env python3.13' .
+	uv run shiv -c gh-snitch -o dist/gh-snitch --python '/usr/bin/env python3' .
 
 install: build
 	install -d "$(DESTDIR)$(BINDIR)"
@@ -51,8 +51,11 @@ release: build man completions
 
 gh-snitch: build
 
-smoketest: build .venv
-	. .venv/bin/activate && ./dist/gh-snitch --version
+# Deliberately does NOT activate the venv: the venv puts the exact interpreter
+# the binary was built against on PATH, so an activated smoke test passes even
+# when the shebang names a version no user has. Run it the way a user would.
+smoketest: build
+	./dist/gh-snitch --version
 
 test: .venv
 	uv sync --extra test
