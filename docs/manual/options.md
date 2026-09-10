@@ -160,19 +160,33 @@ users = ["alice", "bob"]
 [surveillance]
 years = 3
 # period = "month"      # "week", "month", or "year" — overrides years when set
-# last_months = 6       # last 6 calendar months as separate columns
-# last_quarters = 4     # last 4 calendar quarters as separate columns
-# last_weeks = 8        # last 8 ISO weeks as separate columns
+# last-months = 6       # last 6 calendar months as separate columns
+# last-quarters = 4     # last 4 calendar quarters as separate columns
+# last-weeks = 8        # last 8 ISO weeks as separate columns
 
 [network]
-# github_url = "https://github.example.com"  # omit for github.com
+# github-url = "https://github.example.com"  # omit for github.com
 
 [display]
 # format = "table"      # table, json, csv, markdown, graph, stack, or xlsx
-# min_contributions = 10  # hide operatives below this threshold
+# min-contributions = 10  # hide operatives below this threshold
 # totals = false           # show Total column and footer row
 # percent = false          # annotate cells with (N%) share of year total
-# rank_delta = true        # show ± rank-change column (set to false to hide)
+# rank-delta = true        # show ± rank-change column (set to false to hide)
+```
+
+### Config key naming
+
+Config keys are kebab-case, matching the sibling CLIs (breakfast, five-clis,
+jeeves). Earlier releases used snake_case — `github_url`, `min_contributions`,
+`rank_delta`, `last_months`, `last_quarters`, `last_weeks` — and those spellings
+**still work**, with a warning naming the replacement. If both spellings appear
+for the same setting, the kebab-case one wins.
+
+Run `gh-snitch --update-config` to rewrite an existing file to the new
+spellings in place; it backs the original up first.
+
+```toml
 
 # Named teams — repeat --team <name> to select more than one
 [teams.platform]
@@ -184,4 +198,4 @@ users = ["carol", "dave"]
 
 CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-quarters`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, and `--no-rank-delta` override config file values. `--since`, `--until`, and `--output` are command-line only because they encode a specific reporting run.
 
-`--last-quarters` cannot be combined on the command line with `--years`, `--period`, `--last-months`, `--last-weeks`, `--since`, or `--until`. An explicit legacy time selector overrides `last_quarters` when the latter comes from the config file.
+`--last-quarters` cannot be combined on the command line with `--years`, `--period`, `--last-months`, `--last-weeks`, `--since`, or `--until`. An explicit legacy time selector overrides `last-quarters` when the latter comes from the config file.

@@ -1,6 +1,15 @@
 import os
 from pathlib import Path
 
+__all__ = [
+    "CACHE_DIR",
+    "CONFIG_DIR",
+    "LOG_DIR",
+    "get_cache_dir",
+    "get_config_dir",
+    "get_log_dir",
+]
+
 
 def _xdg_override(env_var: str) -> Path | None:
     """Return the env var value as a Path only if it is set to an absolute path.

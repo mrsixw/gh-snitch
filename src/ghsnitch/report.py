@@ -5,6 +5,11 @@ from dataclasses import dataclass
 
 from .snapshot import compute_scope, load_snapshot, save_snapshot
 
+__all__ = [
+    "ContributionReport",
+    "build_contribution_report",
+]
+
 
 @dataclass
 class ContributionReport:
