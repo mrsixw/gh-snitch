@@ -68,9 +68,27 @@ echo -e "${BOLD}${GREEN}✅ Operative deployed to ${EXECUTABLE_PATH}!${RESET}"
 echo -ne "${BLUE}Deployed version: ${RESET}"
 "${EXECUTABLE_PATH}" --version
 
-# Initialize default config
+# Initialize default config, but never touch one that already exists.
+#
+# --init-config prompts before overwriting, and this script is documented as
+# `curl ... | bash`, where stdin is the pipe rather than a terminal. The prompt
+# therefore reads EOF, Click aborts with a non-zero status, and `set -e` kills
+# the installer — after the binary is in place but before the man page and
+# completions are installed. Every upgrade hit that.
+#
+# Mirrors get_config_dir() in src/ghsnitch/xdg.py: $XDG_CONFIG_HOME is honoured
+# only when absolute, per the XDG spec.
+case "${XDG_CONFIG_HOME:-}" in
+    /*) CONFIG_PATH="${XDG_CONFIG_HOME}/gh-snitch/config.toml" ;;
+    *)  CONFIG_PATH="${HOME}/.config/gh-snitch/config.toml" ;;
+esac
+
 echo -e "${YELLOW}Establishing handler config...${RESET}"
-"${EXECUTABLE_PATH}" --init-config
+if [ -e "${CONFIG_PATH}" ]; then
+    echo -e "${GREEN}🗂️  Existing dossier left untouched at ${CONFIG_PATH}.${RESET}"
+else
+    "${EXECUTABLE_PATH}" --init-config
+fi
 
 # Man page and completions are best-effort: a release predating them, or a
 # partial mirror, should not fail an otherwise working install.
