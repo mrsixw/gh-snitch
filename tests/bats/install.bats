@@ -53,6 +53,53 @@ STUB
 binary_calls() { cat "${STUB_LOG}/binary.log" 2>/dev/null || true; }
 
 # ---------------------------------------------------------------------------
+# 🐍 Interpreter preflight
+# ---------------------------------------------------------------------------
+
+@test "refuses to install when python3 is absent" {
+  # PATH holds only the stubs, so `command -v python3` finds nothing. The
+  # preflight runs before mkdir or curl, so nothing else is needed for the
+  # script to get that far.
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "python3 was not found"
+  assert_output_contains "3.11"
+}
+
+@test "refuses to install when python3 is too old" {
+  stub python3 <<'STUB'
+[[ "$1" == "--version" ]] && { printf 'Python 3.9.18\n'; exit 0; }
+exit 1
+STUB
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "3.11 or newer"
+  assert_output_contains "Python 3.9.18"
+}
+
+@test "downloads nothing when the interpreter check fails" {
+  # The point of checking first: no half-finished install, and no binary left
+  # shadowing a working one on PATH.
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  [ ! -e "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
+  [ "$(calls curl | wc -l | tr -d ' ')" -eq 0 ]
+}
+
+@test "the required version matches the one pyproject declares" {
+  # The floor is written into install.sh by hand; pyproject is what actually
+  # decides it. Drift between them would mislead every user who hits the check.
+  declared="$(sed -n 's/^requires-python *= *">=\([0-9.]*\)"/\1/p' "${REPO_ROOT}/pyproject.toml")"
+  [ -n "${declared}" ]
+  grep -q "${declared} or newer" "${REPO_ROOT}/install.sh"
+  grep -q "sys.version_info >= (${declared%%.*}, ${declared##*.})" "${REPO_ROOT}/install.sh"
+}
+
+# ---------------------------------------------------------------------------
 # 🔎 Resolving the release
 # ---------------------------------------------------------------------------
 
