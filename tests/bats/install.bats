@@ -12,9 +12,9 @@ setup() {
   load 'helpers/common'
   common_setup
 
-  # curl does two jobs: query the release API, and fetch the assets. The
-  # installer resolves the download URL by grepping the API's JSON, so the
-  # stub returns realistic JSON rather than a canned URL.
+  # curl has one job now: fetch the assets from the API-free
+  # /releases/latest/download/ path. A missing asset is a 404 on the download
+  # itself, which is what BINARY_FAILS simulates.
   stub curl <<'STUB'
 url=""; out=""; prev=""
 for arg in "$@"; do
@@ -24,15 +24,6 @@ for arg in "$@"; do
 done
 
 case "${url}" in
-  *api.github.com*)
-    # With -f, an HTTP error is a non-zero exit rather than a body to parse.
-    [[ -n "${API_FAILS:-}" ]] && exit 22
-    if [[ -n "${NO_ASSET:-}" ]]; then
-      printf '{"tag_name": "v1.2.3", "assets": []}\n'
-    else
-      printf '{"tag_name": "v1.2.3", "assets": [{"browser_download_url": "https://github.com/mrsixw/gh-snitch/releases/download/v1.2.3/gh-snitch"}]}\n'
-    fi
-    exit 0 ;;
   *.1.gz)
     [[ -n "${MAN_FAILS:-}" ]] && exit 22
     printf 'man page\n' > "${out}"; exit 0 ;;
@@ -65,42 +56,39 @@ binary_calls() { cat "${STUB_LOG}/binary.log" 2>/dev/null || true; }
 # 🔎 Resolving the release
 # ---------------------------------------------------------------------------
 
-@test "downloads the asset URL it found in the release JSON" {
+@test "downloads the binary from the API-free latest-release path" {
   run bash "${REPO_ROOT}/install.sh"
 
   [ "$status" -eq 0 ]
-  assert_called curl "https://github.com/mrsixw/gh-snitch/releases/download/v1.2.3/${BINARY_NAME}"
+  assert_called curl "https://github.com/mrsixw/gh-snitch/releases/latest/download/${BINARY_NAME}"
 }
 
-@test "derives the man and completion URLs from the asset URL, not a second API call" {
-  # One API call, one tag. Asking twice could straddle a release and mix
-  # versions.
+@test "never calls the GitHub API" {
+  # The whole point: the unauthenticated API allows 60 requests per hour per IP,
+  # and a user who spent them could not install at all.
   run bash "${REPO_ROOT}/install.sh"
 
   [ "$status" -eq 0 ]
-  assert_called curl "/releases/download/v1.2.3/${BINARY_NAME}.1.gz"
-  [ "$(calls curl | grep -c 'api.github.com')" -eq 1 ]
+  [ "$(calls curl | grep -c 'api.github.com')" -eq 0 ]
+}
+
+@test "fetches the man page and completions from the same latest-release path" {
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  assert_called curl "/releases/latest/download/${BINARY_NAME}.1.gz"
 }
 
 @test "fails when the release carries no matching asset" {
-  export NO_ASSET=1
+  # No API lookup to fail early any more: a release without the asset is a 404
+  # on the download, which the download guard turns into a clear failure.
+  export BINARY_FAILS=1
 
   run bash "${REPO_ROOT}/install.sh"
 
   [ "$status" -eq 1 ]
-  assert_output_contains "Failed to locate latest release"
+  assert_output_contains "Failed to download binary"
   [ ! -e "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
-}
-
-@test "fails when the release API is unreachable" {
-  # Distinct from "the release has no matching asset": a rate-limited or
-  # offline run is a different problem and deserves a different message.
-  export API_FAILS=1
-
-  run bash "${REPO_ROOT}/install.sh"
-
-  [ "$status" -eq 1 ]
-  assert_output_contains "Failed to fetch release info"
 }
 
 # ---------------------------------------------------------------------------
