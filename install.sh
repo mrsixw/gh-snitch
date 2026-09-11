@@ -20,6 +20,22 @@ RESET="\033[0m"
 
 echo -e "${BOLD}${BLUE}🕵️ Deploying operative...${RESET}"
 
+# gh-snitch ships as a Python zipapp, so python3 must be on PATH at runtime and
+# recent enough to run it. Check before downloading: otherwise the install
+# reports success, leaves a binary on PATH, and the first sign of trouble is a
+# bare "env: python3: No such file or directory" — or, on an old interpreter, a
+# SyntaxError from inside the zipapp. Neither names the real problem.
+if ! command -v python3 >/dev/null 2>&1; then
+    echo -e "${BOLD}\033[31m❌ gh-snitch needs Python 3.11 or newer, but python3 was not found.${RESET}"
+    echo -e "Install Python 3.11+ (e.g. ${BOLD}apt-get install python3${RESET}) and re-run this installer."
+    exit 1
+fi
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+    echo -e "${BOLD}\033[31m❌ gh-snitch needs Python 3.11 or newer, but found: $(python3 --version 2>&1).${RESET}"
+    echo -e "Install Python 3.11+ and re-run this installer."
+    exit 1
+fi
+
 # Find the latest release
 echo -e "${YELLOW}Locating latest intelligence package...${RESET}"
 # GitHub redirects this path to the newest release's asset, so there is no API
