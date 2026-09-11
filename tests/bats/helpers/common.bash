@@ -38,7 +38,12 @@ common_setup() {
   #    as the thing under test; inheriting them would make those tests pass on a
   #    laptop and fail on Actions. Tokens go too, so nothing here could
   #    authenticate against real GitHub even if a stub were missed.
+  #    XDG_* go too: HOME is redirected here, but an inherited XDG_CONFIG_HOME
+  #    still points at the real machine, so a script honouring the XDG spec
+  #    would look outside the sandbox. GitHub Actions sets it, which is how
+  #    this was found: a test passed locally and failed on CI.
   unset GITHUB_HEAD_REF GITHUB_REF_NAME GITHUB_TOKEN GH_TOKEN GITHUB_ACTIONS CI
+  unset XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME
 
   export PATH HOME STUB_BIN STUB_LOG FAKE_HOME
 }
