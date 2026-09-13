@@ -221,57 +221,161 @@ def load_config(config_path=None):
     return config
 
 
+def _toml_value(value):
+    """Render *value* as a TOML scalar."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return f'"{value}"'
+    return str(value)
+
+
+#: Optional settings, in the order they are rendered, grouped by TOML section.
+#: Each entry is (toml_key, cfg_key, default, example, comment). A setting that
+#: differs from its default is written as a live key so it survives the round
+#: trip; one still at its default is written as a commented example, so the
+#: exported file keeps documenting what can be set.
+_OPTIONAL_SETTINGS = (
+    (
+        "surveillance",
+        (
+            (
+                "period",
+                "period",
+                None,
+                "month",
+                '"week", "month", or "year" — overrides years when set',
+            ),
+            (
+                "last-months",
+                "last_months",
+                None,
+                6,
+                "last 6 calendar months as separate columns",
+            ),
+            (
+                "last-quarters",
+                "last_quarters",
+                None,
+                4,
+                "last 4 calendar quarters as separate columns",
+            ),
+            (
+                "last-weeks",
+                "last_weeks",
+                None,
+                8,
+                "last 8 ISO weeks as separate columns",
+            ),
+        ),
+    ),
+    (
+        "network",
+        (
+            (
+                "github-url",
+                "github_url",
+                "https://github.com",
+                "https://github.example.com",
+                "omit for github.com",
+            ),
+        ),
+    ),
+    (
+        "updates",
+        (
+            (
+                "no-update-check",
+                "no_update_check",
+                False,
+                False,
+                "skip the automatic check for newer releases",
+            ),
+        ),
+    ),
+    (
+        "display",
+        (
+            (
+                "format",
+                "output_format",
+                "table",
+                "table",
+                "table, json, csv, markdown, graph, stack, or xlsx",
+            ),
+            (
+                "min-contributions",
+                "min_contributions",
+                0,
+                10,
+                "hide operatives below this threshold",
+            ),
+            ("totals", "totals", False, False, "show Total column and footer row"),
+            (
+                "percent",
+                "percent",
+                False,
+                False,
+                "annotate cells with (N%) share of period total",
+            ),
+            (
+                "rank-delta",
+                "rank_delta",
+                True,
+                True,
+                "show ± rank-change column",
+            ),
+        ),
+    ),
+)
+
+#: Column the trailing explanation comments line up on.
+_COMMENT_COLUMN = 23
+
+
+def _render_setting(toml_key, cfg_key, default, example, comment, cfg):
+    """Render one optional setting as a live key or a commented example.
+
+    A value that differs from its default is written live — without that,
+    --export-config hands back a config with the setting reset, which is a
+    silent data loss rather than a scaffold.
+    """
+    value = cfg.get(cfg_key, default)
+    if value is not None and value != default:
+        return f"{toml_key} = {_toml_value(value)}"
+    body = f"# {toml_key} = {_toml_value(example)}"
+    return f"{body:<{_COMMENT_COLUMN}} # {comment}"
+
+
 def render_config(cfg: dict) -> str:
     """Return a TOML config string scaffolded from a loaded cfg dict.
 
-    Active overrides (users, years, github_url) are written as live values;
-    optional keys are written as comments showing their current/default values.
-    The result is valid TOML that round-trips through load_config().
+    Every setting that differs from its default is written as a live key, so the
+    output round-trips through load_config() with the same values. Settings still
+    at their default are written as commented examples, keeping the exported file
+    self-documenting.
     """
     users = cfg.get("users", [])
     users_toml = "[" + ", ".join(f'"{u}"' for u in users) + "]"
-
     years = cfg.get("years", 3)
 
-    github_url = cfg.get("github_url", "https://github.com")
-    if github_url and github_url != "https://github.com":
-        network_url_line = f'github-url = "{github_url}"'
-    else:
-        network_url_line = (
-            '# github-url = "https://github.example.com"  # omit for github.com'
-        )
+    #: Keys that are always written live, keyed by the section they open.
+    fixed = {
+        "operatives": [f"users = {users_toml}"],
+        "surveillance": [f"years = {years}"],
+    }
 
-    output_format = cfg.get("output_format", "table")
-    min_contributions = cfg.get("min_contributions", 0)
-    totals = str(cfg.get("totals", False)).lower()
-    percent = str(cfg.get("percent", False)).lower()
-    rank_delta = str(cfg.get("rank_delta", True)).lower()
-    no_update_check = str(cfg.get("no_update_check", False)).lower()
+    blocks = []
+    for section_name, settings in _OPTIONAL_SETTINGS:
+        lines = fixed.pop(section_name, [])
+        lines += [_render_setting(*setting, cfg) for setting in settings]
+        blocks.append(f"[{section_name}]\n" + "\n".join(lines))
 
-    return f"""\
-[operatives]
-users = {users_toml}
+    # Any section with no optional settings (operatives) still needs emitting,
+    # ahead of the rest and in declaration order.
+    leading = [f"[{name}]\n" + "\n".join(lines) for name, lines in fixed.items()]
 
-[surveillance]
-years = {years}
-# period = "month"      # "week", "month", or "year" — overrides years when set
-# last-months = 6       # last 6 calendar months as separate columns
-# last-quarters = 4     # last 4 calendar quarters as separate columns
-# last-weeks = 8        # last 8 ISO weeks as separate columns
-
-[network]
-{network_url_line}
-
-[updates]
-# no-update-check = {no_update_check}
-
-[display]
-# format = "{output_format}"
-# min-contributions = {min_contributions}
-# totals = {totals}
-# percent = {percent}
-# rank-delta = {rank_delta}
-"""
+    return "\n\n".join(leading + blocks) + "\n"
 
 
 def generate_default_config(config_path=None, *, overwrite=False):
