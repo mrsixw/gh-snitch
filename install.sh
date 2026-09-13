@@ -22,26 +22,28 @@ echo -e "${BOLD}${BLUE}🕵️ Deploying operative...${RESET}"
 
 # Find the latest release
 echo -e "${YELLOW}Locating latest intelligence package...${RESET}"
-LATEST_RELEASE_JSON=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest")
-LATEST_RELEASE_URL=$(echo "${LATEST_RELEASE_JSON}" | grep -o "https://github.com/${REPO}/releases/download/[^/ ]*/${BINARY_NAME}" | head -n 1)
-
-if [ -z "${LATEST_RELEASE_URL}" ]; then
-    echo -e "${BOLD}\033[31m❌ Failed to locate latest release for ${REPO}.${RESET}"
-    exit 1
-fi
+# GitHub redirects this path to the newest release's asset, so there is no API
+# call and therefore no 60-per-hour unauthenticated rate limit to exhaust. That
+# limit is easy to burn through by retrying a failing install, and once spent it
+# blocked the install outright — no message could fix that, only not needing the
+# call. A missing asset now surfaces as a 404 on the download itself.
+RELEASE_BASE_URL="https://github.com/${REPO}/releases/latest/download"
+LATEST_RELEASE_URL="${RELEASE_BASE_URL}/${BINARY_NAME}"
 
 echo -e "${GREEN}Package located! Downloading...${RESET}"
-
-# The man page and completion scripts sit beside the binary in the same release,
-# so derive their base URL from the asset URL already resolved above rather than
-# making a second API call.
-RELEASE_BASE_URL="${LATEST_RELEASE_URL%/*}"
 
 # Create install directory if it doesn't exist
 mkdir -p "${INSTALL_DIR}"
 
-# Download the binary
-curl -sL "${LATEST_RELEASE_URL}" -o "${EXECUTABLE_PATH}"
+# Download the binary. -f so a 404 is a failure rather than an error page
+# written to disk; the file is removed on failure because curl opens it before
+# it knows the request succeeded, and a junk file here shadows any previously
+# working copy on PATH.
+if ! curl -sfL "${LATEST_RELEASE_URL}" -o "${EXECUTABLE_PATH}"; then
+    rm -f "${EXECUTABLE_PATH}"
+    echo -e "${BOLD}\033[31m❌ Failed to download binary from ${LATEST_RELEASE_URL}.${RESET}"
+    exit 1
+fi
 chmod +x "${EXECUTABLE_PATH}"
 
 echo -e "${BOLD}${GREEN}✅ Operative deployed to ${EXECUTABLE_PATH}!${RESET}"
