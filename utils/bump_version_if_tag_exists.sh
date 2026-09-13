@@ -18,7 +18,13 @@ if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
   version=$(python utils/read_version.py)
   git add pyproject.toml
   git commit -m "chore: bump version to ${version}" >/dev/null
-  git push origin "HEAD:${branch_name}" >/dev/null
+  # A rejected push leaves the bump commit local, the tag uncut and the remote
+  # untouched. `set -e` would stop the release either way, but silently — say
+  # which step gave up, so the CI log does not need reading the script.
+  if ! git push origin "HEAD:${branch_name}" >/dev/null; then
+    echo "git push failed; version bump commit not pushed" >&2
+    exit 1
+  fi
 fi
 
 printf '%s\n' "$version"
