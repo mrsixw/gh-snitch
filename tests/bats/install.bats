@@ -157,6 +157,59 @@ STUB
   printf '%s\n' "$(binary_calls)" | grep -qx -- "--init-config"
 }
 
+@test "leaves an existing config untouched and still finishes the install" {
+  # The upgrade path. --init-config prompts before overwriting, and under
+  # `curl | bash` stdin is the pipe, so the prompt reads EOF and Click aborts
+  # non-zero — which under set -e killed the installer before the man page and
+  # completions were installed.
+  mkdir -p "${FAKE_HOME}/.config/gh-snitch"
+  printf 'users = ["alice"]\n' > "${FAKE_HOME}/.config/gh-snitch/config.toml"
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  assert_output_contains "left untouched"
+  ! printf '%s\n' "$(binary_calls)" | grep -qx -- "--init-config"
+  [ -f "${FAKE_HOME}/.local/share/man/man1/${BINARY_NAME}.1.gz" ]
+  [ -f "${FAKE_HOME}/.local/share/bash-completion/completions/${BINARY_NAME}" ]
+}
+
+@test "does not overwrite the existing config file" {
+  mkdir -p "${FAKE_HOME}/.config/gh-snitch"
+  printf 'users = ["alice"]\n' > "${FAKE_HOME}/.config/gh-snitch/config.toml"
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "${FAKE_HOME}/.config/gh-snitch/config.toml")" = 'users = ["alice"]' ]
+}
+
+@test "honours an absolute XDG_CONFIG_HOME when looking for the config" {
+  # Must agree with get_config_dir() in xdg.py, or an upgrade would re-prompt
+  # for anyone using a custom config home.
+  export XDG_CONFIG_HOME="${BATS_TEST_TMPDIR}/xdg"
+  mkdir -p "${XDG_CONFIG_HOME}/gh-snitch"
+  printf 'users = ["bob"]\n' > "${XDG_CONFIG_HOME}/gh-snitch/config.toml"
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  assert_output_contains "left untouched"
+}
+
+@test "ignores a relative XDG_CONFIG_HOME, as the XDG spec requires" {
+  # xdg.py ignores a relative override; the installer must not diverge, or it
+  # would look for the config in the wrong place and re-prompt.
+  export XDG_CONFIG_HOME="relative/path"
+  mkdir -p "${FAKE_HOME}/.config/gh-snitch"
+  printf 'users = ["alice"]\n' > "${FAKE_HOME}/.config/gh-snitch/config.toml"
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  assert_output_contains "left untouched"
+}
+
 @test "installs the man page and all three completions" {
   run bash "${REPO_ROOT}/install.sh"
 
