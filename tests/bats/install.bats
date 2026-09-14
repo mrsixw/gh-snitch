@@ -90,6 +90,75 @@ STUB
   [ "$(calls curl | wc -l | tr -d ' ')" -eq 0 ]
 }
 
+@test "names brew when the interpreter is missing on macOS" {
+  # `uname` is stubbed rather than the tests reading the real platform: the
+  # suite has to prove all three branches wherever it runs, and a macOS-only
+  # assertion would silently stop testing anything on the Linux CI runner.
+  stub uname <<'STUB'
+printf 'Darwin\n'
+STUB
+
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "brew install python"
+}
+
+@test "names apt-get on a Debian-like Linux" {
+  stub uname <<'STUB'
+printf 'Linux\n'
+STUB
+  stub_silent apt-get
+
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "sudo apt-get install python3"
+}
+
+@test "names yum on an RPM-based Linux with no apt-get or dnf" {
+  stub uname <<'STUB'
+printf 'Linux\n'
+STUB
+  stub_silent yum
+
+  # PATH is the stub directory alone, so apt-get and dnf are genuinely absent
+  # and the fallback chain has to walk past both to reach yum.
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "sudo yum install python3"
+}
+
+@test "suggests python.org on a platform it does not recognise" {
+  stub uname <<'STUB'
+printf 'SunOS\n'
+STUB
+
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "https://www.python.org/downloads/"
+}
+
+@test "the too-old interpreter path carries the same guidance" {
+  # Both failure branches must advise, not just the missing-binary one. This is
+  # the branch a user on a stale distro actually hits.
+  stub uname <<'STUB'
+printf 'Darwin\n'
+STUB
+  stub python3 <<'STUB'
+[[ "$1" == "--version" ]] && { printf 'Python 3.9.18\n'; exit 0; }
+exit 1
+STUB
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "Python 3.9.18"
+  assert_output_contains "brew install python"
+}
+
 @test "the required version matches the one pyproject declares" {
   # The floor is written into install.sh by hand; pyproject is what actually
   # decides it. Drift between them would mislead every user who hits the check.
