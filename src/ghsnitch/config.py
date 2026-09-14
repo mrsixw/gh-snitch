@@ -120,10 +120,20 @@ def get_config_path():
     return CONFIG_DIR / "config.toml"
 
 
-def load_config(config_path=None):
+def load_config(config_path=None, *, warn_if_missing=True):
     """Load config from TOML file.
 
-    Returns dict with keys 'users', 'years', 'teams', and more.
+    Args:
+        config_path: Explicit config file path, or None for the default.
+        warn_if_missing: Whether an absent file is worth mentioning. A run that
+            names its operatives on the command line does not need a config at
+            all, so the nag is noise there. Callers passing an explicit path
+            should leave this True: a file the user named and that is not there
+            is worth saying out loud.
+
+    Returns:
+        dict: Config with keys 'users', 'years', 'teams', and more.
+
     Warns (does not error) if the file is not found.
     """
     path = Path(config_path) if config_path else get_config_path()
@@ -147,11 +157,12 @@ def load_config(config_path=None):
 
     if not path.exists():
         logger.debug("config not found at %s, using defaults", path)
-        print(
-            f"⚠️  No handler config found at {path}. "
-            "Run gh-snitch --init-config to establish a cover.",
-            file=sys.stderr,
-        )
+        if warn_if_missing:
+            print(
+                f"⚠️  No handler config found at {path}. "
+                "Run gh-snitch --init-config to establish a cover.",
+                file=sys.stderr,
+            )
         return config
 
     try:

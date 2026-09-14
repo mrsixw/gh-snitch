@@ -549,6 +549,86 @@ def test_not_found_operative_shows_warning_and_exits_nonzero(
     assert "gone dark" in result.output
 
 
+# ---------------------------------------------------------------------------
+# 🤫 The missing-config nag
+# ---------------------------------------------------------------------------
+
+NAG = "No handler config found"
+
+
+def _run_without_config(runner, tmp_path, requests_mock, extra_args):
+    """Invoke the CLI with the default config path pointed at an absent file."""
+    missing = tmp_path / "absent" / "config.toml"
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_graphql_response(("alice", 5))
+    )
+    with patch("ghsnitch.config.get_config_path", return_value=missing):
+        with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    return runner.invoke(gh_snitch, ["--no-update-check", *extra_args])
+
+
+def test_no_config_nag_when_users_given_on_the_command_line(
+    runner, tmp_path, requests_mock
+):
+    result = _run_without_config(
+        runner, tmp_path, requests_mock, ["--users", "alice", "--years", "0"]
+    )
+
+    assert result.exit_code == 0
+    assert NAG not in result.output
+
+
+def test_config_nag_survives_when_no_operative_source_is_given(
+    runner, tmp_path, requests_mock
+):
+    """With no --users and no --team the config is the only possible source,
+    so its absence is the actual explanation for an empty run."""
+    result = _run_without_config(runner, tmp_path, requests_mock, [])
+
+    assert NAG in result.output
+
+
+def test_config_nag_survives_for_an_explicit_path_that_is_not_there(
+    runner, tmp_path, requests_mock
+):
+    """The user named a file. Its absence is news, --users or not."""
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_graphql_response(("alice", 5))
+    )
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(tmp_path / "nope.toml"),
+                        "--no-update-check",
+                        "--users",
+                        "alice",
+                        "--years",
+                        "0",
+                    ],
+                )
+
+    assert NAG in result.output
+
+
+def test_config_nag_survives_when_only_a_team_is_named(runner, tmp_path, requests_mock):
+    """--team names a source, but that source lives in the config file.
+
+    `--team alpha` without a config cannot work, so silence here would leave
+    "Known cells: none" — the symptom — as the only account of what went wrong,
+    while the cause goes unmentioned. Both lines are printed instead.
+    """
+    result = _run_without_config(runner, tmp_path, requests_mock, ["--team", "alpha"])
+
+    assert NAG in result.output
+    assert "Known cells: none" in result.output
+
+
 def test_min_contributions_suppresses_below_threshold(runner, tmp_path, requests_mock):
     config_file = tmp_path / "config.toml"
     config_file.write_text(
