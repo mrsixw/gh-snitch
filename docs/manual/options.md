@@ -24,7 +24,7 @@
 | `--reset-snapshot` | off | Clear the saved contribution snapshot and exit |
 | `--no-trend` | off | Hide the Trend column |
 | `--show-config` | off | Print current config and exit |
-| `--export-config` | off | Print a TOML config scaffolded from the current CLI arguments and exit. Reflects `--users`, `--years`, `--github-url` overrides. Does not require `GITHUB_TOKEN`. Pipe to a file to save: `gh-snitch --users alice,bob --export-config > config.toml` |
+| `--export-config` | off | Print a TOML config scaffolded from the current CLI arguments and exit. Every setting that differs from its default is written as a live key, so the output round-trips back to the same configuration; defaults are written as commented examples. Does not require `GITHUB_TOKEN`. Pipe to a file to save: `gh-snitch --users alice,bob --export-config > config.toml` |
 | `--init-config` | off | Write default config file and exit |
 | `--no-update-check` | off | Skip checking for new releases. Also honoured via `GH_SNITCH_NO_UPDATE_CHECK`, or the `no-update-check` config key — see [Silencing the update check](#silencing-the-update-check) |
 | `--api-stats` | off | Print GraphQL request counts, points remaining and used, and the rate-limit reset time to stderr after output. The diagnostics lookup is best-effort and never changes a successful run into a failure. |

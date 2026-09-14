@@ -271,6 +271,84 @@ def test_render_config_custom_github_url_is_active():
     assert parsed["network"]["github-url"] == "https://ghe.corp.com"
 
 
+@pytest.mark.parametrize(
+    "cfg_key,value,expected_line",
+    [
+        ("period", "month", 'period = "month"'),
+        ("last_months", 3, "last-months = 3"),
+        ("last_quarters", 2, "last-quarters = 2"),
+        ("last_weeks", 12, "last-weeks = 12"),
+        (
+            "github_url",
+            "https://ghe.example.com",
+            'github-url = "https://ghe.example.com"',
+        ),
+        ("no_update_check", True, "no-update-check = true"),
+        ("output_format", "xlsx", 'format = "xlsx"'),
+        ("min_contributions", 7, "min-contributions = 7"),
+        ("totals", True, "totals = true"),
+        ("percent", True, "percent = true"),
+        ("rank_delta", False, "rank-delta = false"),
+    ],
+)
+def test_render_config_writes_non_default_settings_live(cfg_key, value, expected_line):
+    """A setting that differs from its default must survive the round trip.
+
+    Written as a comment it reads back as the default, so --export-config would
+    hand back a config with the setting silently reset.
+    """
+    output = render_config({"users": ["alice"], cfg_key: value})
+
+    assert expected_line in output.splitlines()
+
+
+def test_render_config_leaves_defaults_commented():
+    """Settings still at their default stay commented, so the file documents them."""
+    output = render_config({"users": ["alice"], "years": 3})
+
+    for key in (
+        "period",
+        "last-months",
+        "last-quarters",
+        "last-weeks",
+        "github-url",
+        "no-update-check",
+        "format",
+        "min-contributions",
+        "totals",
+        "percent",
+        "rank-delta",
+    ):
+        assert f"# {key} = " in output
+        assert not any(
+            line.startswith(f"{key} = ") for line in output.splitlines()
+        ), f"{key} written live while at its default"
+
+
+def test_render_config_round_trips_every_setting(tmp_path):
+    """Export then re-import must return an identical configuration."""
+    cfg = {
+        "users": ["alice", "bob"],
+        "years": 5,
+        "period": None,
+        "last_months": None,
+        "last_quarters": 4,
+        "last_weeks": None,
+        "github_url": "https://ghe.example.com",
+        "min_contributions": 7,
+        "totals": True,
+        "percent": True,
+        "rank_delta": False,
+        "output_format": "xlsx",
+        "no_update_check": True,
+        "teams": {},
+    }
+    path = tmp_path / "exported.toml"
+    path.write_text(render_config(cfg))
+
+    assert load_config(str(path)) == cfg
+
+
 def test_render_config_round_trips():
     cfg = {"users": ["alice", "bob"], "years": 2, "github_url": "https://github.com"}
     output = render_config(cfg)
