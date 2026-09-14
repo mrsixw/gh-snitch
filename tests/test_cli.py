@@ -1546,7 +1546,12 @@ def _register_multi_team_response(requests_mock):
     counts = {"alice": 40, "bob": 10, "shared": 30}
 
     def handler(request, _context):
-        logins = re.findall(r'user\(login: "([^"]+)"\)', request.json()["query"])
+        # Logins travel as GraphQL variables, so read them back in alias order.
+        payload = request.json()
+        variables = payload.get("variables", {})
+        aliases = re.findall(r"user_(\d+): user\(login: \$(\w+)\)", payload["query"])
+        ordered = sorted(aliases, key=lambda pair: int(pair[0]))
+        logins = [variables[variable] for _, variable in ordered]
         queried_logins.append(logins)
         return _graphql_response(*((login, counts[login]) for login in logins))
 
