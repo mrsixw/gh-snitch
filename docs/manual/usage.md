@@ -256,7 +256,34 @@ gh-snitch --users alice,bob,carol --export-config > ~/.config/gh-snitch/config.t
 gh-snitch --show-config
 ```
 
-Prints the currently loaded configuration.
+Prints every setting that affects a run, using the spellings your config file
+uses, then exits without contacting GitHub:
+
+```text
+users = ['alice', 'bob']
+years = 3
+period = None
+last-months = None
+last-quarters = None
+last-weeks = None
+format = table
+github-url = https://github.com
+min-contributions = 0
+totals = False
+percent = False
+rank-delta = True
+no-update-check = False
+teams = {}
+```
+
+This is the first place to look when the table is not what you expected — a
+`min-contributions` set in your config will be hiding operatives below the
+threshold, and it shows up here.
+
+Values are the file's as loaded, with one exception: `no-update-check` reports
+the *resolved* value, because `--no-update-check` and
+`GH_SNITCH_NO_UPDATE_CHECK` can switch the check off without the file
+mentioning it.
 
 ## GitHub Enterprise Server
 

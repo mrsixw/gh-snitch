@@ -95,7 +95,7 @@ make uninstall PREFIX=$HOME/.local
 | `--config` | Path to config file |
 | `--init-config` | Write default config and exit |
 | `--export-config` | Print TOML config scaffolded from current CLI args and exit; non-default settings are written live so it round-trips (pipe to a file to save) |
-| `--show-config` | Print current config and exit |
+| `--show-config` | Print every resolved setting and exit |
 | `--no-update-check` | Skip update check |
 | `--api-stats` | Print GraphQL request and rate-limit diagnostics to stderr |
 | `--version` | Show version |
