@@ -549,6 +549,84 @@ def test_not_found_operative_shows_warning_and_exits_nonzero(
     assert "gone dark" in result.output
 
 
+def _not_found_mix(requests_mock):
+    """alice resolves; missing does not."""
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json=_graphql_response(
+            ("alice", 50),
+            ("missing", None),
+            errors=[
+                {
+                    "type": "NOT_FOUND",
+                    "path": ["user_1"],
+                    "message": (
+                        "Could not resolve to a User with the login of 'missing'."
+                    ),
+                }
+            ],
+        ),
+    )
+
+
+def test_not_found_operative_is_absent_from_the_table(runner, tmp_path, requests_mock):
+    """A missing account and a ghost mean different things; only one is a row."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, [])
+
+    table = result.output.split("⚠️")[0]
+    assert "alice" in table
+    assert "missing" not in table
+
+
+def test_not_found_operative_is_still_reported_on_stderr(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, [])
+
+    assert "gone dark" in result.output
+    assert "missing" in result.output
+
+
+def test_not_found_operative_is_not_counted_as_a_ghost(runner, tmp_path, requests_mock):
+    """The 👻 tally counted unresolvable handles, overstating quiet operatives."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, [])
+
+    assert "ghost operative(s) detected" not in result.output
+
+
+def test_not_found_operative_is_absent_from_structured_output(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, ["--format", "json"])
+
+    rows = _extract_json(result.output)
+    assert [row["operative"] for row in rows] == ["alice"]
+
+
 def test_min_contributions_suppresses_below_threshold(runner, tmp_path, requests_mock):
     config_file = tmp_path / "config.toml"
     config_file.write_text(
