@@ -12,9 +12,9 @@ setup() {
   load 'helpers/common'
   common_setup
 
-  # curl does two jobs: query the release API, and fetch the assets. The
-  # installer resolves the download URL by grepping the API's JSON, so the
-  # stub returns realistic JSON rather than a canned URL.
+  # curl has one job now: fetch the assets from the API-free
+  # /releases/latest/download/ path. A missing asset is a 404 on the download
+  # itself, which is what BINARY_FAILS simulates.
   stub curl <<'STUB'
 url=""; out=""; prev=""
 for arg in "$@"; do
@@ -24,16 +24,6 @@ for arg in "$@"; do
 done
 
 case "${url}" in
-  *api.github.com*)
-    # `curl -s` without -f prints nothing useful on an HTTP error, so an empty
-    # body is what a rate-limited or offline run actually sees.
-    [[ -n "${API_FAILS:-}" ]] && exit 0
-    if [[ -n "${NO_ASSET:-}" ]]; then
-      printf '{"tag_name": "v1.2.3", "assets": []}\n'
-    else
-      printf '{"tag_name": "v1.2.3", "assets": [{"browser_download_url": "https://github.com/mrsixw/gh-snitch/releases/download/v1.2.3/gh-snitch"}]}\n'
-    fi
-    exit 0 ;;
   *.1.gz)
     [[ -n "${MAN_FAILS:-}" ]] && exit 22
     printf 'man page\n' > "${out}"; exit 0 ;;
@@ -41,7 +31,14 @@ case "${url}" in
     [[ -n "${COMPLETIONS_FAIL:-}" ]] && exit 22
     printf 'completion\n' > "${out}"; exit 0 ;;
   *)
-    [[ -n "${BINARY_FAILS:-}" ]] && exit 22
+    if [[ -n "${BINARY_FAILS:-}" ]]; then
+      # curl opens (and truncates) the -o file before it knows the request
+      # failed, so a failed download leaves a file behind unless the caller
+      # removes it. The stub has to behave the same way or the test that
+      # checks for leftovers proves nothing.
+      printf '<html>404 Not Found</html>\n' > "${out}"
+      exit 22
+    fi
     {
       printf '#!/usr/bin/env bash\n'
       printf 'printf "%%s\\n" "$*" >> "%s/binary.log"\n' "${STUB_LOG}"
@@ -59,42 +56,39 @@ binary_calls() { cat "${STUB_LOG}/binary.log" 2>/dev/null || true; }
 # 🔎 Resolving the release
 # ---------------------------------------------------------------------------
 
-@test "downloads the asset URL it found in the release JSON" {
+@test "downloads the binary from the API-free latest-release path" {
   run bash "${REPO_ROOT}/install.sh"
 
   [ "$status" -eq 0 ]
-  assert_called curl "https://github.com/mrsixw/gh-snitch/releases/download/v1.2.3/${BINARY_NAME}"
+  assert_called curl "https://github.com/mrsixw/gh-snitch/releases/latest/download/${BINARY_NAME}"
 }
 
-@test "derives the man and completion URLs from the asset URL, not a second API call" {
-  # One API call, one tag. Asking twice could straddle a release and mix
-  # versions.
+@test "never calls the GitHub API" {
+  # The whole point: the unauthenticated API allows 60 requests per hour per IP,
+  # and a user who spent them could not install at all.
   run bash "${REPO_ROOT}/install.sh"
 
   [ "$status" -eq 0 ]
-  assert_called curl "/releases/download/v1.2.3/${BINARY_NAME}.1.gz"
-  [ "$(calls curl | grep -c 'api.github.com')" -eq 1 ]
+  [ "$(calls curl | grep -c 'api.github.com')" -eq 0 ]
+}
+
+@test "fetches the man page and completions from the same latest-release path" {
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  assert_called curl "/releases/latest/download/${BINARY_NAME}.1.gz"
 }
 
 @test "fails when the release carries no matching asset" {
-  export NO_ASSET=1
+  # No API lookup to fail early any more: a release without the asset is a 404
+  # on the download, which the download guard turns into a clear failure.
+  export BINARY_FAILS=1
 
   run bash "${REPO_ROOT}/install.sh"
 
   [ "$status" -eq 1 ]
-  assert_output_contains "Failed to locate latest release"
+  assert_output_contains "Failed to download binary"
   [ ! -e "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
-}
-
-@test "fails when the release API answers with nothing" {
-  # `curl -s` has no -f, so an HTTP error is an empty body rather than a
-  # non-zero exit. The grep then finds no URL, which is what stops the install.
-  export API_FAILS=1
-
-  run bash "${REPO_ROOT}/install.sh"
-
-  [ "$status" -eq 1 ]
-  assert_output_contains "Failed to locate latest release"
 }
 
 # ---------------------------------------------------------------------------
@@ -126,16 +120,33 @@ binary_calls() { cat "${STUB_LOG}/binary.log" 2>/dev/null || true; }
   [ -f "${FAKE_HOME}/.config/fish/completions/${BINARY_NAME}.fish" ]
 }
 
-@test "a failed binary download is not caught at the download step" {
-  # Documents current behaviour rather than endorsing it. `curl -sL` has no -f
-  # and no failure check, so a 404 writes the error body to the executable
-  # path; the run only fails later, when that file is run. See #155.
+@test "fails when the binary download fails" {
   export BINARY_FAILS=1
 
   run bash "${REPO_ROOT}/install.sh"
 
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
+  assert_output_contains "Failed to download binary"
   refute_output_contains "Operative deployed"
+}
+
+@test "leaves no file behind when the binary download fails" {
+  # `curl -o` creates the file before it knows whether the request succeeded,
+  # so an unguarded failure leaves junk at the install path — shadowing any
+  # previously working copy on PATH.
+  export BINARY_FAILS=1
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ ! -e "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
+}
+
+@test "does not run a binary it failed to download" {
+  export BINARY_FAILS=1
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  refute_output_contains "Deployed version"
 }
 
 @test "treats a missing man page as non-fatal" {
