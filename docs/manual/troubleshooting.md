@@ -28,7 +28,12 @@ alice,bob` — is a complete instruction on its own, so it stays quiet:
 ```bash
 gh-snitch --users alice,bob     # no warning, no config file needed
 gh-snitch                       # warns: nothing tells it who to surveil
+gh-snitch --team alpha          # warns: the team is defined in the config
 ```
+
+`--team` still warns because a team is *defined* in the config file — without
+one there are no teams to select, and the warning is the explanation for the
+`Known cells: none` that follows.
 
 An explicit `--config /path/that/is/not/there.toml` always warns, whatever
 else you pass. You named a file and it is not there, which is worth saying.

@@ -616,17 +616,16 @@ def test_config_nag_survives_for_an_explicit_path_that_is_not_there(
     assert NAG in result.output
 
 
-def test_no_config_nag_when_a_team_is_selected(runner, tmp_path, requests_mock):
-    """--team is a named operative source too, so it silences the nag.
+def test_config_nag_survives_when_only_a_team_is_named(runner, tmp_path, requests_mock):
+    """--team names a source, but that source lives in the config file.
 
-    It is the weaker half of the rule: a team is *defined* in the config file,
-    so `--team alpha` with no config can never work. What the user gets instead
-    is "Team 'alpha' not found in config. Known cells: none." — accurate, and it
-    exits non-zero, but it does not say the file is missing entirely.
+    `--team alpha` without a config cannot work, so silence here would leave
+    "Known cells: none" — the symptom — as the only account of what went wrong,
+    while the cause goes unmentioned. Both lines are printed instead.
     """
     result = _run_without_config(runner, tmp_path, requests_mock, ["--team", "alpha"])
 
-    assert NAG not in result.output
+    assert NAG in result.output
     assert "Known cells: none" in result.output
 
 

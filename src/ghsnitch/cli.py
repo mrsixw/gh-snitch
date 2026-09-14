@@ -469,14 +469,17 @@ def gh_snitch(  # noqa: PLR0913
         return
 
     # The nag only helps when the config is the only place operatives could
-    # come from. A run that names them on the command line is complete as it
-    # stands, and telling that user to establish a cover on every invocation is
-    # just noise. An explicit --config that is not there still warns: the user
-    # named a file, and its absence is news.
-    cfg = load_config(
-        config,
-        warn_if_missing=config is not None or (users is None and not team),
-    )
+    # come from. `--users alice,bob` is complete as it stands, and telling that
+    # user to establish a cover on every invocation is just noise.
+    #
+    # `--team` is NOT such a source, despite naming one: a team is *defined* in
+    # the config file, so `--team alpha` without one cannot work. Suppressing
+    # here would leave "Team 'alpha' not found in config. Known cells: none." as
+    # the only explanation — the symptom, while the cause goes unmentioned.
+    #
+    # An explicit --config that is not there always warns: the user named a
+    # file, and its absence is news.
+    cfg = load_config(config, warn_if_missing=config is not None or users is None)
 
     # Any one of the flag, the environment variable, or the config key
     # switching the check off is enough; none of them can switch it back on.
