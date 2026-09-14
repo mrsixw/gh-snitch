@@ -1,7 +1,19 @@
-"""Crash-safe file writes for the caches gh-snitch keeps on disk."""
+"""Torn-write-safe file writes for the caches gh-snitch keeps on disk.
+
+The guarantee is that a reader never observes a partially written file: the
+destination is replaced by an atomic rename, so it holds either the whole old
+contents or the whole new ones.
+
+That is not the same as durability. Nothing here fsyncs, so a host crash or
+power loss can still lose a rename the filesystem had not yet flushed. These
+are caches — a lost update costs one re-fetch — and paying for fsync on every
+snapshot write is not worth it. Anything that must survive a power cut needs
+more than this module offers.
+"""
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 __all__ = ["write_json_atomic", "write_text_atomic"]
@@ -22,6 +34,9 @@ def write_text_atomic(path, text, encoding="utf-8"):
     directory because a rename across filesystems is not atomic — and, on some
     platforms, not permitted.
 
+    See the module docstring for what this does *not* promise: durability
+    across a host crash needs fsync, which caches do not warrant.
+
     Args:
         path: Destination file path.
         text: Complete contents to write.
@@ -32,9 +47,17 @@ def write_text_atomic(path, text, encoding="utf-8"):
             it was, and the temp file is removed.
     """
     path = Path(path)
-    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # mkstemp rather than a name built from the pid: threads share a pid, so two
+    # concurrent writers in one process would otherwise pick the same temp path
+    # and each could unlink or replace the other's file.
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f"{path.name}.", suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
     try:
-        tmp_path.write_text(text, encoding=encoding)
+        with os.fdopen(fd, "w", encoding=encoding) as handle:
+            handle.write(text)
         os.replace(tmp_path, path)
     except OSError:
         # A temp file left behind would accumulate silently, one per failure.

@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 
 import pytest
 
@@ -109,3 +110,33 @@ def test_write_json_atomic_leaves_the_old_file_intact_when_data_cannot_encode(
 
     assert json.loads(target.read_text()) == {"latest_version": "1.0.0"}
     assert [p.name for p in tmp_path.iterdir()] == ["cache.json"]
+
+
+def test_write_text_atomic_survives_concurrent_writers_in_one_process(tmp_path):
+    """Threads share a pid, so the temp name cannot be derived from it.
+
+    Two writers picking the same temp path can unlink or replace each other's
+    file; the survivor must still be one writer's complete text, and nothing
+    may be left behind.
+    """
+    target = tmp_path / "snapshot.json"
+    payloads = [f"payload-{i}" * 500 for i in range(8)]
+    barrier = threading.Barrier(len(payloads))
+    errors = []
+
+    def writer(text):
+        barrier.wait()
+        try:
+            write_text_atomic(target, text)
+        except OSError as exc:  # pragma: no cover - the bug this guards against
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(p,)) for p in payloads]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert target.read_text() in payloads
+    assert [p.name for p in tmp_path.iterdir()] == ["snapshot.json"]
