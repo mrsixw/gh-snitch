@@ -52,7 +52,12 @@ common_setup() {
 stub() {
   local name="$1"
   {
-    printf '#!/usr/bin/env bash\n'
+    # An absolute shebang, not `/usr/bin/env bash`: a test that reduces PATH to
+    # the stub directory alone — the only way to prove a command is genuinely
+    # absent — leaves `env` unable to find bash, and the stub then fails to run
+    # at all. That fails silently as empty output, which looks like a stub that
+    # ran and said nothing.
+    printf '#!/bin/bash\n'
     # shellcheck disable=SC2016  # Deliberate: this is the generated stub's own
     # source. "$*" and ${STUB_LOG} must expand when the stub runs, not now.
     printf 'printf "%%s\\n" "$*" >> "${STUB_LOG}/%s.log"\n' "${name}"

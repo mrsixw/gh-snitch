@@ -20,6 +20,51 @@ RESET="\033[0m"
 
 echo -e "${BOLD}${BLUE}🕵️ Deploying operative...${RESET}"
 
+# How to get Python, worded for the platform actually running this. A macOS
+# user told to run apt-get has been pointed somewhere their machine cannot
+# follow, which is worse than offering nothing: it reads like the installer
+# knows, and it does not. No version is pinned in the suggestion so the floor
+# below stays the single place the requirement is written down.
+python_install_hint() {
+    case "$(uname -s 2>/dev/null)" in
+        Darwin)
+            printf 'Install it with: brew install python'
+            ;;
+        Linux)
+            if command -v apt-get >/dev/null 2>&1; then
+                printf 'Install it with: sudo apt-get install python3'
+            elif command -v dnf >/dev/null 2>&1; then
+                printf 'Install it with: sudo dnf install python3'
+            elif command -v yum >/dev/null 2>&1; then
+                printf 'Install it with: sudo yum install python3'
+            else
+                printf "Install python3 with your distribution's package manager."
+            fi
+            ;;
+        *)
+            printf 'Download Python from https://www.python.org/downloads/'
+            ;;
+    esac
+}
+
+# gh-snitch ships as a Python zipapp, so python3 must be on PATH at runtime and
+# recent enough to run it. Check before downloading: otherwise the install
+# reports success, leaves a binary on PATH, and the first sign of trouble is a
+# bare "env: python3: No such file or directory" — or, on an old interpreter, a
+# SyntaxError from inside the zipapp. Neither names the real problem.
+if ! command -v python3 >/dev/null 2>&1; then
+    echo -e "${BOLD}\033[31m❌ gh-snitch needs Python 3.11 or newer, but python3 was not found.${RESET}"
+    echo -e "   $(python_install_hint)"
+    echo -e "   Then re-run this installer."
+    exit 1
+fi
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+    echo -e "${BOLD}\033[31m❌ gh-snitch needs Python 3.11 or newer, but found: $(python3 --version 2>&1).${RESET}"
+    echo -e "   $(python_install_hint)"
+    echo -e "   Then re-run this installer."
+    exit 1
+fi
+
 # Find the latest release
 echo -e "${YELLOW}Locating latest intelligence package...${RESET}"
 # GitHub redirects this path to the newest release's asset, so there is no API

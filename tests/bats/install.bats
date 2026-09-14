@@ -53,6 +53,122 @@ STUB
 binary_calls() { cat "${STUB_LOG}/binary.log" 2>/dev/null || true; }
 
 # ---------------------------------------------------------------------------
+# 🐍 Interpreter preflight
+# ---------------------------------------------------------------------------
+
+@test "refuses to install when python3 is absent" {
+  # PATH holds only the stubs, so `command -v python3` finds nothing. The
+  # preflight runs before mkdir or curl, so nothing else is needed for the
+  # script to get that far.
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "python3 was not found"
+  assert_output_contains "3.11"
+}
+
+@test "refuses to install when python3 is too old" {
+  stub python3 <<'STUB'
+[[ "$1" == "--version" ]] && { printf 'Python 3.9.18\n'; exit 0; }
+exit 1
+STUB
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "3.11 or newer"
+  assert_output_contains "Python 3.9.18"
+}
+
+@test "downloads nothing when the interpreter check fails" {
+  # The point of checking first: no half-finished install, and no binary left
+  # shadowing a working one on PATH.
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  [ ! -e "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
+  [ "$(calls curl | wc -l | tr -d ' ')" -eq 0 ]
+}
+
+@test "names brew when the interpreter is missing on macOS" {
+  # `uname` is stubbed rather than the tests reading the real platform: the
+  # suite has to prove all three branches wherever it runs, and a macOS-only
+  # assertion would silently stop testing anything on the Linux CI runner.
+  stub uname <<'STUB'
+printf 'Darwin\n'
+STUB
+
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "brew install python"
+}
+
+@test "names apt-get on a Debian-like Linux" {
+  stub uname <<'STUB'
+printf 'Linux\n'
+STUB
+  stub_silent apt-get
+
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "sudo apt-get install python3"
+}
+
+@test "names yum on an RPM-based Linux with no apt-get or dnf" {
+  stub uname <<'STUB'
+printf 'Linux\n'
+STUB
+  stub_silent yum
+
+  # PATH is the stub directory alone, so apt-get and dnf are genuinely absent
+  # and the fallback chain has to walk past both to reach yum.
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "sudo yum install python3"
+}
+
+@test "suggests python.org on a platform it does not recognise" {
+  stub uname <<'STUB'
+printf 'SunOS\n'
+STUB
+
+  PATH="${STUB_BIN}" run /bin/bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "https://www.python.org/downloads/"
+}
+
+@test "the too-old interpreter path carries the same guidance" {
+  # Both failure branches must advise, not just the missing-binary one. This is
+  # the branch a user on a stale distro actually hits.
+  stub uname <<'STUB'
+printf 'Darwin\n'
+STUB
+  stub python3 <<'STUB'
+[[ "$1" == "--version" ]] && { printf 'Python 3.9.18\n'; exit 0; }
+exit 1
+STUB
+
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "Python 3.9.18"
+  assert_output_contains "brew install python"
+}
+
+@test "the required version matches the one pyproject declares" {
+  # The floor is written into install.sh by hand; pyproject is what actually
+  # decides it. Drift between them would mislead every user who hits the check.
+  declared="$(sed -n 's/^requires-python *= *">=\([0-9.]*\)"/\1/p' "${REPO_ROOT}/pyproject.toml")"
+  [ -n "${declared}" ]
+  grep -q "${declared} or newer" "${REPO_ROOT}/install.sh"
+  grep -q "sys.version_info >= (${declared%%.*}, ${declared##*.})" "${REPO_ROOT}/install.sh"
+}
+
+# ---------------------------------------------------------------------------
 # 🔎 Resolving the release
 # ---------------------------------------------------------------------------
 
