@@ -487,6 +487,14 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"last-weeks = {cfg['last_weeks']}")
         click.echo(f"format = {cfg.get('output_format', 'table')}")
         click.echo(f"github-url = {cfg['github_url']}")
+        # The display settings decide which operatives reach the table at all.
+        # Omitting min-contributions here meant a config that silently filtered
+        # the cohort could not be diagnosed from --show-config, which is the one
+        # command a user runs to find out why the table looks wrong.
+        click.echo(f"min-contributions = {cfg['min_contributions']}")
+        click.echo(f"totals = {cfg['totals']}")
+        click.echo(f"percent = {cfg['percent']}")
+        click.echo(f"rank-delta = {cfg['rank_delta']}")
         # Names are the config-file spellings, not the internal cfg keys, so a
         # reader can grep their own config for what they see here.
         #

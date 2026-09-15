@@ -12,6 +12,7 @@ from click.testing import CliRunner
 
 from ghsnitch import cli as cli_mod
 from ghsnitch.cli import gh_snitch
+from ghsnitch.config import load_config
 
 
 def _context_id(users):
@@ -481,9 +482,73 @@ def test_show_config_labels_match_the_config_file_spellings(runner, tmp_path):
         "last-weeks",
         "format",
         "github-url",
+        "min-contributions",
+        "totals",
+        "percent",
+        "rank-delta",
         "no-update-check",
         "teams",
     ]
+
+
+def test_show_config_reports_every_setting_that_affects_a_run(runner, tmp_path):
+    """The guard against this bug recurring.
+
+    --show-config existed for six settings and then quietly stopped keeping up
+    with the config dict; min-contributions could hide operatives with no way to
+    see it. Asserting against `load_config` itself means the next key added to
+    the config is a failing test here rather than another silent omission.
+    """
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+
+    assert result.exit_code == 0
+    labels = {
+        line.split("=", 1)[0].strip()
+        for line in result.output.splitlines()
+        if "=" in line
+    }
+    # The one label that is not its key kebab-cased: the config file spells the
+    # internal `output_format` as `format`.
+    spellings = {"output_format": "format"}
+    for key in load_config(str(config_file)):
+        expected = spellings.get(key, key.replace("_", "-"))
+        assert expected in labels, f"--show-config omits {expected}"
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("[display]\nmin-contributions = 10\n", "min-contributions = 10"),
+        ("[display]\ntotals = true\n", "totals = True"),
+        ("[display]\npercent = true\n", "percent = True"),
+        ("[display]\nrank-delta = false\n", "rank-delta = False"),
+    ],
+)
+def test_show_config_reports_overridden_display_settings(
+    runner, tmp_path, body, expected
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n' + body)
+
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+
+    assert result.exit_code == 0
+    assert expected in result.output
+
+
+def test_show_config_reports_display_defaults(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+
+    assert "min-contributions = 0" in result.output
+    assert "totals = False" in result.output
+    assert "percent = False" in result.output
+    assert "rank-delta = True" in result.output
 
 
 def test_show_config_includes_github_url(runner, tmp_path):
