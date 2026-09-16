@@ -26,6 +26,7 @@ from ghsnitch.api import (
     get_rolling_week_ranges,
     get_year_ranges,
     graphql_url_for,
+    is_valid_github_login,
     make_github_graphql_request,
 )
 
@@ -56,8 +57,16 @@ def _graphql_response(*users, errors=None):
 
 
 def _query_logins(request):
-    """Return operative logins from a mocked GraphQL request in alias order."""
-    return re.findall(r'user\(login: "([^"]+)"\)', request.json()["query"])
+    """Return operative logins from a mocked GraphQL request in alias order.
+
+    Logins travel as GraphQL variables rather than inside the document, so this
+    reads them back from the variables in alias order.
+    """
+    payload = request.json()
+    variables = payload.get("variables", {})
+    names = re.findall(r"user_(\d+): user\(login: \$(\w+)\)", payload["query"])
+    ordered = sorted(names, key=lambda pair: int(pair[0]))
+    return [variables[variable] for _, variable in ordered]
 
 
 def test_resolve_github_token_prefers_gh_token(monkeypatch):
@@ -345,32 +354,86 @@ def test_get_year_ranges_prior_year_is_full_year():
 
 
 def test_build_contributions_query_contains_aliases():
-    query = build_contributions_query(
+    query, variables = build_contributions_query(
         ["alice", "bob"], "2025-01-01T00:00:00+00:00", "2025-12-31T23:59:59+00:00"
     )
     assert "user_0" in query
     assert "user_1" in query
     assert "contributionCalendar" in query
     assert "totalContributions" in query
+    assert variables["login0"] == "alice"
+    assert variables["login1"] == "bob"
 
 
 def test_build_contributions_query_handles_hyphen_in_username():
-    query = build_contributions_query(
+    query, variables = build_contributions_query(
         ["my-user"], "2025-01-01T00:00:00+00:00", "2025-12-31T23:59:59+00:00"
     )
     assert "user_0" in query
-    assert 'login: "my-user"' in query
+    assert "user_0: user(login: $login0)" in query
+    assert variables["login0"] == "my-user"
 
 
 def test_build_contributions_query_no_alias_collision_for_similar_usernames():
     """agent-007 and agent_007 must not produce the same GraphQL alias."""
-    query = build_contributions_query(
+    query, variables = build_contributions_query(
         ["agent-007", "agent_007"],
         "2025-01-01T00:00:00+00:00",
         "2025-12-31T23:59:59+00:00",
     )
-    assert 'user_0: user(login: "agent-007")' in query
-    assert 'user_1: user(login: "agent_007")' in query
+    assert "user_0: user(login: $login0)" in query
+    assert "user_1: user(login: $login1)" in query
+    assert variables["login0"] == "agent-007"
+    assert variables["login1"] == "agent_007"
+
+
+def test_build_contributions_query_interpolates_no_input():
+    """Nothing that came from outside may appear in the query document."""
+    query, variables = build_contributions_query(
+        ['quote"name'], "2025-01-01T00:00:00+00:00", "2025-12-31T23:59:59+00:00"
+    )
+    assert 'quote"name' not in query
+    assert "2025-01-01T00:00:00+00:00" not in query
+    assert variables["login0"] == 'quote"name'
+    assert variables["from"] == "2025-01-01T00:00:00+00:00"
+    assert variables["to"] == "2025-12-31T23:59:59+00:00"
+
+
+def test_build_contributions_query_declares_every_variable():
+    """An undeclared variable is a query-wide parse error, not a per-user one."""
+    query, variables = build_contributions_query(
+        ["alice", "bob"], "2025-01-01T00:00:00+00:00", "2025-12-31T23:59:59+00:00"
+    )
+    declarations = query[query.index("query(") + len("query(") : query.index(") {")]
+    for name in variables:
+        assert f"${name}:" in declarations
+
+
+@pytest.mark.parametrize(
+    "login",
+    ["octocat", "a", "my-user", "Agent-007", "a" * 39],
+)
+def test_is_valid_github_login_accepts_real_handles(login):
+    assert is_valid_github_login(login)
+
+
+@pytest.mark.parametrize(
+    "login",
+    [
+        "",
+        "-leading",
+        "trailing-",
+        "double--hyphen",
+        "under_score",
+        'quote"name',
+        "a" * 40,
+        "spaced name",
+        None,
+        123,
+    ],
+)
+def test_is_valid_github_login_rejects_impossible_handles(login):
+    assert not is_valid_github_login(login)
 
 
 def test_fetch_contributions_parses_response(requests_mock):
@@ -388,6 +451,60 @@ def test_fetch_contributions_parses_response(requests_mock):
     assert result["alice"][current_year] == 150
     assert result["alice"][prior_year] == 150
     assert not_found == set()
+
+
+def test_fetch_contributions_sends_logins_as_variables(requests_mock):
+    """The wire payload, not just the document, is what has to be safe."""
+    seen = []
+
+    def graphql_handler(request, context):
+        seen.append(request.json())
+        return _graphql_response(("alice", 5))
+
+    requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        fetch_contributions(["alice"], 0)
+
+    assert seen
+    for payload in seen:
+        assert payload["variables"]["login0"] == "alice"
+        assert "alice" not in payload["query"]
+
+
+def test_fetch_contributions_reports_malformed_handle_without_asking(requests_mock):
+    """One bad handle must not cost the valid operatives batched with it."""
+    current_year = str(date.today().year)
+    seen = []
+
+    def graphql_handler(request, context):
+        seen.append(request.json())
+        return _graphql_response(("alice", 42))
+
+    requests_mock.post("https://api.github.com/graphql", json=graphql_handler)
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        result, not_found = fetch_contributions(["alice", 'bad"handle'], 0)
+
+    assert not_found == {'bad"handle'}
+    assert result["alice"][current_year] == 42
+    assert result['bad"handle'][current_year] == 0
+    # The malformed handle never reached GitHub.
+    for payload in seen:
+        assert 'bad"handle' not in str(payload)
+
+
+def test_fetch_contributions_sends_nothing_when_every_handle_is_malformed(
+    requests_mock,
+):
+    requests_mock.post("https://api.github.com/graphql", json=_graphql_response())
+
+    with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+        result, not_found = fetch_contributions(["-nope-"], 0)
+
+    assert not_found == {"-nope-"}
+    assert result["-nope-"][str(date.today().year)] == 0
+    assert requests_mock.call_count == 0
 
 
 def test_fetch_contributions_null_user_returns_zero(requests_mock):
