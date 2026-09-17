@@ -389,3 +389,79 @@ STUB
   [ "$status" -eq 0 ]
   refute_output_contains "is not in your PATH"
 }
+
+# ---------------------------------------------------------------------------
+# 🕳️  Shadowed installs
+# ---------------------------------------------------------------------------
+#
+# Being on PATH and winning on PATH are different things. A stale copy earlier
+# in the search order takes every invocation, and before this check the
+# installer reported unqualified success while the user ran a different binary.
+
+@test "fails when another copy shadows the install" {
+  # A rogue binary in a directory that precedes ~/.local/bin in PATH.
+  local rogue_dir="${BATS_TEST_TMPDIR}/rogue"
+  mkdir -p "${rogue_dir}"
+  printf '#!/bin/bash\nexit 0\n' > "${rogue_dir}/${BINARY_NAME}"
+  chmod +x "${rogue_dir}/${BINARY_NAME}"
+
+  PATH="${rogue_dir}:${FAKE_HOME}/.local/bin:${PATH}" run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 1 ]
+  assert_output_contains "Another ${BINARY_NAME} shadows this install"
+  assert_output_contains "${rogue_dir}/${BINARY_NAME}"
+  # The real install still happened — it is the resolution order that is wrong.
+  [ -x "${FAKE_HOME}/.local/bin/${BINARY_NAME}" ]
+}
+
+@test "names both the installed and the shadowing path" {
+  local rogue_dir="${BATS_TEST_TMPDIR}/rogue"
+  mkdir -p "${rogue_dir}"
+  printf '#!/bin/bash\nexit 0\n' > "${rogue_dir}/${BINARY_NAME}"
+  chmod +x "${rogue_dir}/${BINARY_NAME}"
+
+  PATH="${rogue_dir}:${FAKE_HOME}/.local/bin:${PATH}" run bash "${REPO_ROOT}/install.sh"
+
+  assert_output_contains "${FAKE_HOME}/.local/bin/${BINARY_NAME}"
+  assert_output_contains "${rogue_dir}/${BINARY_NAME}"
+}
+
+@test "stays quiet when the install is the copy that wins" {
+  PATH="${FAKE_HOME}/.local/bin:${PATH}" run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  refute_output_contains "shadows this install"
+}
+
+@test "does not claim shadowing when nothing else is on PATH" {
+  # ~/.local/bin absent from PATH entirely: `command -v` finds nothing, so the
+  # existing PATH warning fires alone and the install is still a success.
+  run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  assert_output_contains "is not in your PATH"
+  refute_output_contains "shadows this install"
+}
+
+@test "is not fooled by a symlinked install directory" {
+  # ~/.local/bin reached through a symlink resolves to the same real file, so
+  # this must not be reported as a shadowing copy.
+  local link_dir="${BATS_TEST_TMPDIR}/linked-bin"
+  ln -s "${FAKE_HOME}/.local/bin" "${link_dir}"
+
+  PATH="${link_dir}:${PATH}" run bash "${REPO_ROOT}/install.sh"
+
+  [ "$status" -eq 0 ]
+  refute_output_contains "shadows this install"
+}
+
+@test "does not invite the user to run a shadowed binary" {
+  local rogue_dir="${BATS_TEST_TMPDIR}/rogue"
+  mkdir -p "${rogue_dir}"
+  printf '#!/bin/bash\nexit 0\n' > "${rogue_dir}/${BINARY_NAME}"
+  chmod +x "${rogue_dir}/${BINARY_NAME}"
+
+  PATH="${rogue_dir}:${FAKE_HOME}/.local/bin:${PATH}" run bash "${REPO_ROOT}/install.sh"
+
+  refute_output_contains "Begin surveillance"
+}

@@ -126,3 +126,31 @@ NO_COLOR=1 gh-snitch
 ## Hyperlinks not working
 
 OSC 8 hyperlinks require a supported terminal (e.g. iTerm2, Kitty, WezTerm). In unsupported terminals, operative names appear as plain text — this is expected behaviour.
+
+## `Another gh-snitch shadows this install`
+
+The installer put the binary in `~/.local/bin`, but a different copy sits earlier in your `PATH` and wins every invocation. The installer names both paths and exits non-zero rather than reporting a success you cannot use.
+
+This is the usual cause of two otherwise baffling symptoms:
+
+- `gh-snitch completions bash` fails with `No such command 'completions'` — the shadowing copy predates the subcommand.
+- `gh-snitch update` appears to do nothing, because it updates a copy you never actually run.
+
+Confirm which binary you are running, then remove the rogue copy:
+
+```bash
+command -v gh-snitch        # the one that actually runs
+rm "$(command -v gh-snitch)"
+```
+
+Re-run `install.sh` afterwards to confirm the warning is gone. If you would rather keep the other copy, reorder `PATH` so `~/.local/bin` comes first instead.
+
+## `~/.local/bin is not in your PATH`
+
+A warning, not a failure — the binary is installed, but your shell cannot find it by name. Add the directory to your `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Put that in `~/.bashrc` or `~/.zshrc` to make it stick.
