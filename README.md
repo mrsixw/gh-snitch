@@ -88,6 +88,8 @@ make uninstall PREFIX=$HOME/.local
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
 | `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph`, `stack`, `xlsx` |
 | `--output PATH` | Destination workbook path; required with `--format xlsx` |
+| `--watch` | Keep the table on screen, re-sweeping every `--interval` seconds |
+| `--interval SECONDS` | Seconds between `--watch` refreshes (default 300, minimum 60) |
 | `--no-rank-delta` | Hide the `±` rank-change column (shown by default) |
 | `--redact` | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …) for shareable reports |
 | `--delta` | Show change since last snapshot instead of current-year count |
