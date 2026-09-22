@@ -1,3 +1,4 @@
+import functools
 import importlib.metadata
 import logging
 import os
@@ -49,6 +50,7 @@ from .ui import (
     render_table,
 )
 from .updater import UpdateStatus, check_for_update, perform_update
+from .watch import MIN_WATCH_INTERVAL, run_watch
 
 __all__ = [
     "Shell",
@@ -197,6 +199,370 @@ def _stable_unique(values):
         list: Stable list containing each value once.
     """
     return list(dict.fromkeys(values))
+
+
+def _stdout_is_terminal():
+    """Whether stdout is an interactive terminal --watch can redraw."""
+    return sys.stdout.isatty()
+
+
+class _SweepFailed(Exception):
+    """A sweep could not complete; the message is written for the handler."""
+
+
+def _resolve_year_ranges(cfg, since, until):
+    """Return the date ranges to surveil, highest-precedence window first.
+
+    Args:
+        cfg: Effective config, after CLI overrides.
+        since: ``--since`` date string, or None.
+        until: ``--until`` date string, or None.
+
+    Returns:
+        tuple: ``(ranges, suppress_trend)``. ``suppress_trend`` is True when
+        the columns are not comparable year over year.
+
+    Raises:
+        ValueError: If the requested window is invalid.
+    """
+    if since is not None:
+        return [get_custom_range(since, until)], True
+    if cfg.get("last_quarters") is not None:
+        if cfg["last_quarters"] < 1:
+            raise ValueError("last-quarters must be at least 1.")
+        return get_rolling_quarter_ranges(cfg["last_quarters"]), True
+    if cfg.get("last_months") is not None:
+        return get_rolling_month_ranges(cfg["last_months"]), True
+    if cfg.get("last_weeks") is not None:
+        return get_rolling_week_ranges(cfg["last_weeks"]), True
+    if cfg.get("period") is not None:
+        # Trend is suppressed implicitly: render_table needs two columns.
+        return [get_period_range(cfg["period"])], False
+    return get_year_ranges(cfg["years"]), False
+
+
+def _compile_dossier(  # noqa: PLR0913
+    *,
+    cfg,
+    operative_list,
+    report_cohorts,
+    since,
+    until,
+    delta,
+    no_trend,
+    active_format,
+    output,
+    redact_map,
+):
+    """Sweep GitHub once and print the dossier in the requested format.
+
+    One call is one complete run: fetch, rank, snapshot, render and report.
+    ``--watch`` calls it on every refresh, which is why failures raise rather
+    than exit — the loop reports them and tries again next cycle.
+
+    Returns:
+        set: Operatives GitHub could not resolve.
+
+    Raises:
+        _SweepFailed: When GitHub cannot be reached or refuses the query, or
+            the Excel dossier cannot be written. The message is ready to show.
+    """
+    num_years = cfg["years"]
+    operative_github_url = cfg["github_url"]
+    multiple_team_reports = len(report_cohorts) > 1
+    # Resolved per sweep, not once: a rolling window's edges move with the
+    # clock, so a watch left running past midnight must move with them.
+    active_year_ranges, suppress_trend = _resolve_year_ranges(cfg, since, until)
+
+    click.echo("🔍 Initiating surveillance sweep...", err=True)
+
+    num_ranges = len(active_year_ranges)
+    use_progress = sys.stderr.isatty()
+
+    progress = Progress(
+        TextColumn("[bold blue]📡 Sweeping field reports..."),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("[dim]{task.completed}/{task.total} ranges"),
+        console=Console(stderr=True),
+        disable=not use_progress,
+    )
+
+    logger.info(
+        "sweep starting operatives=%s num_ranges=%d",
+        operative_list,
+        num_ranges,
+    )
+    sweep_start = time.monotonic()
+    try:
+        with progress:
+            task = progress.add_task("sweep", total=num_ranges)
+
+            def on_progress(completed, total):  # noqa: ARG001
+                progress.update(task, completed=completed)
+
+            data, not_found = fetch_contributions(
+                operative_list,
+                num_years,
+                operative_github_url,
+                on_progress,
+                year_ranges=active_year_ranges,
+            )
+    except GitHubGraphQLRateLimitError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: rate_limited error_count=%d errors=%s reset=%s",
+            duration,
+            e.error_count,
+            e.summary,
+            e.reset_at,
+        )
+        if e.reset_at:
+            raise _SweepFailed(
+                "⏱️  Surveillance rate limit reached. "
+                f"GitHub signals reset at {e.reset_at}. "
+                "Stand down and retry after that time."
+            ) from e
+        raise _SweepFailed(
+            "⏱️  Surveillance rate limit reached. Stand down briefly and try again."
+        ) from e
+    except GitHubGraphQLResourceLimitError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: resource_limited error_count=%d errors=%s",
+            duration,
+            e.error_count,
+            e.summary,
+        )
+        raise _SweepFailed(
+            "🕵️  Surveillance query exceeded GitHub's resource limits. "
+            "Reduce the number of operatives or time ranges and try again."
+        ) from e
+    except GitHubGraphQLError as e:
+        duration = time.monotonic() - sweep_start
+        logger.error(
+            "sweep failed after %.3fs: graphql_error error_count=%d errors=%s",
+            duration,
+            e.error_count,
+            e.summary,
+        )
+        raise _SweepFailed(f"🕵️  Surveillance query failed: {e.summary}") from e
+    except requests.exceptions.RequestException as e:
+        duration = time.monotonic() - sweep_start
+        detail = _bounded_error_detail(e)
+        logger.error("sweep failed after %.3fs: network_error=%s", duration, detail)
+        raise _SweepFailed(
+            f"📡 Signal lost after retries. Operative unreachable: {detail}"
+        ) from e
+
+    duration = time.monotonic() - sweep_start
+    logger.info("sweep complete duration=%.3fs", duration)
+
+    period_labels = [label for label, _, _ in active_year_ranges]
+    # Drop operatives GitHub could not resolve before anything is ranked or
+    # rendered. They carry zeros for every window, which would otherwise mark
+    # them 👻 in the table — and a ghost means something different and specific:
+    # a real account with no activity. Showing both signals for one handle
+    # invites the reader to treat a typo as a quiet colleague. The stderr
+    # warning below is where a missing operative is reported.
+    surveilled_cohorts = [
+        (name, [username for username in cohort_users if username not in not_found])
+        for name, cohort_users in report_cohorts
+    ]
+    reports = [
+        build_contribution_report(
+            name,
+            cohort_users,
+            data,
+            period_labels,
+            operative_github_url,
+            delta=delta,
+            min_contributions=cfg["min_contributions"],
+        )
+        for name, cohort_users in surveilled_cohorts
+    ]
+
+    for report in reports:
+        if report.missing_delta_snapshot:
+            if multiple_team_reports:
+                prefix = f"Team '{report.name}': "
+            else:
+                prefix = ""
+            click.echo(
+                f"📸 {prefix}No prior snapshot found — showing absolute counts. "
+                "Run again with --delta to see changes.",
+                err=True,
+            )
+
+    show_totals = cfg.get("totals", False)
+    _redact = redact_map or None
+    primary_report = reports[0]
+
+    if active_format == "json":
+        if multiple_team_reports:
+            rendered_output = render_multi_json(
+                reports, show_totals=show_totals, redact_map=_redact
+            )
+        else:
+            rendered_output = render_json(
+                primary_report.rows,
+                primary_report.period_labels,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        click.echo(rendered_output)
+    elif active_format == "csv":
+        if multiple_team_reports:
+            rendered_output = render_multi_csv(
+                reports, show_totals=show_totals, redact_map=_redact
+            )
+        else:
+            rendered_output = render_csv(
+                primary_report.rows,
+                primary_report.period_labels,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        click.echo(rendered_output, nl=False)
+    elif active_format == "markdown":
+        if multiple_team_reports:
+            rendered_output = render_multi_markdown(
+                reports, show_totals=show_totals, redact_map=_redact
+            )
+        else:
+            rendered_output = render_markdown(
+                primary_report.rows,
+                primary_report.period_labels,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        click.echo(rendered_output)
+    elif active_format == "graph":
+        if cfg.get("percent"):
+            click.echo(
+                "⚠️  --percent is ignored in graph format.",
+                err=True,
+            )
+        if show_totals:
+            click.echo(
+                "⚠️  --totals is ignored in graph format (no footer rows in charts).",
+                err=True,
+            )
+        if multiple_team_reports:
+            sections = []
+            for report in reports:
+                graph = render_graph(
+                    report.rows,
+                    report.period_labels,
+                    show_totals=show_totals,
+                    redact_map=_redact,
+                )
+                sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{graph}")
+            click.echo("\n\n".join(sections))
+        else:
+            click.echo(
+                render_graph(
+                    primary_report.rows,
+                    primary_report.period_labels,
+                    show_totals=show_totals,
+                    redact_map=_redact,
+                )
+            )
+    elif active_format == "stack":
+        if cfg.get("percent"):
+            click.echo("⚠️  --percent is ignored in stack format.", err=True)
+        if show_totals:
+            click.echo("⚠️  --totals is ignored in stack format.", err=True)
+        if multiple_team_reports:
+            sections = []
+            for report in reports:
+                stack = render_stack(
+                    report.rows, report.period_labels, redact_map=_redact
+                )
+                sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{stack}")
+            click.echo("\n\n".join(sections))
+        else:
+            click.echo(
+                render_stack(
+                    primary_report.rows,
+                    primary_report.period_labels,
+                    redact_map=_redact,
+                )
+            )
+    elif active_format == "xlsx":
+        try:
+            workbook_path = write_excel_report(
+                reports,
+                output,
+                operative_github_url,
+                show_totals=show_totals,
+                redact_map=_redact,
+            )
+        except (XlsxWriterException, OSError) as error:
+            raise _SweepFailed(
+                f"🚨 Excel dossier could not be secured: "
+                f"{_bounded_error_detail(error)}"
+            ) from error
+        click.echo(f"📊 Excel dossier secured at: {workbook_path}", err=True)
+    else:
+        tables = []
+        for report in reports:
+            table = render_table(
+                report.rows,
+                report.period_labels,
+                year_fraction=current_year_fraction(),
+                show_trend=(
+                    not no_trend and report.delta_column is None and not suppress_trend
+                ),
+                show_totals=show_totals,
+                show_percent=cfg.get("percent", False),
+                show_rank_delta=cfg.get("rank_delta", True),
+                delta_col=report.delta_column,
+                rank_deltas=report.rank_deltas,
+                ghost_usernames=report.ghost_usernames if not delta else None,
+                redact_map=_redact,
+                github_url=operative_github_url,
+            )
+            if multiple_team_reports:
+                table = f"🕵️  TEAM DOSSIER: {report.name}\n{table}"
+            tables.append(table)
+        click.echo("\n\n".join(tables))
+
+    for report in reports:
+        team_prefix = f"Team '{report.name}': " if multiple_team_reports else ""
+        if report.suppressed_count > 0:
+            click.echo(
+                f"🔕 {team_prefix}{report.suppressed_count} operative(s) "
+                "below threshold suppressed.",
+                err=True,
+            )
+
+        if report.ghost_usernames:
+            click.echo(
+                f"👻 {team_prefix}{len(report.ghost_usernames)} ghost operative(s) "
+                "detected — zero activity across all surveilled windows.",
+                err=True,
+            )
+
+    if not_found:
+        for username in sorted(not_found):
+            display = redact_map.get(username, username) if redact_map else username
+            click.echo(
+                f"⚠️  Operative '{display}' not found — they may have gone dark.",
+                err=True,
+            )
+        click.echo(
+            f"🚨 {len(not_found)} operative(s) could not be located. "
+            "Verify their handles and try again.",
+            err=True,
+        )
+
+    click.echo(
+        "🗂️  Dossier compiled. Handler review recommended.",
+        err=True,
+    )
+
+    return not_found
 
 
 @click.group(invoke_without_command=True)
@@ -371,6 +737,20 @@ def _stable_unique(values):
     metavar="PATH",
     help="Destination workbook path. Required with --format xlsx.",
 )
+@click.option(
+    "--watch",
+    is_flag=True,
+    default=False,
+    help="Keep the table on screen, re-sweeping every --interval seconds.",
+)
+@click.option(
+    "--interval",
+    default=300,
+    show_default=True,
+    type=click.IntRange(min=MIN_WATCH_INTERVAL),
+    metavar="SECONDS",
+    help="Seconds between --watch refreshes.",
+)
 @click.version_option(version=importlib.metadata.version("ghsnitch"))
 def gh_snitch(  # noqa: PLR0913
     ctx,
@@ -401,6 +781,8 @@ def gh_snitch(  # noqa: PLR0913
     reset_snapshot,
     output_format,
     output,
+    watch,
+    interval,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
     # This callback body *is* the program — without this guard, `gh-snitch
@@ -636,6 +1018,27 @@ def gh_snitch(  # noqa: PLR0913
     elif output is not None:
         raise click.UsageError("--output is only supported with --format xlsx.")
 
+    if (
+        not watch
+        and ctx.get_parameter_source("interval")
+        is not click.core.ParameterSource.DEFAULT
+    ):
+        raise click.UsageError("--interval only applies with --watch.")
+
+    if watch:
+        # Only the table redraws in place meaningfully. The machine-readable
+        # formats are for piping, where a stream of cleared screens and repeated
+        # documents is garbage to whatever reads it; xlsx writes a file once.
+        if active_format != "table":
+            raise click.UsageError(
+                f"--watch only works with the table format, not {active_format}."
+            )
+        if not _stdout_is_terminal():
+            raise click.UsageError(
+                "--watch needs a terminal to redraw; stdout is not one. "
+                "Drop --watch to pipe or redirect a single dossier."
+            )
+
     if not SECRET_GITHUB_TOKEN:
         click.echo(
             "🚨 GH_TOKEN or GITHUB_TOKEN not set. "
@@ -672,342 +1075,48 @@ def gh_snitch(  # noqa: PLR0913
         )
         return
 
-    # Resolve the active date ranges (highest-precedence wins).
-    # suppress_trend: True when the columns are not comparable year-over-year.
-    suppress_trend = False
-    if since is not None:
-        try:
-            active_year_ranges = [get_custom_range(since, until)]
-        except ValueError as e:
-            click.echo(f"⚠️  {e}", err=True)
-            sys.exit(1)
-        suppress_trend = True
-    elif active_last_quarters is not None:
-        if active_last_quarters < 1:
-            click.echo("⚠️  last-quarters must be at least 1.", err=True)
-            sys.exit(1)
-        active_year_ranges = get_rolling_quarter_ranges(active_last_quarters)
-        suppress_trend = True
-    elif active_last_months is not None:
-        active_year_ranges = get_rolling_month_ranges(active_last_months)
-        suppress_trend = True
-    elif active_last_weeks is not None:
-        active_year_ranges = get_rolling_week_ranges(active_last_weeks)
-        suppress_trend = True
-    elif active_period is not None:
-        active_year_ranges = [get_period_range(active_period)]
-        # trend suppressed implicitly by len < 2 in render_table
-    else:
-        active_year_ranges = get_year_ranges(num_years)
-
-    click.echo("🔍 Initiating surveillance sweep...", err=True)
-
-    num_ranges = len(active_year_ranges)
-    use_progress = sys.stderr.isatty()
-
-    progress = Progress(
-        TextColumn("[bold blue]📡 Sweeping field reports..."),
-        BarColumn(),
-        TaskProgressColumn(),
-        TextColumn("[dim]{task.completed}/{task.total} ranges"),
-        console=Console(stderr=True),
-        disable=not use_progress,
-    )
-
-    logger.info(
-        "sweep starting operatives=%s num_ranges=%d",
-        operative_list,
-        num_ranges,
-    )
-    sweep_start = time.monotonic()
+    # Checked once, up front: a bad window is a mistake in the command line, not
+    # a transient failure, so --watch must not sit retrying it every cycle.
     try:
-        with progress:
-            task = progress.add_task("sweep", total=num_ranges)
-
-            def on_progress(completed, total):  # noqa: ARG001
-                progress.update(task, completed=completed)
-
-            data, not_found = fetch_contributions(
-                operative_list,
-                num_years,
-                operative_github_url,
-                on_progress,
-                year_ranges=active_year_ranges,
-            )
-    except GitHubGraphQLRateLimitError as e:
-        duration = time.monotonic() - sweep_start
-        logger.error(
-            "sweep failed after %.3fs: rate_limited error_count=%d errors=%s reset=%s",
-            duration,
-            e.error_count,
-            e.summary,
-            e.reset_at,
-        )
-        if e.reset_at:
-            click.echo(
-                "⏱️  Surveillance rate limit reached. "
-                f"GitHub signals reset at {e.reset_at}. "
-                "Stand down and retry after that time.",
-                err=True,
-            )
-        else:
-            click.echo(
-                "⏱️  Surveillance rate limit reached. "
-                "Stand down briefly and try again.",
-                err=True,
-            )
-        sys.exit(1)
-    except GitHubGraphQLResourceLimitError as e:
-        duration = time.monotonic() - sweep_start
-        logger.error(
-            "sweep failed after %.3fs: resource_limited error_count=%d errors=%s",
-            duration,
-            e.error_count,
-            e.summary,
-        )
-        click.echo(
-            "🕵️  Surveillance query exceeded GitHub's resource limits. "
-            "Reduce the number of operatives or time ranges and try again.",
-            err=True,
-        )
-        sys.exit(1)
-    except GitHubGraphQLError as e:
-        duration = time.monotonic() - sweep_start
-        logger.error(
-            "sweep failed after %.3fs: graphql_error error_count=%d errors=%s",
-            duration,
-            e.error_count,
-            e.summary,
-        )
-        click.echo(f"🕵️  Surveillance query failed: {e.summary}", err=True)
-        sys.exit(1)
-    except requests.exceptions.RequestException as e:
-        duration = time.monotonic() - sweep_start
-        detail = _bounded_error_detail(e)
-        logger.error("sweep failed after %.3fs: network_error=%s", duration, detail)
-        click.echo(
-            f"📡 Signal lost after retries. Operative unreachable: {detail}",
-            err=True,
-        )
+        _resolve_year_ranges(cfg, since, until)
+    except ValueError as e:
+        click.echo(f"⚠️  {e}", err=True)
         sys.exit(1)
 
-    duration = time.monotonic() - sweep_start
-    logger.info("sweep complete duration=%.3fs", duration)
-
-    period_labels = [label for label, _, _ in active_year_ranges]
-    # Drop operatives GitHub could not resolve before anything is ranked or
-    # rendered. They carry zeros for every window, which would otherwise mark
-    # them 👻 in the table — and a ghost means something different and specific:
-    # a real account with no activity. Showing both signals for one handle
-    # invites the reader to treat a typo as a quiet colleague. The stderr
-    # warning below is where a missing operative is reported.
-    surveilled_cohorts = [
-        (name, [username for username in cohort_users if username not in not_found])
-        for name, cohort_users in report_cohorts
-    ]
-    reports = [
-        build_contribution_report(
-            name,
-            cohort_users,
-            data,
-            period_labels,
-            operative_github_url,
-            delta=delta,
-            min_contributions=cfg["min_contributions"],
-        )
-        for name, cohort_users in surveilled_cohorts
-    ]
-
-    for report in reports:
-        if report.missing_delta_snapshot:
-            if multiple_team_reports:
-                prefix = f"Team '{report.name}': "
-            else:
-                prefix = ""
-            click.echo(
-                f"📸 {prefix}No prior snapshot found — showing absolute counts. "
-                "Run again with --delta to see changes.",
-                err=True,
-            )
-
-    show_totals = cfg.get("totals", False)
-    _redact = redact_map or None
-    primary_report = reports[0]
-
-    if active_format == "json":
-        if multiple_team_reports:
-            rendered_output = render_multi_json(
-                reports, show_totals=show_totals, redact_map=_redact
-            )
-        else:
-            rendered_output = render_json(
-                primary_report.rows,
-                primary_report.period_labels,
-                show_totals=show_totals,
-                redact_map=_redact,
-            )
-        click.echo(rendered_output)
-    elif active_format == "csv":
-        if multiple_team_reports:
-            rendered_output = render_multi_csv(
-                reports, show_totals=show_totals, redact_map=_redact
-            )
-        else:
-            rendered_output = render_csv(
-                primary_report.rows,
-                primary_report.period_labels,
-                show_totals=show_totals,
-                redact_map=_redact,
-            )
-        click.echo(rendered_output, nl=False)
-    elif active_format == "markdown":
-        if multiple_team_reports:
-            rendered_output = render_multi_markdown(
-                reports, show_totals=show_totals, redact_map=_redact
-            )
-        else:
-            rendered_output = render_markdown(
-                primary_report.rows,
-                primary_report.period_labels,
-                show_totals=show_totals,
-                redact_map=_redact,
-            )
-        click.echo(rendered_output)
-    elif active_format == "graph":
-        if cfg.get("percent"):
-            click.echo(
-                "⚠️  --percent is ignored in graph format.",
-                err=True,
-            )
-        if show_totals:
-            click.echo(
-                "⚠️  --totals is ignored in graph format (no footer rows in charts).",
-                err=True,
-            )
-        if multiple_team_reports:
-            sections = []
-            for report in reports:
-                graph = render_graph(
-                    report.rows,
-                    report.period_labels,
-                    show_totals=show_totals,
-                    redact_map=_redact,
-                )
-                sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{graph}")
-            click.echo("\n\n".join(sections))
-        else:
-            click.echo(
-                render_graph(
-                    primary_report.rows,
-                    primary_report.period_labels,
-                    show_totals=show_totals,
-                    redact_map=_redact,
-                )
-            )
-    elif active_format == "stack":
-        if cfg.get("percent"):
-            click.echo("⚠️  --percent is ignored in stack format.", err=True)
-        if show_totals:
-            click.echo("⚠️  --totals is ignored in stack format.", err=True)
-        if multiple_team_reports:
-            sections = []
-            for report in reports:
-                stack = render_stack(
-                    report.rows, report.period_labels, redact_map=_redact
-                )
-                sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{stack}")
-            click.echo("\n\n".join(sections))
-        else:
-            click.echo(
-                render_stack(
-                    primary_report.rows,
-                    primary_report.period_labels,
-                    redact_map=_redact,
-                )
-            )
-    elif active_format == "xlsx":
-        try:
-            workbook_path = write_excel_report(
-                reports,
-                output,
-                operative_github_url,
-                show_totals=show_totals,
-                redact_map=_redact,
-            )
-        except (XlsxWriterException, OSError) as error:
-            click.echo(
-                f"🚨 Excel dossier could not be secured: "
-                f"{_bounded_error_detail(error)}",
-                err=True,
-            )
-            sys.exit(1)
-        click.echo(f"📊 Excel dossier secured at: {workbook_path}", err=True)
-    else:
-        tables = []
-        for report in reports:
-            table = render_table(
-                report.rows,
-                report.period_labels,
-                year_fraction=current_year_fraction(),
-                show_trend=(
-                    not no_trend and report.delta_column is None and not suppress_trend
-                ),
-                show_totals=show_totals,
-                show_percent=cfg.get("percent", False),
-                show_rank_delta=cfg.get("rank_delta", True),
-                delta_col=report.delta_column,
-                rank_deltas=report.rank_deltas,
-                ghost_usernames=report.ghost_usernames if not delta else None,
-                redact_map=_redact,
-                github_url=operative_github_url,
-            )
-            if multiple_team_reports:
-                table = f"🕵️  TEAM DOSSIER: {report.name}\n{table}"
-            tables.append(table)
-        click.echo("\n\n".join(tables))
-
-    for report in reports:
-        team_prefix = f"Team '{report.name}': " if multiple_team_reports else ""
-        if report.suppressed_count > 0:
-            click.echo(
-                f"🔕 {team_prefix}{report.suppressed_count} operative(s) "
-                "below threshold suppressed.",
-                err=True,
-            )
-
-        if report.ghost_usernames:
-            click.echo(
-                f"👻 {team_prefix}{len(report.ghost_usernames)} ghost operative(s) "
-                "detected — zero activity across all surveilled windows.",
-                err=True,
-            )
-
-    if not_found:
-        for username in sorted(not_found):
-            display = redact_map.get(username, username) if redact_map else username
-            click.echo(
-                f"⚠️  Operative '{display}' not found — they may have gone dark.",
-                err=True,
-            )
-        click.echo(
-            f"🚨 {len(not_found)} operative(s) could not be located. "
-            "Verify their handles and try again.",
-            err=True,
-        )
-
-    click.echo(
-        "🗂️  Dossier compiled. Handler review recommended.",
-        err=True,
+    sweep = functools.partial(
+        _compile_dossier,
+        cfg=cfg,
+        operative_list=operative_list,
+        report_cohorts=report_cohorts,
+        since=since,
+        until=until,
+        delta=delta,
+        no_trend=no_trend,
+        active_format=active_format,
+        output=output,
+        redact_map=redact_map,
     )
 
-    if not no_update_check:
-        update_msg = check_for_update()
-        if update_msg:
-            click.echo(update_msg, err=True)
+    not_found = set()
+    if watch:
+        # Update checks are skipped while watching: the nag would repeat under
+        # every refresh of a screen that is meant to be read at a glance.
+        run_watch(sweep, interval, on_error=(_SweepFailed,))
+    else:
+        try:
+            not_found = sweep()
+        except _SweepFailed as e:
+            click.echo(str(e), err=True)
+            sys.exit(1)
+
+        if not no_update_check:
+            update_msg = check_for_update()
+            if update_msg:
+                click.echo(update_msg, err=True)
 
     if api_stats:
         stats = get_api_stats()
-        rate_limit = get_graphql_rate_limit(operative_github_url)
+        rate_limit = get_graphql_rate_limit(cfg["github_url"])
         _print_api_stats_summary(
             run_start,
             len(operative_list),
@@ -1017,9 +1126,6 @@ def gh_snitch(  # noqa: PLR0913
 
     if not_found:
         sys.exit(1)
-
-
-# ── Shell completions ───────────────────────────────────────────────────────
 
 
 @gh_snitch.command()

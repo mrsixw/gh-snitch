@@ -18,6 +18,8 @@
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
 | `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, `markdown`, `graph`, `stack`, or `xlsx`. Text formats write clean data to stdout and send status messages to stderr. Excel writes a workbook to `--output`. |
 | `--output PATH` | none | Destination for `--format xlsx`. Required for Excel output, rejected with other formats, and never overwrites an existing file. |
+| `--watch` | off | Clear the screen and re-sweep every `--interval` seconds until Ctrl-C. Table format only, and stdout must be a terminal. Skips the update check. |
+| `--interval SECONDS` | `300` | Seconds between `--watch` refreshes. Minimum 60, because every refresh is a full sweep against your API budget. Only valid with `--watch`. |
 | `--no-rank-delta` | off | Hide the `±` rank-change column (rank delta is shown by default) |
 | `--redact` | off | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …); suppresses hyperlinks. Codenames are assigned in alphabetical order of the real username and are deterministic across runs. Works with all output formats. |
 | `--delta` | off | Replace the current-year column with `Δ Today` showing the change since the last saved snapshot; green/red-coded |
@@ -196,6 +198,6 @@ users = ["alice", "bob"]
 users = ["carol", "dave"]
 ```
 
-CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-quarters`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, and `--no-rank-delta` override config file values. `--since`, `--until`, and `--output` are command-line only because they encode a specific reporting run.
+CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-quarters`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, and `--no-rank-delta` override config file values. `--since`, `--until`, `--output`, `--watch` and `--interval` are command-line only because they encode a specific reporting run.
 
 `--last-quarters` cannot be combined on the command line with `--years`, `--period`, `--last-months`, `--last-weeks`, `--since`, or `--until`. An explicit legacy time selector overrides `last-quarters` when the latter comes from the config file.
