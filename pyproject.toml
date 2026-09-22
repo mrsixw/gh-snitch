@@ -17,6 +17,7 @@ dependencies = [
   "rich",
   "asciichartpy",
   "xlsxwriter",
+  "wcwidth",
 ]
 
 [project.scripts]

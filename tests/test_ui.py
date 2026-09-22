@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import unicodedata
 from unittest.mock import patch
 
 from ghsnitch.ui import (
@@ -839,34 +841,33 @@ def test_render_table_ghost_indicator_tty():
     assert "👻" in output
 
 
+def _display_width(line):
+    """Terminal columns a rendered line occupies, escapes stripped.
+
+    Measured independently of tabulate so the test cannot agree with a bug in
+    the width calculation it is checking.
+    """
+    line = re.sub(r"\x1b\]8;[^\x1b]*\x1b\\", "", line)  # OSC 8 hyperlinks
+    line = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)  # SGR colour
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in line)
+
+
 def test_render_table_ghost_emoji_column_alignment_tty():
-    # 👻 is a wide Unicode character (East Asian Width = W, 2 terminal columns).
-    # Without explicit wide-char accounting, tabulate undercounts it by 1 and
-    # pads ghost rows with one too few spaces, misaligning subsequent columns.
-    # Verify the separator width matches every data row's content width.
+    # 👻 is a wide character (East Asian Width W): two terminal columns. If
+    # tabulate counts it as one, ghost rows are padded one short and every
+    # column after the operative drifts left. Hyperlinks and colour codes are
+    # in play too, since the TTY path wraps cells in both.
     rows = [
-        {"username": "alice", "2025": 0},
-        {"username": "bob", "2025": 50},
+        {"username": "alice", "2025": 0, "2024": 3},
+        {"username": "bob", "2025": 50, "2024": 40},
     ]
-    import re
-
-    def strip_escapes(s):
-        s = re.sub(r"\x1b\][^\x1b]*\x1b\\", "", s)  # OSC 8
-        s = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", s)  # ANSI
-        return s
-
     with patch("ghsnitch.ui.IS_TTY", True):
-        output = render_table(rows, ["2025"], ghost_usernames={"alice"})
+        output = render_table(rows, ["2025", "2024"], ghost_usernames={"alice"})
 
-    lines = [strip_escapes(ln) for ln in output.splitlines() if ln.strip()]
-    sep_line = next(ln for ln in lines if ln.startswith("-"))
-    sep_width = len(sep_line)
-    for line in lines:
-        if line.startswith("-"):
-            continue
-        # Each data/header line must be no wider than the separator (allowing
-        # for trailing spaces that some tabulate versions omit).
-        assert len(line) <= sep_width + 1, f"misaligned line: {line!r}"
+    lines = [ln.rstrip() for ln in output.splitlines() if ln.strip()]
+    sep_line = next(ln for ln in lines if set(ln) <= {"-", " "})
+    widths = {_display_width(ln) for ln in lines}
+    assert widths == {_display_width(sep_line)}, output
 
 
 def test_render_table_no_ghost_when_not_provided():
