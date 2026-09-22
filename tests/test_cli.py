@@ -8,6 +8,7 @@ from datetime import date
 from unittest.mock import patch
 
 import pytest
+import requests
 from click.testing import CliRunner
 
 from ghsnitch import cli as cli_mod
@@ -2863,3 +2864,142 @@ def test_update_check_runs_when_nothing_disables_it(
     # the check had been removed entirely.
     monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
     _run_to_completion(runner, tmp_path, requests_mock).assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# 👁️ --watch
+# ---------------------------------------------------------------------------
+
+
+def _watch_config(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nyears = 0\n'
+    )
+    return config_file
+
+
+def _watch_for(monkeypatch, cycles):
+    """Run the real watch loop for ``cycles`` refreshes, then press Ctrl-C."""
+    real_run_watch = cli_mod.run_watch
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) >= cycles:
+            raise KeyboardInterrupt
+
+    def bounded(refresh, interval, **kwargs):
+        real_run_watch(
+            refresh, interval, clear=lambda: None, sleep=fake_sleep, **kwargs
+        )
+
+    monkeypatch.setattr(cli_mod, "run_watch", bounded)
+    monkeypatch.setattr(cli_mod, "_stdout_is_terminal", lambda: True)
+    return sleeps
+
+
+def test_watch_sweeps_each_cycle_and_signs_off_on_ctrl_c(
+    runner, tmp_path, requests_mock, monkeypatch
+):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_graphql_response(("alice", 5))
+    )
+    sleeps = _watch_for(monkeypatch, cycles=2)
+
+    result = _run(
+        runner, _watch_config(tmp_path), tmp_path, ["--watch", "--interval", "90"]
+    )
+
+    assert result.exit_code == 0
+    assert requests_mock.call_count == 2
+    assert sleeps == [90, 90]
+    assert result.output.count("alice") >= 2
+    assert "Last refreshed" in result.output
+    assert "Operative went dark. Signing off." in result.output
+
+
+def test_watch_rides_out_a_failed_sweep(runner, tmp_path, requests_mock, monkeypatch):
+    """A dropped connection costs one refresh, not the whole watch."""
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_graphql_response(("alice", 5))
+    )
+    # Fail the whole first sweep, as a connection still down after the API
+    # client's own retries would.
+    real_fetch = cli_mod.fetch_contributions
+    attempts = []
+
+    def down_then_up(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise requests.exceptions.ConnectionError("down")
+        return real_fetch(*args, **kwargs)
+
+    monkeypatch.setattr(cli_mod, "fetch_contributions", down_then_up)
+    _watch_for(monkeypatch, cycles=2)
+
+    result = _run(runner, _watch_config(tmp_path), tmp_path, ["--watch"])
+
+    assert result.exit_code == 0
+    assert "Signal lost" in result.output
+    assert "retrying next cycle" in result.output
+    assert "Dossier compiled" in result.output
+
+
+def test_watch_skips_the_update_check(runner, tmp_path, requests_mock, monkeypatch):
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_graphql_response(("alice", 5))
+    )
+    _watch_for(monkeypatch, cycles=1)
+
+    def explode():
+        raise AssertionError("update check ran during --watch")
+
+    monkeypatch.setattr(cli_mod, "check_for_update", explode)
+    config_file = _watch_config(tmp_path)
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch, ["--config", str(config_file), "--watch"]
+                )
+
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize("fmt", ["json", "csv", "markdown", "graph", "stack"])
+def test_watch_refuses_non_table_formats(runner, tmp_path, monkeypatch, fmt):
+    monkeypatch.setattr(cli_mod, "_stdout_is_terminal", lambda: True)
+
+    result = _run(
+        runner, _watch_config(tmp_path), tmp_path, ["--watch", "--format", fmt]
+    )
+
+    assert result.exit_code == 2
+    assert "--watch only works with the table format" in result.output
+
+
+def test_watch_refuses_a_non_terminal_stdout(runner, tmp_path, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_stdout_is_terminal", lambda: False)
+
+    result = _run(runner, _watch_config(tmp_path), tmp_path, ["--watch"])
+
+    assert result.exit_code == 2
+    assert "needs a terminal" in result.output
+
+
+def test_watch_interval_has_a_floor(runner, tmp_path):
+    result = _run(
+        runner, _watch_config(tmp_path), tmp_path, ["--watch", "--interval", "5"]
+    )
+
+    assert result.exit_code == 2
+    assert "--interval" in result.output
+
+
+def test_interval_without_watch_is_an_error(runner, tmp_path):
+    """Silently ignoring it would read as the flag doing something."""
+    result = _run(runner, _watch_config(tmp_path), tmp_path, ["--interval", "120"])
+
+    assert result.exit_code == 2
+    assert "--interval only applies with --watch" in result.output
