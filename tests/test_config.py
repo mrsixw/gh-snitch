@@ -220,6 +220,60 @@ def test_update_config_is_idempotent(tmp_path):
     assert added_second == []
 
 
+def test_update_config_does_not_double_the_comment_marker(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+    update_config(str(config_file))
+    text = config_file.read_text()
+    assert "# #" not in text
+    assert "# Show a Total column" in text
+
+
+def test_update_config_does_not_re_add_an_active_key_as_help(tmp_path):
+    """An active key must not come back as a comment in the next key's help."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n\n[surveillance]\nlast-months = 6\n'
+    )
+    update_config(str(config_file))
+    text = config_file.read_text()
+    assert "# last-months" not in text
+    assert "last-months = 6" in text
+
+
+def test_update_config_adds_each_missing_key_in_a_run_of_commented_keys(tmp_path):
+    """The template's surveillance keys sit in one unbroken run of comments.
+
+    Each must be checked on its own: a config that already has last-weeks is
+    still missing period, last-months and last-quarters.
+    """
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n\n[surveillance]\nlast-weeks = 8\n'
+    )
+    added = update_config(str(config_file))
+    for key in ("period", "last-months", "last-quarters"):
+        assert f"surveillance.{key}" in added
+    text = config_file.read_text()
+    assert "# last-months = 6 (added by --update-config)" in text
+    assert text.count("# Show the last N calendar months") == 1
+
+
+def test_update_config_keeps_each_help_block_with_its_own_key(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n\n[surveillance]\n')
+    update_config(str(config_file))
+    text = config_file.read_text()
+    assert (
+        "# Show the last N ISO weeks as separate columns.\n"
+        "# last-weeks = 8 (added by --update-config)\n"
+    ) in text
+    assert (
+        "# Show the last N calendar months as separate columns.\n"
+        "# last-months = 6 (added by --update-config)\n"
+    ) in text
+
+
 def test_update_config_fresh_config_no_display_users(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text('[operatives]\nusers = ["alice"]\n')
