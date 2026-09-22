@@ -276,6 +276,18 @@ no-update-check = False
 teams = {}
 ```
 
+Each value is the one the run would actually use: your config file, then any
+flags on the same command line applied on top. Add flags to see what a given
+invocation would do:
+
+```bash
+gh-snitch --team backend --last-months 3 --show-config
+```
+
+Here `users` lists the `backend` team's members, `last-months` is `3`, and a
+`last-quarters` window from your config shows as `None` because the flag
+replaces it.
+
 This is the first place to look when the table is not what you expected — a
 `min-contributions` set in your config will be hiding operatives below the
 threshold, and it shows up here.

@@ -551,6 +551,100 @@ def test_show_config_reports_display_defaults(runner, tmp_path):
     assert "rank-delta = True" in result.output
 
 
+def test_show_config_reports_cli_overrides_not_the_file(runner, tmp_path):
+    """The reproduction from #165: every line is the value the run would use.
+
+    --users and --years used to be ignored while --no-update-check was
+    honoured, in the same listing, with nothing to tell them apart.
+    """
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n'
+        "[surveillance]\nyears = 2\n"
+        "[updates]\nno-update-check = false\n"
+    )
+
+    result = runner.invoke(
+        gh_snitch,
+        [
+            "--config",
+            str(config_file),
+            "--users",
+            "bob",
+            "--years",
+            "9",
+            "--no-update-check",
+            "--show-config",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "users = ['bob']" in result.output
+    assert "years = 9" in result.output
+    assert "no-update-check = True" in result.output
+
+
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        (["--github-url", "https://ghe.example.com"], "github-url = https://ghe"),
+        (["--min-contributions", "25"], "min-contributions = 25"),
+        (["--totals"], "totals = True"),
+        (["--percent"], "percent = True"),
+        (["--no-rank-delta"], "rank-delta = False"),
+        (["--format", "JSON"], "format = json"),
+        (["--period", "Month"], "period = month"),
+        (["--last-months", "4"], "last-months = 4"),
+        (["--last-weeks", "6"], "last-weeks = 6"),
+    ],
+)
+def test_show_config_reports_each_flag_override(runner, tmp_path, args, expected):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    result = runner.invoke(
+        gh_snitch, ["--config", str(config_file), *args, "--show-config"]
+    )
+
+    assert result.exit_code == 0
+    assert expected in result.output
+
+
+def test_show_config_clears_a_configured_quarterly_window_overridden_by_flag(
+    runner, tmp_path
+):
+    """A CLI time selector displaces last-quarters from the file, as in a run."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[surveillance]\nlast-quarters = 4\n'
+    )
+
+    result = runner.invoke(
+        gh_snitch,
+        ["--config", str(config_file), "--last-months", "3", "--show-config"],
+    )
+
+    assert result.exit_code == 0
+    assert "last-quarters = None" in result.output
+    assert "last-months = 3" in result.output
+
+
+def test_show_config_reports_the_selected_team_as_the_operatives(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice"]\n[teams.backend]\nusers = ["bob", "carol"]\n'
+    )
+
+    result = runner.invoke(
+        gh_snitch,
+        ["--config", str(config_file), "--team", "backend", "--show-config"],
+    )
+
+    assert result.exit_code == 0
+    assert "users = ['bob', 'carol']" in result.output
+    assert "teams.backend = ['bob', 'carol']" in result.output
+
+
 def test_show_config_includes_github_url(runner, tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text(

@@ -478,39 +478,6 @@ def gh_snitch(  # noqa: PLR0913
         or cfg.get("no_update_check", False)
     )
 
-    if show_config:
-        click.echo(f"users = {cfg['users']}")
-        click.echo(f"years = {cfg['years']}")
-        click.echo(f"period = {cfg['period']}")
-        click.echo(f"last-months = {cfg['last_months']}")
-        click.echo(f"last-quarters = {cfg['last_quarters']}")
-        click.echo(f"last-weeks = {cfg['last_weeks']}")
-        click.echo(f"format = {cfg.get('output_format', 'table')}")
-        click.echo(f"github-url = {cfg['github_url']}")
-        # The display settings decide which operatives reach the table at all.
-        # Omitting min-contributions here meant a config that silently filtered
-        # the cohort could not be diagnosed from --show-config, which is the one
-        # command a user runs to find out why the table looks wrong.
-        click.echo(f"min-contributions = {cfg['min_contributions']}")
-        click.echo(f"totals = {cfg['totals']}")
-        click.echo(f"percent = {cfg['percent']}")
-        click.echo(f"rank-delta = {cfg['rank_delta']}")
-        # Names are the config-file spellings, not the internal cfg keys, so a
-        # reader can grep their own config for what they see here.
-        #
-        # This one line reports the *resolved* value rather than the file's:
-        # --show-config should say what will actually happen, and the flag and
-        # environment variable can switch the check off without the file
-        # mentioning it. Its neighbours echo the file as loaded.
-        click.echo(f"no-update-check = {no_update_check}")
-        teams = cfg.get("teams", {})
-        if teams:
-            for team_name, members in sorted(teams.items()):
-                click.echo(f"teams.{team_name} = {members}")
-        else:
-            click.echo("teams = {}")
-        return
-
     # Validate --since / --until before touching config.
     if until is not None and since is None:
         click.echo("⚠️  --until requires --since to be set.", err=True)
@@ -613,6 +580,38 @@ def gh_snitch(  # noqa: PLR0913
         cfg["rank_delta"] = False
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
+
+    # Printed only after every CLI override has been applied, so each line is
+    # the value this run would use rather than what the file says. Reporting
+    # some settings resolved and others as loaded made the listing look
+    # authoritative while silently ignoring flags such as --users and --years.
+    if show_config:
+        click.echo(f"users = {cfg['users']}")
+        click.echo(f"years = {cfg['years']}")
+        click.echo(f"period = {cfg['period']}")
+        click.echo(f"last-months = {cfg['last_months']}")
+        click.echo(f"last-quarters = {cfg['last_quarters']}")
+        click.echo(f"last-weeks = {cfg['last_weeks']}")
+        click.echo(f"format = {cfg.get('output_format', 'table')}")
+        click.echo(f"github-url = {cfg['github_url']}")
+        # The display settings decide which operatives reach the table at all.
+        # Omitting min-contributions here meant a config that silently filtered
+        # the cohort could not be diagnosed from --show-config, which is the one
+        # command a user runs to find out why the table looks wrong.
+        click.echo(f"min-contributions = {cfg['min_contributions']}")
+        click.echo(f"totals = {cfg['totals']}")
+        click.echo(f"percent = {cfg['percent']}")
+        click.echo(f"rank-delta = {cfg['rank_delta']}")
+        # Names are the config-file spellings, not the internal cfg keys, so a
+        # reader can grep their own config for what they see here.
+        click.echo(f"no-update-check = {no_update_check}")
+        teams = cfg.get("teams", {})
+        if teams:
+            for team_name, members in sorted(teams.items()):
+                click.echo(f"teams.{team_name} = {members}")
+        else:
+            click.echo("teams = {}")
+        return
 
     if export_config:
         click.echo(config_module.render_config(cfg))
