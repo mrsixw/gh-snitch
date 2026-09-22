@@ -498,6 +498,14 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"last-weeks = {cfg['last_weeks']}")
         click.echo(f"format = {cfg.get('output_format', 'table')}")
         click.echo(f"github-url = {cfg['github_url']}")
+        # The display settings decide which operatives reach the table at all.
+        # Omitting min-contributions here meant a config that silently filtered
+        # the cohort could not be diagnosed from --show-config, which is the one
+        # command a user runs to find out why the table looks wrong.
+        click.echo(f"min-contributions = {cfg['min_contributions']}")
+        click.echo(f"totals = {cfg['totals']}")
+        click.echo(f"percent = {cfg['percent']}")
+        click.echo(f"rank-delta = {cfg['rank_delta']}")
         # Names are the config-file spellings, not the internal cfg keys, so a
         # reader can grep their own config for what they see here.
         #
@@ -799,6 +807,16 @@ def gh_snitch(  # noqa: PLR0913
     logger.info("sweep complete duration=%.3fs", duration)
 
     period_labels = [label for label, _, _ in active_year_ranges]
+    # Drop operatives GitHub could not resolve before anything is ranked or
+    # rendered. They carry zeros for every window, which would otherwise mark
+    # them 👻 in the table — and a ghost means something different and specific:
+    # a real account with no activity. Showing both signals for one handle
+    # invites the reader to treat a typo as a quiet colleague. The stderr
+    # warning below is where a missing operative is reported.
+    surveilled_cohorts = [
+        (name, [username for username in cohort_users if username not in not_found])
+        for name, cohort_users in report_cohorts
+    ]
     reports = [
         build_contribution_report(
             name,
@@ -809,7 +827,7 @@ def gh_snitch(  # noqa: PLR0913
             delta=delta,
             min_contributions=cfg["min_contributions"],
         )
-        for name, cohort_users in report_cohorts
+        for name, cohort_users in surveilled_cohorts
     ]
 
     for report in reports:

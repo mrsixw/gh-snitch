@@ -2,6 +2,7 @@ import calendar
 import logging
 import os
 import random
+import re
 import threading
 import time
 from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
@@ -28,6 +29,7 @@ __all__ = [
     "get_rolling_week_ranges",
     "get_year_ranges",
     "graphql_url_for",
+    "is_valid_github_login",
     "logger",
     "make_github_graphql_request",
 ]
@@ -53,9 +55,28 @@ _MAX_GRAPHQL_ERROR_TYPES = 3
 _MAX_GRAPHQL_ERROR_MESSAGE_LENGTH = 120
 _MAX_STORED_GRAPHQL_ERRORS = 10
 
+# GitHub's own handle rules: 1-39 characters of alphanumerics and hyphens, no
+# leading or trailing hyphen and no two in a row. Anything else cannot name a
+# real account, so it is reported as not-found without spending a request on it.
+_GITHUB_LOGIN_PATTERN = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$"
+)
+
 _api_stats_lock = threading.Lock()
 _api_stats_enabled = threading.Event()
 _api_stats = {"graphql_calls": 0}
+
+
+def is_valid_github_login(login) -> bool:
+    """Return whether a string can be a GitHub account handle.
+
+    Args:
+        login: Candidate handle from the CLI or config file.
+
+    Returns:
+        bool: True when the handle satisfies GitHub's username rules.
+    """
+    return isinstance(login, str) and bool(_GITHUB_LOGIN_PATTERN.match(login))
 
 
 def configure_api_stats(enabled):
@@ -225,6 +246,7 @@ def make_github_graphql_request(
     github_url: str = DEFAULT_GITHUB_URL,
     *,
     cancel_event=None,
+    variables=None,
 ):
     """POST a GraphQL query with bounded retries and error reporting.
 
@@ -233,6 +255,8 @@ def make_github_graphql_request(
         github_url: GitHub or GitHub Enterprise base URL.
         cancel_event: Optional event used to stop retries after a concurrent
             range fails.
+        variables: Optional GraphQL variable values. Anything derived from user
+            input belongs here rather than in the query document.
 
     Returns:
         dict: Parsed GitHub GraphQL response.
@@ -256,9 +280,12 @@ def make_github_graphql_request(
         try:
             request_start = time.monotonic()
             _record_graphql_call()
+            payload = {"query": query}
+            if variables is not None:
+                payload["variables"] = variables
             response = requests.post(
                 graphql_url,
-                json={"query": query},
+                json=payload,
                 headers=headers,
                 timeout=_REQUEST_TIMEOUT,
             )
@@ -436,20 +463,42 @@ def get_period_range(period: str) -> tuple[str, str, str]:
 
 
 def build_contributions_query(users, from_iso, to_iso):
-    """Build a GraphQL query with aliases for each user."""
+    """Build an aliased GraphQL query and its variable values.
+
+    Every value that originates outside this function travels as a GraphQL
+    variable. Interpolating a login into the document lets one handle containing
+    a quote or a brace break the parse for the *whole* batch, taking every valid
+    operative in it down as well.
+
+    Alias names (``user_0``) stay interpolated: they are generated here from an
+    enumeration index and never derived from input.
+
+    Args:
+        users: GitHub usernames to include in this batch.
+        from_iso: Inclusive range start in ISO format.
+        to_iso: Inclusive range end in ISO format.
+
+    Returns:
+        tuple[str, dict]: The query document and the variables to POST with it.
+    """
+    declarations = ["$from: DateTime!", "$to: DateTime!"]
+    variables = {"from": from_iso, "to": to_iso}
     aliases = []
     for i, username in enumerate(users):
-        alias = f"user_{i}"
+        variable_name = f"login{i}"
+        declarations.append(f"${variable_name}: String!")
+        variables[variable_name] = username
         aliases.append(f"""
-  {alias}: user(login: "{username}") {{
+  user_{i}: user(login: ${variable_name}) {{
     login
-    contributionsCollection(from: "{from_iso}", to: "{to_iso}") {{
+    contributionsCollection(from: $from, to: $to) {{
       contributionCalendar {{
         totalContributions
       }}
     }}
   }}""")
-    return "{ " + "".join(aliases) + " }"
+    query = "query(" + ", ".join(declarations) + ") {" + "".join(aliases) + "\n}"
+    return query, variables
 
 
 def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
@@ -482,12 +531,13 @@ def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
             from_iso,
             to_iso,
         )
-        query = build_contributions_query(batch, from_iso, to_iso)
+        query, variables = build_contributions_query(batch, from_iso, to_iso)
         try:
             data = make_github_graphql_request(
                 query,
                 github_url,
                 cancel_event=cancel_event,
+                variables=variables,
             )
         except GitHubGraphQLResourceLimitError as exc:
             if len(batch) == 1:
@@ -685,6 +735,18 @@ def fetch_contributions(
     if total == 0:
         return result, set(users)
 
+    # A handle GitHub's own rules reject cannot name an account, so asking is a
+    # wasted request. Screening here also keeps one malformed handle from being
+    # the reason its whole batch comes back empty.
+    queryable_users = [u for u in users if is_valid_github_login(u)]
+    invalid_users = {u for u in users if not is_valid_github_login(u)}
+    for username in invalid_users:
+        logger.warning("skipping malformed operative handle user=%s", username)
+        for label, _, _ in ranges:
+            result[username][label] = 0
+    if not queryable_users:
+        return result, invalid_users
+
     cancel_event = threading.Event()
     executor = ThreadPoolExecutor(max_workers=min(_MAX_RANGE_WORKERS, total))
     futures = set()
@@ -694,7 +756,7 @@ def fetch_contributions(
             futures.add(
                 executor.submit(
                     _fetch_year,
-                    users,
+                    queryable_users,
                     label,
                     from_iso,
                     to_iso,
@@ -722,5 +784,7 @@ def fetch_contributions(
         for username in null_users:
             null_counts[username] += 1
 
-    not_found = {u for u, c in null_counts.items() if c == total}
-    return result, not_found
+    not_found = {
+        u for u, c in null_counts.items() if c == total and u not in invalid_users
+    }
+    return result, not_found | invalid_users

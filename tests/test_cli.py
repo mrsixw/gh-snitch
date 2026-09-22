@@ -12,6 +12,7 @@ from click.testing import CliRunner
 
 from ghsnitch import cli as cli_mod
 from ghsnitch.cli import gh_snitch
+from ghsnitch.config import load_config
 
 
 def _context_id(users):
@@ -481,9 +482,73 @@ def test_show_config_labels_match_the_config_file_spellings(runner, tmp_path):
         "last-weeks",
         "format",
         "github-url",
+        "min-contributions",
+        "totals",
+        "percent",
+        "rank-delta",
         "no-update-check",
         "teams",
     ]
+
+
+def test_show_config_reports_every_setting_that_affects_a_run(runner, tmp_path):
+    """The guard against this bug recurring.
+
+    --show-config existed for six settings and then quietly stopped keeping up
+    with the config dict; min-contributions could hide operatives with no way to
+    see it. Asserting against `load_config` itself means the next key added to
+    the config is a failing test here rather than another silent omission.
+    """
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+
+    assert result.exit_code == 0
+    labels = {
+        line.split("=", 1)[0].strip()
+        for line in result.output.splitlines()
+        if "=" in line
+    }
+    # The one label that is not its key kebab-cased: the config file spells the
+    # internal `output_format` as `format`.
+    spellings = {"output_format": "format"}
+    for key in load_config(str(config_file)):
+        expected = spellings.get(key, key.replace("_", "-"))
+        assert expected in labels, f"--show-config omits {expected}"
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("[display]\nmin-contributions = 10\n", "min-contributions = 10"),
+        ("[display]\ntotals = true\n", "totals = True"),
+        ("[display]\npercent = true\n", "percent = True"),
+        ("[display]\nrank-delta = false\n", "rank-delta = False"),
+    ],
+)
+def test_show_config_reports_overridden_display_settings(
+    runner, tmp_path, body, expected
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n' + body)
+
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+
+    assert result.exit_code == 0
+    assert expected in result.output
+
+
+def test_show_config_reports_display_defaults(runner, tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text('[operatives]\nusers = ["alice"]\n')
+
+    result = runner.invoke(gh_snitch, ["--show-config", "--config", str(config_file)])
+
+    assert "min-contributions = 0" in result.output
+    assert "totals = False" in result.output
+    assert "percent = False" in result.output
+    assert "rank-delta = True" in result.output
 
 
 def test_show_config_includes_github_url(runner, tmp_path):
@@ -547,6 +612,84 @@ def test_not_found_operative_shows_warning_and_exits_nonzero(
     assert result.exit_code != 0
     assert "ghost" in result.output
     assert "gone dark" in result.output
+
+
+def _not_found_mix(requests_mock):
+    """alice resolves; missing does not."""
+    requests_mock.post(
+        "https://api.github.com/graphql",
+        json=_graphql_response(
+            ("alice", 50),
+            ("missing", None),
+            errors=[
+                {
+                    "type": "NOT_FOUND",
+                    "path": ["user_1"],
+                    "message": (
+                        "Could not resolve to a User with the login of 'missing'."
+                    ),
+                }
+            ],
+        ),
+    )
+
+
+def test_not_found_operative_is_absent_from_the_table(runner, tmp_path, requests_mock):
+    """A missing account and a ghost mean different things; only one is a row."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, [])
+
+    table = result.output.split("⚠️")[0]
+    assert "alice" in table
+    assert "missing" not in table
+
+
+def test_not_found_operative_is_still_reported_on_stderr(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, [])
+
+    assert "gone dark" in result.output
+    assert "missing" in result.output
+
+
+def test_not_found_operative_is_not_counted_as_a_ghost(runner, tmp_path, requests_mock):
+    """The 👻 tally counted unresolvable handles, overstating quiet operatives."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, [])
+
+    assert "ghost operative(s) detected" not in result.output
+
+
+def test_not_found_operative_is_absent_from_structured_output(
+    runner, tmp_path, requests_mock
+):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[operatives]\nusers = ["alice", "missing"]\n[surveillance]\nyears = 0\n'
+    )
+    _not_found_mix(requests_mock)
+
+    result = _run(runner, config_file, tmp_path, ["--format", "json"])
+
+    rows = _extract_json(result.output)
+    assert [row["operative"] for row in rows] == ["alice"]
 
 
 # ---------------------------------------------------------------------------
@@ -1626,7 +1769,12 @@ def _register_multi_team_response(requests_mock):
     counts = {"alice": 40, "bob": 10, "shared": 30}
 
     def handler(request, _context):
-        logins = re.findall(r'user\(login: "([^"]+)"\)', request.json()["query"])
+        # Logins travel as GraphQL variables, so read them back in alias order.
+        payload = request.json()
+        variables = payload.get("variables", {})
+        aliases = re.findall(r"user_(\d+): user\(login: \$(\w+)\)", payload["query"])
+        ordered = sorted(aliases, key=lambda pair: int(pair[0]))
+        logins = [variables[variable] for _, variable in ordered]
         queried_logins.append(logins)
         return _graphql_response(*((login, counts[login]) for login in logins))
 
