@@ -199,7 +199,7 @@ def _stable_unique(values):
     return list(dict.fromkeys(values))
 
 
-@click.group(invoke_without_command=True)
+@click.group(invoke_without_command=True, epilog="Made with ❤️ in the UK.")
 @click.pass_context
 @click.option("--config", default=None, help="Path to config file.")
 @click.option(

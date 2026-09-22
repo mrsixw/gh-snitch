@@ -2863,3 +2863,10 @@ def test_update_check_runs_when_nothing_disables_it(
     # the check had been removed entirely.
     monkeypatch.delenv("GH_SNITCH_NO_UPDATE_CHECK", raising=False)
     _run_to_completion(runner, tmp_path, requests_mock).assert_called_once()
+
+
+def test_help_carries_the_uk_credit(runner):
+    result = runner.invoke(gh_snitch, ["--help"])
+
+    assert result.exit_code == 0
+    assert "Made with ❤️ in the UK." in result.output

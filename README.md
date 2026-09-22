@@ -140,4 +140,6 @@ See [`docs/manual/`][manual-docs] for full documentation.
 
 ---
 
+Made with ❤️ in the UK.
+
 [manual-docs]: docs/manual/
