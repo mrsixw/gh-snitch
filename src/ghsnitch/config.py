@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -407,7 +408,6 @@ def _migrate_legacy_spellings(text):
     snake_case word inside a help comment or a string value is left alone.
     Returns (new_text, list_of_renames).
     """
-    import re
 
     renamed = []
     for (section_name, new_key), old_key in _LEGACY_SPELLING.items():
@@ -426,6 +426,31 @@ def _reparse(text, fallback):
         return fallback
 
 
+_TEMPLATE_KEY_LINE = re.compile(r"^(?:# )?([\w-]+)\s*=\s*(.*)$")
+
+
+def _template_keys(section_block):
+    """Yield ``(help_lines, key, default)`` for each key in a template section.
+
+    The help for a key is the run of comment lines directly above it, stopping
+    at the previous key or a blank line. Scanning line by line matters: the
+    template comments most of its keys out, so a commented key is itself a
+    comment line. A single regex over the block let one key's help swallow
+    every commented key above it, hiding those keys from the missing-key check
+    and re-emitting them inside the next key's help.
+    """
+    help_lines = []
+    for line in section_block.splitlines():
+        key_match = _TEMPLATE_KEY_LINE.match(line)
+        if key_match:
+            yield help_lines, key_match.group(1), key_match.group(2)
+            help_lines = []
+        elif line.startswith("#"):
+            help_lines.append(line)
+        else:
+            help_lines = []
+
+
 def update_config(config_path=None):
     """Add missing keys from template to existing config.
 
@@ -433,7 +458,6 @@ def update_config(config_path=None):
 
     Returns a list of keys added, plus any renames performed.
     """
-    import re
 
     path = Path(config_path) if config_path else get_config_path()
     if not path.exists():
@@ -501,22 +525,15 @@ def update_config(config_path=None):
         if commented_header:
             section_block = section_block[: commented_header.start()]
 
-        # Find all keys in this template section
-        # Look for: # help text\n# key = value  OR  key = value
-        # This regex catches:
-        # 1. Any number of help/comment lines (Group 1)
-        # 2. An optional '# ' prefix for the key (Group 2)
-        # 3. The key name (Group 3)
-        # 4. The value (Group 4)
-        key_pattern = r"((?:# .*\n)*)(# )?([\w-]+)\s*=\s*(.*)"
-        for match in re.finditer(key_pattern, section_block):
-            help_text, _, key_name, default_val = match.groups()
+        for help_lines, key_name, default_val in _template_keys(section_block):
             full_key = f"{section_name}.{key_name}"
 
             if full_key not in existing_keys:
-                # Add to existing config as a comment
+                # Add to existing config as a comment. The help lines already
+                # carry their own "# " prefix.
+                help_text = "".join(f"{line}\n" for line in help_lines)
                 addition = (
-                    f"\n# {help_text.strip()}\n# {key_name} = {default_val} "
+                    f"\n{help_text}# {key_name} = {default_val} "
                     "(added by --update-config)\n"
                 )
 
