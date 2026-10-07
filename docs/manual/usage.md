@@ -348,6 +348,44 @@ the reported call count. If GitHub or a GitHub Enterprise Server does not expose
 the rate-limit data, the summary reports it as unavailable without failing the
 otherwise successful command. Data output remains exclusively on stdout.
 
+## Live Surveillance with `--watch`
+
+Keep the dossier on screen and have it re-sweep on a timer, for a sprint, a
+hackathon or anything else worth watching as it happens:
+
+```bash
+gh-snitch --team backend --watch                 # refresh every 5 minutes
+gh-snitch --users alice,bob --watch --interval 60
+```
+
+Each cycle clears the screen, sweeps GitHub (with the usual progress bar),
+redraws the table and stamps the time underneath:
+
+```text
+🕒 Last refreshed 14:05:09 · next sweep in 300s · Ctrl-C to stand down
+```
+
+Press Ctrl-C at any point to stop:
+
+```text
+🕶️  Operative went dark. Signing off.
+```
+
+Things to know:
+
+- **A failed sweep does not end the watch.** If GitHub is unreachable or the
+  rate limit is spent, the error is shown and the next cycle tries again.
+- **`--interval` is at least 60 seconds.** Every refresh is a full sweep, one
+  API request per column, and contribution counts rarely move faster than that.
+- **Table only, terminal only.** `--watch` with `--format json` (or any
+  non-table format) is refused, as is redirecting stdout to a file or pipe. A
+  stream of redrawn screens is not something another program can read.
+- **The ± column compares against the previous refresh.** Every refresh is a
+  full run, so it saves a snapshot like one — ± shows movement since the last
+  cycle, and a normal run after you stop watching compares against the last
+  refresh.
+- **No update check** while watching, so the screen stays readable at a glance.
+
 ## Ghost Operative Detection
 
 Operatives who have recorded zero contributions across **all** surveilled windows are automatically flagged as ghost operatives — dormant assets who have gone dark.
