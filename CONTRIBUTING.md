@@ -38,6 +38,32 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - `test: ...` — test changes
 - `ci: ...` — CI changes
 
+### Breaking changes bump the major version
+
+Two things, and only these two, cause a **major** release:
+
+- a `!` after the type — `feat!: drop the old flag`
+- `BREAKING CHANGE` anywhere in the commit body
+
+`git mkver` reads them straight out of the commit messages since the last tag,
+so the release that follows your merge is decided by how you word the commit.
+This is how the sibling breakfast repo went from 0.107.1 to 1.0.0: a commit
+removing a deprecated flag was marked breaking, which was accurate and also a
+major-version instruction.
+
+Neither marker is a way to say "this change matters". Use one when you intend to
+change the first number, and call it out in the pull request when you do.
+
+The `version` CI job prints the version your merge would release on every pull
+request. Check it before merging.
+
+**Careful writing about these markers.** mkver looks for them as a substring on
+any line of any commit message since the last tag, so a commit body that
+explains "this was committed as `feat!:`" is indistinguishable, to mkver, from
+one declaring a breaking change — and releases a major version. Break the string
+when you need to refer to it: `feat!` without the trailing colon, or the footer
+written with a hyphen.
+
 ## Testing
 
 Tests live in `tests/`. Use `pytest` with `monkeypatch` and `click.testing.CliRunner`.
@@ -82,3 +108,18 @@ Releases are automated via CI on push to `main`. The CI pipeline:
 2. Builds the shiv binary
 3. Bumps the version if the current tag already exists
 4. Creates a GitHub release with the binary attached
+
+### Which version will it release?
+
+- **`git mkver patch` does not mean "bump the patch number".** It applies the
+  file patches named in `mkver.conf` (here, rewriting `version` in
+  `pyproject.toml`), and what it writes is the version mkver computed from the
+  commit messages — which may be a major, minor or patch increase. The release
+  job calls it through `utils/bump_version_if_tag_exists.sh` when the tag for
+  the current version already exists.
+- `utils/report_next_version.sh` prints the current version alongside the one
+  the next release would carry, and says so loudly if the major component
+  changes. The `version` CI job runs it on every pull request, so a malformed
+  `mkver.conf` fails there rather than on `main`.
+- Do **not** run `git mkver patch` on a feature branch — it rewrites the version
+  in `pyproject.toml`.
