@@ -29,7 +29,7 @@
 
 ## Common Commands
 - `make test` — run tests (`uv run pytest -v`)
-- `make bats` — run the shell script tests (needs `bats`: `brew install bats-core` or `apt-get install bats`)
+- `make bats` — run the shell script tests (`npx --yes bats tests/bats`)
 - `make lint` — check linting and formatting (`ruff check` + `black --check` + `shellcheck` + `spell`)
 - `make shellcheck` — static analysis for every shell source
 - `make spell` — spell check (`typos`, pinned to the version CI runs)

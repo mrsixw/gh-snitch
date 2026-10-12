@@ -83,18 +83,12 @@ lint: .venv shellcheck spell
 shellcheck:
 	uvx --from shellcheck-py==$(SHELLCHECK_VERSION) shellcheck $(SHELL_SOURCES)
 
-# The shell test suite. bats is the one tool with no PyPI build, so it comes
-# from the system package manager rather than uv: `brew install bats-core` on
-# macOS, `apt-get install bats` on Debian/Ubuntu and CI. That means it is the
-# one version that can differ between a laptop and CI; bats is stable enough
-# across minor versions for that to be a fair trade against pulling in npm.
+# The shell test suite. bats has no PyPI build, so it arrives through npx the
+# way markdownlint-cli2 does, rather than from brew or apt: nothing to install
+# by hand, and the same across the four repos that share this harness.
+# shellcheck stays pinned above, because shellcheck-py does ship a wheel.
 bats:
-	@command -v bats >/dev/null 2>&1 || { \
-	  echo "❌ bats not found. Install it with one of:"; \
-	  echo "     brew install bats-core     (macOS)"; \
-	  echo "     apt-get install bats       (Debian/Ubuntu)"; \
-	  exit 1; }
-	bats tests/bats
+	npx --yes bats tests/bats
 
 # Spelling. Kept as its own target *and* a separate CI job: `lint` runs its
 # prerequisites in order, so a shellcheck failure stops make before spelling is

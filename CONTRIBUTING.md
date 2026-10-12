@@ -66,9 +66,10 @@ rather than only what it printed.
 `shellcheck` and `typos` are fetched on demand with `uvx`, pinned in the
 `Makefile` so the same versions run locally and in CI.
 
-`bats` is the exception: it has no PyPI build, so install it once with
-`brew install bats-core` (macOS) or `apt-get install bats` (Debian/Ubuntu).
-`make bats` says so if it is missing.
+`bats` has no PyPI build, so it arrives through `npx` instead — the way
+`markdownlint-cli2` does. Nothing to install by hand; node is the only
+prerequisite. The same harness lives in breakfast, five-clis and jeeves, and
+all four fetch their tools this way.
 
 ## Pull Requests
 
