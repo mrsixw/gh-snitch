@@ -527,6 +527,7 @@ def render_table(
     show_trend=True,
     show_totals=False,
     show_percent=False,
+    show_total_percent=False,
     show_rank_delta=True,
     delta_col=None,
     rank_deltas=None,
@@ -544,6 +545,9 @@ def render_table(
         show_trend: whether to include the Trend column (requires >= 2 year labels)
         show_totals: whether to add a Total column per operative and a Total footer row
         show_percent: whether to annotate each cell with (N%) share of that year's total
+        show_total_percent: whether to annotate the Total column with each operative's
+            (N%) share of the grand total. Requires show_totals; the Total footer row
+            is left bare because its own share is always 100%.
         show_rank_delta: whether to show the ± column (default: True)
         delta_col: label of the column whose values are deltas (rendered with +/- and
             green/red colouring instead of percentile-based grading)
@@ -589,6 +593,21 @@ def render_table(
                 (r.get(label, 0) / total * 100) if total > 0 else 0.0
                 for r in sorted_rows
             ]
+
+    show_total_percent = show_total_percent and show_totals
+    grand_total = sum(year_totals.values())
+    row_totals = {
+        r["username"]: sum(r.get(label, 0) for label in year_labels)
+        for r in sorted_rows
+    }
+
+    # Pre-compute total-share percentages for colour grading
+    total_pct_values = []
+    if show_total_percent:
+        total_pct_values = [
+            (row_totals[r["username"]] / grand_total * 100) if grand_total > 0 else 0.0
+            for r in sorted_rows
+        ]
 
     show_rank_delta = show_rank_delta and rank_deltas is not None
     headers = (
@@ -657,7 +676,17 @@ def render_table(
                 cell = f"{cell} {pct_annotation}"
             cells.append(cell)
         if show_totals:
-            cells.append(sum(row.get(label, 0) for label in year_labels))
+            row_total = row_totals[username]
+            if show_total_percent:
+                pct = (row_total / grand_total * 100) if grand_total > 0 else 0.0
+                if IS_TTY:
+                    prefix, suffix = _grade_colour(pct, total_pct_values)
+                    pct_annotation = f"({prefix}{pct:.0f}%{suffix})"
+                else:
+                    pct_annotation = f"({pct:.0f}%)"
+                cells.append(f"{row_total} {pct_annotation}")
+            else:
+                cells.append(row_total)
         table_data.append(cells)
 
     # Add totals footer row (neutral — no colour grading)
