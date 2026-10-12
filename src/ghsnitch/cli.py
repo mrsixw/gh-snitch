@@ -334,6 +334,15 @@ def _stable_unique(values):
     help="Annotate each cell with the operative's (N%) share of that year's total.",
 )
 @click.option(
+    "--total-percent",
+    is_flag=True,
+    default=False,
+    help=(
+        "Annotate the Total column with the operative's (N%) share of the "
+        "grand total. Implies --totals."
+    ),
+)
+@click.option(
     "--no-rank-delta",
     is_flag=True,
     default=False,
@@ -395,6 +404,7 @@ def gh_snitch(  # noqa: PLR0913
     min_contributions,
     totals,
     percent,
+    total_percent,
     no_rank_delta,
     redact,
     delta,
@@ -576,6 +586,12 @@ def gh_snitch(  # noqa: PLR0913
         cfg["totals"] = True
     if percent:
         cfg["percent"] = True
+    if total_percent:
+        cfg["total_percent"] = True
+    # The Total column is where the share is printed, so asking for the share
+    # without the column would silently print nothing.
+    if cfg.get("total_percent"):
+        cfg["totals"] = True
     if no_rank_delta:
         cfg["rank_delta"] = False
     if output_format is not None:
@@ -601,6 +617,7 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"min-contributions = {cfg['min_contributions']}")
         click.echo(f"totals = {cfg['totals']}")
         click.echo(f"percent = {cfg['percent']}")
+        click.echo(f"total-percent = {cfg['total_percent']}")
         click.echo(f"rank-delta = {cfg['rank_delta']}")
         # Names are the config-file spellings, not the internal cfg keys, so a
         # reader can grep their own config for what they see here.
@@ -879,6 +896,11 @@ def gh_snitch(  # noqa: PLR0913
                 "⚠️  --percent is ignored in graph format.",
                 err=True,
             )
+        if cfg.get("total_percent"):
+            click.echo(
+                "⚠️  --total-percent is ignored in graph format.",
+                err=True,
+            )
         if show_totals:
             click.echo(
                 "⚠️  --totals is ignored in graph format (no footer rows in charts).",
@@ -907,6 +929,8 @@ def gh_snitch(  # noqa: PLR0913
     elif active_format == "stack":
         if cfg.get("percent"):
             click.echo("⚠️  --percent is ignored in stack format.", err=True)
+        if cfg.get("total_percent"):
+            click.echo("⚠️  --total-percent is ignored in stack format.", err=True)
         if show_totals:
             click.echo("⚠️  --totals is ignored in stack format.", err=True)
         if multiple_team_reports:
@@ -954,6 +978,7 @@ def gh_snitch(  # noqa: PLR0913
                 ),
                 show_totals=show_totals,
                 show_percent=cfg.get("percent", False),
+                show_total_percent=cfg.get("total_percent", False),
                 show_rank_delta=cfg.get("rank_delta", True),
                 delta_col=report.delta_column,
                 rank_deltas=report.rank_deltas,

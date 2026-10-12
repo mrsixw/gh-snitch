@@ -16,6 +16,7 @@
 | `--min-contributions INTEGER` | `0` (show all) | Hide operatives with fewer than N contributions in the current year |
 | `--totals` | off | Add a `Total` column (per-operative sum across all years) and a `Total` footer row (per-year sum across all operatives) |
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
+| `--total-percent` | off | Annotate the `Total` column with the operative's `(N%)` share of the grand total, colour-graded in TTY mode. Implies `--totals`; the `Total` footer row stays bare because its own share is always 100% |
 | `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, `markdown`, `graph`, `stack`, or `xlsx`. Text formats write clean data to stdout and send status messages to stderr. Excel writes a workbook to `--output`. |
 | `--output PATH` | none | Destination for `--format xlsx`. Required for Excel output, rejected with other formats, and never overwrites an existing file. |
 | `--no-rank-delta` | off | Hide the `±` rank-change column (rank delta is shown by default) |
@@ -172,6 +173,7 @@ years = 3
 # min-contributions = 10  # hide operatives below this threshold
 # totals = false           # show Total column and footer row
 # percent = false          # annotate cells with (N%) share of year total
+# total-percent = false     # annotate Total column with (N%) share of grand total
 # rank-delta = true        # show ± rank-change column (set to false to hide)
 ```
 
@@ -196,6 +198,6 @@ users = ["alice", "bob"]
 users = ["carol", "dave"]
 ```
 
-CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-quarters`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, and `--no-rank-delta` override config file values. `--since`, `--until`, and `--output` are command-line only because they encode a specific reporting run.
+CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-quarters`, `--last-weeks`, `--format`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, `--total-percent`, and `--no-rank-delta` override config file values. `--since`, `--until`, and `--output` are command-line only because they encode a specific reporting run.
 
 `--last-quarters` cannot be combined on the command line with `--years`, `--period`, `--last-months`, `--last-weeks`, `--since`, or `--until`. An explicit legacy time selector overrides `last-quarters` when the latter comes from the config file.

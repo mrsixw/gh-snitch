@@ -342,6 +342,7 @@ def test_render_config_custom_github_url_is_active():
         ("min_contributions", 7, "min-contributions = 7"),
         ("totals", True, "totals = true"),
         ("percent", True, "percent = true"),
+        ("total_percent", True, "total-percent = true"),
         ("rank_delta", False, "rank-delta = false"),
     ],
 )
@@ -371,6 +372,7 @@ def test_render_config_leaves_defaults_commented():
         "min-contributions",
         "totals",
         "percent",
+        "total-percent",
         "rank-delta",
     ):
         assert f"# {key} = " in output
@@ -392,6 +394,7 @@ def test_render_config_round_trips_every_setting(tmp_path):
         "min_contributions": 7,
         "totals": True,
         "percent": True,
+        "total_percent": True,
         "rank_delta": False,
         "output_format": "xlsx",
         "no_update_check": True,

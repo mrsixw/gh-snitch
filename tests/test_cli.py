@@ -485,6 +485,7 @@ def test_show_config_labels_match_the_config_file_spellings(runner, tmp_path):
         "min-contributions",
         "totals",
         "percent",
+        "total-percent",
         "rank-delta",
         "no-update-check",
         "teams",
@@ -524,6 +525,7 @@ def test_show_config_reports_every_setting_that_affects_a_run(runner, tmp_path):
         ("[display]\nmin-contributions = 10\n", "min-contributions = 10"),
         ("[display]\ntotals = true\n", "totals = True"),
         ("[display]\npercent = true\n", "percent = True"),
+        ("[display]\ntotal-percent = true\n", "total-percent = True"),
         ("[display]\nrank-delta = false\n", "rank-delta = False"),
     ],
 )
@@ -548,6 +550,7 @@ def test_show_config_reports_display_defaults(runner, tmp_path):
     assert "min-contributions = 0" in result.output
     assert "totals = False" in result.output
     assert "percent = False" in result.output
+    assert "total-percent = False" in result.output
     assert "rank-delta = True" in result.output
 
 
@@ -591,6 +594,9 @@ def test_show_config_reports_cli_overrides_not_the_file(runner, tmp_path):
         (["--min-contributions", "25"], "min-contributions = 25"),
         (["--totals"], "totals = True"),
         (["--percent"], "percent = True"),
+        (["--total-percent"], "total-percent = True"),
+        # The Total column is where the share prints, so the flag turns it on.
+        (["--total-percent"], "totals = True"),
         (["--no-rank-delta"], "rank-delta = False"),
         (["--format", "JSON"], "format = json"),
         (["--period", "Month"], "period = month"),
