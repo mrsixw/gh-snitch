@@ -21,6 +21,23 @@ If both are set, `GH_TOKEN` takes precedence. The token needs `read:user` scope 
 
 **Fix:** Run `gh-snitch --init-config` to create a default config, then edit it to add usernames.
 
+This warning only appears when the config file is the only place operatives
+could have come from. Naming them on the command line — `gh-snitch --users
+alice,bob` — is a complete instruction on its own, so it stays quiet:
+
+```bash
+gh-snitch --users alice,bob     # no warning, no config file needed
+gh-snitch                       # warns: nothing tells it who to surveil
+gh-snitch --team alpha          # warns: the team is defined in the config
+```
+
+`--team` still warns because a team is *defined* in the config file — without
+one there are no teams to select, and the warning is the explanation for the
+`Known cells: none` that follows.
+
+An explicit `--config /path/that/is/not/there.toml` always warns, whatever
+else you pass. You named a file and it is not there, which is worth saying.
+
 ## `No operatives configured`
 
 ```
