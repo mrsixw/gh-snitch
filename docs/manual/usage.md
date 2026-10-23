@@ -199,6 +199,7 @@ years = 3
 # min-contributions = 10 # hide operatives below this threshold
 # totals = false        # show Total column and footer row
 # percent = false       # annotate cells with (N%) share of period total
+# total-percent = false  # annotate Total column with (N%) share of grand total
 # rank-delta = true     # show ± rank-change column
 ```
 
@@ -235,6 +236,7 @@ github-url = "https://ghe.corp.com"
 # min-contributions = 10 # hide operatives below this threshold
 # totals = false        # show Total column and footer row
 # percent = false       # annotate cells with (N%) share of period total
+# total-percent = false  # annotate Total column with (N%) share of grand total
 # rank-delta = true     # show ± rank-change column
 ```
 
@@ -271,6 +273,7 @@ github-url = https://github.com
 min-contributions = 0
 totals = False
 percent = False
+total-percent = False
 rank-delta = True
 no-update-check = False
 teams = {}
@@ -479,14 +482,35 @@ gh-snitch --users alice,bob,charlie --years 2 --totals --percent
    Total                  792               785                1577
 ```
 
-Percentages are colour-graded in TTY mode. The totals row and total column use neutral styling.
+Percentages are colour-graded in TTY mode. The totals row uses neutral styling.
 
-Both options can be set permanently in your config file:
+`--percent` annotates the per-period cells only. To annotate the `Total` column
+with each operative's share of the grand total, add `--total-percent`:
+
+```bash
+gh-snitch --users alice,bob,charlie --years 2 --total-percent
+```
+
+```
+#  Operative     Trend    2025      2024      Total
+1  alice         +        412       380       792 (50%)
+2  bob           =        210       195       405 (26%)
+3  charlie       -        170       210       380 (24%)
+   Total                  792       785       1577
+```
+
+`--total-percent` implies `--totals`, so the `Total` column appears even if you
+do not ask for it. The `Total` footer row is left bare — its share of the grand
+total is always 100%. The two flags are independent: use either, both, or
+neither.
+
+All three options can be set permanently in your config file:
 
 ```toml
 [display]
 totals = true
 percent = true
+total-percent = true
 ```
 
 ## Alternative Output Formats
@@ -512,7 +536,7 @@ gh-snitch --team platform --team backend --format xlsx --output teams.xlsx
 
 The `graph` format renders a colour-coded time-series chart in the terminal showing each operative's contribution trend. The X-axis spans the requested years in chronological order and the Y-axis scales to the data. The chart is sized to your terminal width and height automatically.
 
-Note: `--percent` and `--totals` are not applicable in graph format and are silently ignored.
+Note: `--percent`, `--total-percent` and `--totals` are not applicable in graph format and are silently ignored.
 
 JSON, CSV, Markdown, graph, and stack write only report data to stdout and send status messages (`🔍 Initiating…`, `🗂️ Dossier compiled…`) to stderr. Excel writes no report data to stdout; it creates the path supplied with `--output` and refuses to replace an existing file.
 
@@ -568,7 +592,7 @@ gh-snitch --users alice,bob --last-months 6 --format graph
 gh-snitch --team platform --team backend --format graph
 ```
 
-**Note:** The `--totals` and `--percent` flags are ignored in graph mode.
+**Note:** The `--totals`, `--percent` and `--total-percent` flags are ignored in graph mode.
 
 ## Stacked Bar Chart
 
@@ -589,7 +613,7 @@ The stacked view makes it easy to see team trajectory (bar height) and each pers
 gh-snitch --team platform --years 3 --format stack --redact
 ```
 
-**Note:** `--totals` and `--percent` are not applicable in stack format and are ignored.
+**Note:** `--totals`, `--percent` and `--total-percent` are not applicable in stack format and are ignored.
 
 ## One-Shot Command
 

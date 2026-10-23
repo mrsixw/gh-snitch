@@ -61,6 +61,10 @@ years = 3
 # Annotate each cell with the operative's percentage share of that year's total.
 # percent = false
 
+# Annotate the Total column with each operative's share of the grand total.
+# Implies totals.
+# total-percent = false
+
 # Show a ± column with each operative's rank change since the last run.
 # rank-delta = true
 
@@ -139,6 +143,7 @@ def load_config(config_path=None):
         "min_contributions": 0,
         "totals": False,
         "percent": False,
+        "total_percent": False,
         "rank_delta": True,
         "output_format": "table",
         "no_update_check": False,
@@ -200,6 +205,9 @@ def load_config(config_path=None):
         config["totals"] = bool(display["totals"])
     if "percent" in display:
         config["percent"] = bool(display["percent"])
+    found, value = _lookup(display, "display", "total-percent")
+    if found:
+        config["total_percent"] = bool(value)
     found, value = _lookup(display, "display", "rank-delta")
     if found:
         config["rank_delta"] = bool(value)
@@ -318,6 +326,13 @@ _OPTIONAL_SETTINGS = (
                 False,
                 False,
                 "annotate cells with (N%) share of period total",
+            ),
+            (
+                "total-percent",
+                "total_percent",
+                False,
+                False,
+                "annotate Total column with (N%) share of grand total",
             ),
             (
                 "rank-delta",

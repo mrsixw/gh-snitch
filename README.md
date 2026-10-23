@@ -86,6 +86,7 @@ make uninstall PREFIX=$HOME/.local
 | `--min-contributions` | Hide operatives below this contribution count |
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
+| `--total-percent` | Annotate the Total column with the operative's `(N%)` share of the grand total (implies `--totals`) |
 | `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph`, `stack`, `xlsx` |
 | `--output PATH` | Destination workbook path; required with `--format xlsx` |
 | `--no-rank-delta` | Hide the `±` rank-change column (shown by default) |

@@ -344,6 +344,85 @@ def test_render_table_percent_without_totals():
     assert "Total" not in output
 
 
+# --- show_total_percent tests ---
+
+
+def test_render_table_total_percent_annotates_total_column():
+    rows = [
+        {"username": "alice", "2025": 300, "2024": 100},
+        {"username": "bob", "2025": 100, "2024": 0},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows, ["2025", "2024"], show_totals=True, show_total_percent=True
+        )
+    # grand total 500: alice 400 = 80%, bob 100 = 20%
+    assert "400 (80%)" in output
+    assert "100 (20%)" in output
+
+
+def test_render_table_total_percent_leaves_footer_row_bare():
+    """The footer's own share is always 100%, so annotating it says nothing."""
+    rows = [
+        {"username": "alice", "2025": 300},
+        {"username": "bob", "2025": 100},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_totals=True, show_total_percent=True)
+    footer = [line for line in output.splitlines() if line.strip().startswith("Total")][
+        -1
+    ]
+    assert "%" not in footer
+
+
+def test_render_table_total_percent_without_percent_leaves_cells_bare():
+    """The two flags are independent: only the Total column is annotated."""
+    rows = [
+        {"username": "alice", "2025": 300},
+        {"username": "bob", "2025": 100},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_totals=True, show_total_percent=True)
+    alice = [line for line in output.splitlines() if "alice" in line][0]
+    assert alice.count("%") == 1
+
+
+def test_render_table_total_percent_combined_with_percent():
+    rows = [
+        {"username": "alice", "2025": 300},
+        {"username": "bob", "2025": 100},
+    ]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows,
+            ["2025"],
+            show_totals=True,
+            show_percent=True,
+            show_total_percent=True,
+        )
+    alice = [line for line in output.splitlines() if "alice" in line][0]
+    # one share for the 2025 cell, one for the Total column
+    assert alice.count("(75%)") == 2
+
+
+def test_render_table_total_percent_zero_grand_total():
+    rows = [{"username": "alice", "2025": 0}, {"username": "bob", "2025": 0}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(rows, ["2025"], show_totals=True, show_total_percent=True)
+    assert "0 (0%)" in output
+
+
+def test_render_table_total_percent_ignored_without_totals():
+    """No Total column means nowhere to print the share."""
+    rows = [{"username": "alice", "2025": 100}, {"username": "bob", "2025": 100}]
+    with patch("ghsnitch.ui.IS_TTY", False):
+        output = render_table(
+            rows, ["2025"], show_totals=False, show_total_percent=True
+        )
+    assert "Total" not in output
+    assert "%" not in output
+
+
 # --- _delta_cell tests ---
 
 
