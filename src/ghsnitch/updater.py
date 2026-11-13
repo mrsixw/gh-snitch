@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 from .api import SECRET_GITHUB_TOKEN
+from .atomicio import write_json_atomic
 from .xdg import CACHE_DIR
 
 __all__ = [
@@ -62,13 +63,12 @@ def _write_version_cache(latest_version):
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         cache_file = _CACHE_DIR / "update_check.json"
-        cache_file.write_text(
-            json.dumps(
-                {
-                    "latest_version": latest_version,
-                    "checked_at": datetime.now(timezone.utc).isoformat(),
-                }
-            )
+        write_json_atomic(
+            cache_file,
+            {
+                "latest_version": latest_version,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
     except OSError:
         pass

@@ -211,6 +211,28 @@ def test_cli_survives_cache_write_failure(cli, tmp_path, monkeypatch):
     assert NAG_MARKER in result.output
 
 
+def test_version_cache_write_is_atomic(tmp_path, monkeypatch):
+    """The update cache gets the same protection as the snapshot: a failed
+    write leaves the previous cache readable rather than truncated."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cache_file = cache_dir / "update_check.json"
+    monkeypatch.setattr(updater, "_CACHE_DIR", cache_dir)
+
+    updater._write_version_cache("1.0.0")
+    assert json.loads(cache_file.read_text())["latest_version"] == "1.0.0"
+    assert [p.name for p in cache_dir.iterdir()] == ["update_check.json"]
+
+    def boom(src, dst):
+        raise OSError("interrupted mid-write")
+
+    monkeypatch.setattr("ghsnitch.atomicio.os.replace", boom)
+    updater._write_version_cache("2.0.0")
+
+    assert json.loads(cache_file.read_text())["latest_version"] == "1.0.0"
+    assert [p.name for p in cache_dir.iterdir()] == ["update_check.json"]
+
+
 def test_cli_survives_package_not_found(cli, monkeypatch):
     """If the installed version can't be resolved, the run still exits cleanly."""
 

@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from .atomicio import write_json_atomic
 from .xdg import CACHE_DIR
 
 __all__ = [
@@ -81,7 +82,10 @@ def save_snapshot(
         if positions is not None:
             data["positions"] = positions
         path = _get_snapshot_path(scope, context_id)
-        path.write_text(json.dumps(data))
+        # Atomic: an interrupted write here used to leave unparsable JSON, and
+        # load_snapshot treats that as "no snapshot" — so movement history was
+        # lost without a word.
+        write_json_atomic(path, data)
     except OSError as e:
         logger.warning("failed to save snapshot: %s", e)
 
