@@ -4,7 +4,7 @@ This directory contains technical design documents for gh-snitch features and ar
 
 | Document | Description |
 |---|---|
-| _(none yet)_ | — |
+| [contribution-breakdown.md](contribution-breakdown.md) | Contribution breakdown stats, GraphQL field mapping, reconciliation, and presentation layouts |
 
 ## Adding a Design Document
 

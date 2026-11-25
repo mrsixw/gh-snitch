@@ -8,17 +8,30 @@ from datetime import datetime
 import asciichartpy as ac
 from tabulate import tabulate
 
+from .breakdown import (
+    ContributionBreakdown,
+    has_other_contributions,
+    sum_breakdowns,
+)
+
 __all__ = [
     "IS_TTY",
+    "grade_colour",
     "make_coloured_hyperlink_cell",
     "make_hyperlink",
     "make_operative_cell",
+    "rank_delta_cell",
     "render_csv",
     "render_graph",
     "render_json",
     "render_markdown",
+    "render_multi_csv",
+    "render_multi_json",
+    "render_multi_markdown",
     "render_stack",
     "render_table",
+    "sorted_rows_and_ranks",
+    "trend_indicator",
 ]
 
 IS_TTY = sys.stdout.isatty() and not os.getenv("NO_COLOR")
@@ -38,7 +51,7 @@ def _percentile(values, p):
     return sorted_vals[lower] + frac * (sorted_vals[upper] - sorted_vals[lower])
 
 
-def _grade_colour(count, column_values):
+def grade_colour(count, column_values):
     """Return (prefix, suffix) ANSI escape strings for the given count.
 
     Grading is based on percentiles within non-zero column values.
@@ -64,6 +77,9 @@ def _grade_colour(count, column_values):
         return "\033[32m", reset  # green
     else:
         return "\033[1;32m", reset  # bright green
+
+
+_grade_colour = grade_colour
 
 
 def make_hyperlink(url, text):
@@ -231,7 +247,7 @@ def _delta_cell(delta, col_values):
     return f"{colour}{text}\033[0m"
 
 
-def _rank_delta_cell(delta):
+def rank_delta_cell(delta):
     """Return a formatted rank-delta string for the ± column.
 
     Positive delta means the operative moved up (lower rank number = better).
@@ -250,7 +266,10 @@ def _rank_delta_cell(delta):
     return f"\033[31m{text}\033[0m" if IS_TTY else text
 
 
-def _trend_indicator(current, previous, year_fraction):
+_rank_delta_cell = rank_delta_cell
+
+
+def trend_indicator(current, previous, year_fraction):
     """Return a YoY trend indicator string for one operative.
 
     Compares an annualized current-year count to the previous full year:
@@ -288,7 +307,10 @@ def _trend_indicator(current, previous, year_fraction):
         return f"\033[2m{sym}\033[0m" if IS_TTY else sym
 
 
-def _sorted_rows_and_ranks(rows, year_labels):
+_trend_indicator = trend_indicator
+
+
+def sorted_rows_and_ranks(rows, year_labels):
     """Return (sorted_rows, ranks) sorted descending by first label then alpha."""
     current_label = year_labels[0]
     sorted_rows = sorted(rows, key=lambda r: (-r.get(current_label, 0), r["username"]))
@@ -303,7 +325,25 @@ def _sorted_rows_and_ranks(rows, year_labels):
     return sorted_rows, ranks
 
 
-def _tabular_records(rows, period_labels, show_totals=False, redact_map=None):
+_sorted_rows_and_ranks = sorted_rows_and_ranks
+
+
+def _breakdown_for(breakdowns, username, label, fallback_total=0):
+    """Return the ContributionBreakdown for (username, label), defaulting cleanly."""
+    if breakdowns is not None:
+        item = breakdowns.get(username, {}).get(label)
+        if item is not None:
+            return item
+    return ContributionBreakdown(total=fallback_total)
+
+
+def _tabular_records(
+    rows,
+    period_labels,
+    show_totals=False,
+    redact_map=None,
+    breakdowns=None,
+):
     """Return ranked plain-data records shared by structured renderers.
 
     Args:
@@ -311,34 +351,60 @@ def _tabular_records(rows, period_labels, show_totals=False, redact_map=None):
         period_labels: Ordered period labels to include.
         show_totals: Whether to include a per-operative total.
         redact_map: Optional username-to-codename mapping.
+        breakdowns: Optional nested mapping of username -> period -> breakdown.
 
     Returns:
         list[dict]: Ranked records without terminal formatting.
     """
     if not rows:
         return []
-    sorted_rows, ranks = _sorted_rows_and_ranks(rows, period_labels)
+    sorted_rows, ranks = sorted_rows_and_ranks(rows, period_labels)
+    include_other = (
+        has_other_contributions(
+            breakdowns,
+            users=[row["username"] for row in sorted_rows],
+            period_labels=period_labels,
+        )
+        if breakdowns is not None
+        else False
+    )
     records = []
     for rank, row in zip(ranks, sorted_rows):
         username = row["username"]
         operative_name = redact_map.get(username, username) if redact_map else username
         record = {"rank": rank, "operative": operative_name}
-        for label in period_labels:
-            record[label] = row.get(label, 0)
-        if show_totals:
-            record["total"] = sum(row.get(label, 0) for label in period_labels)
+        if breakdowns is not None:
+            period_items = []
+            for label in period_labels:
+                item = _breakdown_for(breakdowns, username, label, row.get(label, 0))
+                period_items.append(item)
+                record[label] = item.to_dict(include_other=include_other)
+            if show_totals:
+                record["total"] = sum_breakdowns(period_items).to_dict(
+                    include_other=include_other
+                )
+        else:
+            for label in period_labels:
+                record[label] = row.get(label, 0)
+            if show_totals:
+                record["total"] = sum(row.get(label, 0) for label in period_labels)
         records.append(record)
     return records
 
 
-def render_json(rows, year_labels, show_totals=False, redact_map=None):
+def render_json(rows, year_labels, show_totals=False, redact_map=None, breakdowns=None):
     """Render contribution data as a JSON array (no ANSI codes).
 
     Each element is an object with "rank", "operative", one key per period
-    label, and optionally "total" when show_totals is True.
+    label, and optionally "total" when show_totals is True. When ``breakdowns``
+    is provided, each period key maps to a breakdown object.
     """
     records = _tabular_records(
-        rows, year_labels, show_totals=show_totals, redact_map=redact_map
+        rows,
+        year_labels,
+        show_totals=show_totals,
+        redact_map=redact_map,
+        breakdowns=breakdowns,
     )
     return _json.dumps(records, indent=2, ensure_ascii=False)
 
@@ -364,21 +430,100 @@ def render_multi_json(reports, show_totals=False, redact_map=None):
                     report.period_labels,
                     show_totals=show_totals,
                     redact_map=redact_map,
+                    breakdowns=report.breakdowns,
                 ),
             }
         )
     return _json.dumps({"teams": teams}, indent=2, ensure_ascii=False)
 
 
-def render_csv(rows, year_labels, show_totals=False, redact_map=None):
+def _breakdown_csv_rows(
+    rows, year_labels, breakdowns, *, show_totals=False, redact_map=None
+):
+    """Yield tidy CSV row dicts (one headline + category rows per operative)."""
+    sorted_rows, ranks = sorted_rows_and_ranks(rows, year_labels)
+    include_other = has_other_contributions(
+        breakdowns,
+        users=[row["username"] for row in sorted_rows],
+        period_labels=year_labels,
+    )
+    for rank, row in zip(ranks, sorted_rows):
+        username = row["username"]
+        operative_name = redact_map.get(username, username) if redact_map else username
+        period_items = {
+            label: _breakdown_for(breakdowns, username, label, row.get(label, 0))
+            for label in year_labels
+        }
+        total_item = sum_breakdowns(period_items.values())
+
+        headline = {
+            "rank": rank,
+            "operative": operative_name,
+            "category": "total",
+        }
+        for label in year_labels:
+            headline[label] = period_items[label].total
+        if show_totals:
+            headline["total"] = total_item.total
+        yield headline
+
+        for key, _label_text, total_val in total_item.categories(
+            include_other=include_other
+        ):
+            cat_row = {
+                "rank": rank,
+                "operative": operative_name,
+                "category": key,
+            }
+            for label in year_labels:
+                cat_row[label] = (
+                    period_items[label].other
+                    if key == "other"
+                    else getattr(period_items[label], key)
+                )
+            if show_totals:
+                cat_row["total"] = total_val
+            yield cat_row
+
+
+def render_csv(rows, year_labels, show_totals=False, redact_map=None, breakdowns=None):
     """Render contribution data as CSV (no ANSI codes).
 
     Header row: rank, operative, <period labels…> [, total]
-    One data row per operative, and an optional totals footer row.
+    When ``breakdowns`` is provided, inserts a ``category`` column with one
+    ``total`` row and one row per category for each operative.
     """
     if not rows:
         return ""
-    sorted_rows, ranks = _sorted_rows_and_ranks(rows, year_labels)
+    if breakdowns is not None:
+        fieldnames = (
+            ["rank", "operative", "category"]
+            + year_labels
+            + (["total"] if show_totals else [])
+        )
+        output = io.StringIO()
+        writer = _csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        for record in _breakdown_csv_rows(
+            rows,
+            year_labels,
+            breakdowns,
+            show_totals=show_totals,
+            redact_map=redact_map,
+        ):
+            writer.writerow(record)
+        if show_totals:
+            year_totals = {
+                label: sum(r.get(label, 0) for r in rows) for label in year_labels
+            }
+            footer = {"rank": "", "operative": "Total", "category": "total"}
+            for label in year_labels:
+                footer[label] = year_totals[label]
+            footer["total"] = sum(year_totals.values())
+            writer.writerow(footer)
+        return output.getvalue()
+
+    sorted_rows, ranks = sorted_rows_and_ranks(rows, year_labels)
     fieldnames = (
         ["rank", "operative"] + year_labels + (["total"] if show_totals else [])
     )
@@ -425,16 +570,41 @@ def render_multi_csv(reports, show_totals=False, redact_map=None):
             if label not in period_labels:
                 period_labels.append(label)
 
-    fieldnames = (
-        ["team", "rank", "operative"]
-        + period_labels
-        + (["total"] if show_totals else [])
+    has_breakdowns = any(report.breakdowns is not None for report in reports)
+    base_cols = (
+        ["team", "rank", "operative", "category"]
+        if has_breakdowns
+        else ["team", "rank", "operative"]
     )
+    fieldnames = base_cols + period_labels + (["total"] if show_totals else [])
     output = io.StringIO()
     writer = _csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
 
     for report in reports:
+        if has_breakdowns:
+            if report.rows:
+                for record in _breakdown_csv_rows(
+                    report.rows,
+                    report.period_labels,
+                    report.breakdowns,
+                    show_totals=show_totals,
+                    redact_map=redact_map,
+                ):
+                    writer.writerow({"team": report.name, **record})
+            if show_totals and report.rows:
+                footer = {
+                    "team": report.name,
+                    "rank": "",
+                    "operative": "Total",
+                    "category": "total",
+                }
+                for label in report.period_labels:
+                    footer[label] = sum(row.get(label, 0) for row in report.rows)
+                footer["total"] = sum(footer[label] for label in report.period_labels)
+                writer.writerow(footer)
+            continue
+
         records = _tabular_records(
             report.rows,
             report.period_labels,
@@ -454,15 +624,71 @@ def render_multi_csv(reports, show_totals=False, redact_map=None):
     return output.getvalue()
 
 
-def render_markdown(rows, year_labels, show_totals=False, redact_map=None):
+def _render_breakdown_markdown(rows, year_labels, breakdowns, show_totals, redact_map):
+    """Render one GitHub-Flavoured Markdown breakdown table per period."""
+    sorted_rows, ranks = sorted_rows_and_ranks(rows, year_labels)
+    include_other = has_other_contributions(
+        breakdowns,
+        users=[row["username"] for row in sorted_rows],
+        period_labels=year_labels,
+    )
+    sample_cats = ContributionBreakdown().categories(include_other=include_other)
+    cat_keys = [key for key, _label, _val in sample_cats]
+    cat_headers = [label for _key, label, _val in sample_cats]
+
+    def _row(cells):
+        return "| " + " | ".join(str(c) for c in cells) + " |"
+
+    headers = ["#", "Operative"] + cat_headers + ["Total"]
+    align = [":---" if h == "Operative" else "---:" for h in headers]
+    separator = "| " + " | ".join(align) + " |"
+
+    sections = []
+    for period_label in year_labels:
+        lines = [f"### {period_label}", "", _row(headers), separator]
+        col_sums = {key: 0 for key in cat_keys}
+        grand_total = 0
+        for rank, row in zip(ranks, sorted_rows):
+            username = row["username"]
+            operative_name = (
+                redact_map.get(username, username) if redact_map else username
+            )
+            item = _breakdown_for(
+                breakdowns, username, period_label, row.get(period_label, 0)
+            )
+            cells = [rank, operative_name]
+            for key in cat_keys:
+                value = item.other if key == "other" else getattr(item, key)
+                col_sums[key] += value
+                cells.append(value)
+            grand_total += item.total
+            cells.append(item.total)
+            lines.append(_row(cells))
+        if show_totals:
+            footer = (
+                ["", "**Total**"] + [col_sums[key] for key in cat_keys] + [grand_total]
+            )
+            lines.append(_row(footer))
+        sections.append("\n".join(lines))
+    return "\n\n".join(sections)
+
+
+def render_markdown(
+    rows, year_labels, show_totals=False, redact_map=None, breakdowns=None
+):
     """Render contribution data as a GitHub-Flavoured Markdown table (no ANSI).
 
     Columns: # | Operative | <period labels…> [| Total]
-    Includes a totals footer row when show_totals is True.
+    When ``breakdowns`` is provided, renders one category-breakdown table per
+    period. Includes a totals footer row when show_totals is True.
     """
     if not rows:
         return "(no operatives configured)"
-    sorted_rows, ranks = _sorted_rows_and_ranks(rows, year_labels)
+    if breakdowns is not None:
+        return _render_breakdown_markdown(
+            rows, year_labels, breakdowns, show_totals, redact_map
+        )
+    sorted_rows, ranks = sorted_rows_and_ranks(rows, year_labels)
     headers = ["#", "Operative"] + year_labels + (["Total"] if show_totals else [])
 
     def _row(cells):
@@ -515,6 +741,7 @@ def render_multi_markdown(reports, show_totals=False, redact_map=None):
             report.period_labels,
             show_totals=show_totals,
             redact_map=redact_map,
+            breakdowns=report.breakdowns,
         )
         sections.append(f"## Team: {report.name}\n\n{table}")
     return "\n\n".join(sections)

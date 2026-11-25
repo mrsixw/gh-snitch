@@ -67,6 +67,9 @@ years = 3
 # Output format: table (default), json, csv, markdown, graph, stack, or xlsx.
 # format = "table"
 
+# Contribution breakdown layout: subrows, nested, cards, or columns.
+# breakdown = "subrows"
+
 # Named cells (teams) — repeat --team <name> to surveil multiple groups.
 # [teams.backend]
 # users = ["octocat", "torvalds"]
@@ -141,6 +144,7 @@ def load_config(config_path=None):
         "percent": False,
         "rank_delta": True,
         "output_format": "table",
+        "breakdown": None,
         "no_update_check": False,
         "teams": {},
     }
@@ -205,6 +209,8 @@ def load_config(config_path=None):
         config["rank_delta"] = bool(value)
     if "format" in display:
         config["output_format"] = str(display["format"])
+    if "breakdown" in display and display["breakdown"] is not None:
+        config["breakdown"] = str(display["breakdown"]).lower()
 
     teams_raw = data.get("teams", {})
     config["teams"] = {
@@ -303,6 +309,13 @@ _OPTIONAL_SETTINGS = (
                 "table",
                 "table",
                 "table, json, csv, markdown, graph, stack, or xlsx",
+            ),
+            (
+                "breakdown",
+                "breakdown",
+                None,
+                "subrows",
+                "subrows, nested, cards, or columns",
             ),
             (
                 "min-contributions",

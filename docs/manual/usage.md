@@ -489,6 +489,38 @@ totals = true
 percent = true
 ```
 
+## Contribution Breakdown
+
+Use `--breakdown` to decompose each operative's total contributions into GitHub activity categories (`Commits`, `PRs`, `Reviews`, `Issues`, `Repos`, and `Private`) across every displayed period — at zero extra API request cost:
+
+```bash
+# Tree-indented sub-rows beneath each operative (compact, multi-period friendly)
+gh-snitch --users alice,bob --years 2 --breakdown subrows
+
+# Table-within-table (Rich nested mini-table inside each period cell)
+gh-snitch --users alice,bob --years 2 --breakdown nested
+
+# Dossier cards (one breakdown table per operative)
+gh-snitch --users alice,bob --years 2 --breakdown cards
+
+# Flat category columns (one table per period, stacked newest-first)
+gh-snitch --users alice,bob --years 2 --breakdown columns
+```
+
+GitHub's `totalContributions` remains the authoritative headline metric for ranking, `--min-contributions`, ghost detection, and YoY trend arrows. If GitHub's headline total ever differs from the sum of the six categories, an `Other` bucket is automatically shown so the breakdown reconciles with the total.
+
+- **`--percent`:** Headline totals continue to show each operative's `(N%)` share of the cohort's period total, while category cells show each category's `(N%)` share of *that operative's* period total.
+- **`--totals`:** Adds a per-operative `Total` column (summed across displayed periods for both headline and categories) and a `Total` footer row.
+- **Structured formats:** `--breakdown` works with `--format json` (nested breakdown objects per period), `--format csv` (adds a `category` column), `--format markdown` (one GFM table per period), and `--format xlsx` (adds a `Category` column with collapsible Excel outline rows and `SUMIF` totals).
+- **Unsupported combinations:** `--breakdown` cannot be combined with `--delta`, `--format graph`, or `--format stack`.
+
+Set a default breakdown style in your config file:
+
+```toml
+[display]
+breakdown = "subrows"
+```
+
 ## Alternative Output Formats
 
 By default gh-snitch renders a coloured terminal table. Use `--format` to get clean, scriptable output instead:

@@ -9,6 +9,12 @@ from pathlib import Path
 import xlsxwriter
 from xlsxwriter.utility import xl_rowcol_to_cell
 
+from .breakdown import (
+    ContributionBreakdown,
+    has_other_contributions,
+    sum_breakdowns,
+)
+
 __all__ = [
     "write_excel_report",
 ]
@@ -86,13 +92,16 @@ def _write_report_worksheet(  # noqa: PLR0913
         show_totals: Whether to add formula-driven row and column totals.
         redact_map: Optional username-to-codename mapping.
     """
+    has_breakdown = report.breakdowns is not None
     worksheet = workbook.add_worksheet(worksheet_name)
     worksheet.hide_gridlines(2)
-    worksheet.freeze_panes(2, 2)
+    worksheet.freeze_panes(2, 3 if has_breakdown else 2)
     worksheet.set_landscape()
     worksheet.fit_to_pages(1, 0)
     worksheet.repeat_rows(0, 1)
     worksheet.set_tab_color("#2E7D32")
+    if has_breakdown:
+        worksheet.outline_settings(True, False, True, False)
 
     title_format = workbook.add_format(
         {
@@ -136,8 +145,20 @@ def _write_report_worksheet(  # noqa: PLR0913
     empty_format = workbook.add_format(
         {"italic": True, "font_color": "#666666", "align": "left"}
     )
+    category_total_format = workbook.add_format({"bold": True, "align": "left"})
+    category_sub_format = workbook.add_format(
+        {"align": "left", "font_color": "#555555", "indent": 1}
+    )
+    sub_count_format = workbook.add_format(
+        {"align": "right", "num_format": "#,##0", "font_color": "#555555"}
+    )
 
-    headers = ["Rank", "Operative", *report.period_labels]
+    period_start_col = 3 if has_breakdown else 2
+    headers = (
+        ["Rank", "Operative", "Category", *report.period_labels]
+        if has_breakdown
+        else ["Rank", "Operative", *report.period_labels]
+    )
     if show_totals:
         headers.append("Total")
     last_column = len(headers) - 1
@@ -149,43 +170,96 @@ def _write_report_worksheet(  # noqa: PLR0913
     worksheet.write_row(1, 0, headers, header_format)
 
     ranked_rows = _ranked_rows(report.rows, report.period_labels)
+    include_other = (
+        has_other_contributions(
+            report.breakdowns,
+            users=[row["username"] for _, row in ranked_rows],
+            period_labels=report.period_labels,
+        )
+        if has_breakdown
+        else False
+    )
     data_start_row = 2
-    for row_number, (rank, row) in enumerate(ranked_rows, start=data_start_row):
+    current_row = data_start_row
+    for rank, row in ranked_rows:
         username = row["username"]
         display_name = redact_map.get(username, username) if redact_map else username
-        worksheet.write_number(row_number, 0, rank, rank_format)
+        worksheet.write_number(current_row, 0, rank, rank_format)
         if redact_map:
-            worksheet.write(row_number, 1, display_name, operative_format)
+            worksheet.write(current_row, 1, display_name, operative_format)
         else:
             profile_url = f"{github_url.rstrip('/')}/{username}"
             escaped_url = profile_url.replace('"', '""')
             escaped_name = display_name.replace('"', '""')
             worksheet.write_formula(
-                row_number,
+                current_row,
                 1,
                 f'=HYPERLINK("{escaped_url}","{escaped_name}")',
                 link_format,
                 display_name,
             )
 
-        for label_offset, label in enumerate(report.period_labels, start=2):
+        if has_breakdown:
+            worksheet.write(current_row, 2, "Total", category_total_format)
+
+        for label_offset, label in enumerate(
+            report.period_labels, start=period_start_col
+        ):
             worksheet.write_number(
-                row_number, label_offset, row.get(label, 0), count_format
+                current_row, label_offset, row.get(label, 0), count_format
             )
 
         if show_totals:
-            first_period_cell = xl_rowcol_to_cell(row_number, 2)
+            first_period_cell = xl_rowcol_to_cell(current_row, period_start_col)
             last_period_cell = xl_rowcol_to_cell(
-                row_number, 1 + len(report.period_labels)
+                current_row, period_start_col + len(report.period_labels) - 1
             )
             cached_total = sum(row.get(label, 0) for label in report.period_labels)
             worksheet.write_formula(
-                row_number,
+                current_row,
                 last_column,
                 f"=SUM({first_period_cell}:{last_period_cell})",
                 count_format,
                 cached_total,
             )
+
+        current_row += 1
+
+        if has_breakdown:
+            period_items = {
+                label: (
+                    report.breakdowns.get(username, {}).get(label)
+                    or ContributionBreakdown(total=row.get(label, 0))
+                )
+                for label in report.period_labels
+            }
+            summed = sum_breakdowns(period_items.values())
+            for key, cat_label, total_val in summed.categories(
+                include_other=include_other
+            ):
+                worksheet.set_row(current_row, None, None, {"level": 1})
+                worksheet.write(current_row, 2, cat_label, category_sub_format)
+                for label_offset, label in enumerate(
+                    report.period_labels, start=period_start_col
+                ):
+                    item = period_items[label]
+                    value = item.other if key == "other" else getattr(item, key)
+                    worksheet.write_number(
+                        current_row, label_offset, value, sub_count_format
+                    )
+                if show_totals:
+                    first_period_cell = xl_rowcol_to_cell(current_row, period_start_col)
+                    last_period_cell = xl_rowcol_to_cell(
+                        current_row, period_start_col + len(report.period_labels) - 1
+                    )
+                    worksheet.write_formula(
+                        current_row,
+                        last_column,
+                        f"=SUM({first_period_cell}:{last_period_cell})",
+                        sub_count_format,
+                        total_val,
+                    )
+                current_row += 1
 
     if not ranked_rows:
         worksheet.merge_range(
@@ -197,40 +271,52 @@ def _write_report_worksheet(  # noqa: PLR0913
             empty_format,
         )
     else:
-        data_end_row = data_start_row + len(ranked_rows) - 1
+        data_end_row = current_row - 1
         worksheet.autofilter(1, 0, data_end_row, last_column)
-        last_period_column = 1 + len(report.period_labels)
-        worksheet.conditional_format(
-            data_start_row,
-            2,
-            data_end_row,
-            last_period_column,
-            {
-                "type": "3_color_scale",
-                "min_color": "#F8696B",
-                "mid_color": "#FFEB84",
-                "max_color": "#63BE7B",
-            },
-        )
+        last_period_column = period_start_col + len(report.period_labels) - 1
+        if not has_breakdown:
+            worksheet.conditional_format(
+                data_start_row,
+                period_start_col,
+                data_end_row,
+                last_period_column,
+                {
+                    "type": "3_color_scale",
+                    "min_color": "#F8696B",
+                    "mid_color": "#FFEB84",
+                    "max_color": "#63BE7B",
+                },
+            )
 
         if show_totals:
             total_row = data_end_row + 1
             worksheet.write(total_row, 1, "Total", total_label_format)
-            for column in range(2, last_period_column + 1):
+            if has_breakdown:
+                worksheet.write(total_row, 2, "Total", total_label_format)
+            for column in range(period_start_col, last_period_column + 1):
                 first_data_cell = xl_rowcol_to_cell(data_start_row, column)
                 last_data_cell = xl_rowcol_to_cell(data_end_row, column)
                 cached_total = sum(
-                    row.get(report.period_labels[column - 2], 0)
+                    row.get(report.period_labels[column - period_start_col], 0)
                     for _, row in ranked_rows
                 )
+                if has_breakdown:
+                    cat_start = xl_rowcol_to_cell(data_start_row, 2)
+                    cat_end = xl_rowcol_to_cell(data_end_row, 2)
+                    formula = (
+                        f'=SUMIF({cat_start}:{cat_end},"Total",'
+                        f"{first_data_cell}:{last_data_cell})"
+                    )
+                else:
+                    formula = f"=SUM({first_data_cell}:{last_data_cell})"
                 worksheet.write_formula(
                     total_row,
                     column,
-                    f"=SUM({first_data_cell}:{last_data_cell})",
+                    formula,
                     total_count_format,
                     cached_total,
                 )
-            first_total_cell = xl_rowcol_to_cell(total_row, 2)
+            first_total_cell = xl_rowcol_to_cell(total_row, period_start_col)
             last_total_cell = xl_rowcol_to_cell(total_row, last_period_column)
             worksheet.write_formula(
                 total_row,
@@ -257,7 +343,9 @@ def _write_report_worksheet(  # noqa: PLR0913
     )
     worksheet.set_column(0, 0, 8, rank_format)
     worksheet.set_column(1, 1, min(max(max_name_length + 2, 16), 32))
-    for column, label in enumerate(report.period_labels, start=2):
+    if has_breakdown:
+        worksheet.set_column(2, 2, 14)
+    for column, label in enumerate(report.period_labels, start=period_start_col):
         worksheet.set_column(column, column, min(max(len(label) + 2, 12), 18))
     if show_totals:
         worksheet.set_column(last_column, last_column, 12, count_format)

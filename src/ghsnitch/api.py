@@ -10,6 +10,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
+from .breakdown import ContributionBreakdown
+
 __all__ = [
     "DEFAULT_GITHUB_URL",
     "GitHubGraphQLError",
@@ -21,6 +23,7 @@ __all__ = [
     "configure_api_stats",
     "current_year_fraction",
     "fetch_contributions",
+    "fetch_contributions_with_breakdown",
     "get_api_stats",
     "get_custom_range",
     "get_graphql_rate_limit",
@@ -462,7 +465,7 @@ def get_period_range(period: str) -> tuple[str, str, str]:
     return label, from_dt.isoformat(), to_dt.isoformat()
 
 
-def build_contributions_query(users, from_iso, to_iso):
+def build_contributions_query(users, from_iso, to_iso, *, include_breakdown=False):
     """Build an aliased GraphQL query and its variable values.
 
     Every value that originates outside this function travels as a GraphQL
@@ -477,12 +480,25 @@ def build_contributions_query(users, from_iso, to_iso):
         users: GitHub usernames to include in this batch.
         from_iso: Inclusive range start in ISO format.
         to_iso: Inclusive range end in ISO format.
+        include_breakdown: When True, also request the six scalar breakdown
+            counters on ``contributionsCollection``.
 
     Returns:
         tuple[str, dict]: The query document and the variables to POST with it.
     """
     declarations = ["$from: DateTime!", "$to: DateTime!"]
     variables = {"from": from_iso, "to": to_iso}
+    breakdown_fields = (
+        """
+      totalCommitContributions
+      totalPullRequestContributions
+      totalPullRequestReviewContributions
+      totalIssueContributions
+      totalRepositoryContributions
+      restrictedContributionsCount"""
+        if include_breakdown
+        else ""
+    )
     aliases = []
     for i, username in enumerate(users):
         variable_name = f"login{i}"
@@ -494,14 +510,36 @@ def build_contributions_query(users, from_iso, to_iso):
     contributionsCollection(from: $from, to: $to) {{
       contributionCalendar {{
         totalContributions
-      }}
+      }}{breakdown_fields}
     }}
   }}""")
     query = "query(" + ", ".join(declarations) + ") {" + "".join(aliases) + "\n}"
     return query, variables
 
 
-def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
+def _parse_breakdown(collection, total):
+    """Extract a ``ContributionBreakdown`` from a GraphQL collection node."""
+    return ContributionBreakdown(
+        total=total,
+        commits=int(collection.get("totalCommitContributions") or 0),
+        prs=int(collection.get("totalPullRequestContributions") or 0),
+        reviews=int(collection.get("totalPullRequestReviewContributions") or 0),
+        issues=int(collection.get("totalIssueContributions") or 0),
+        repos=int(collection.get("totalRepositoryContributions") or 0),
+        private=int(collection.get("restrictedContributionsCount") or 0),
+    )
+
+
+def _fetch_year(
+    users,
+    label,
+    from_iso,
+    to_iso,
+    github_url,
+    cancel_event=None,
+    *,
+    include_breakdown=False,
+):
     """Fetch one range using bounded, adaptively reduced operative batches.
 
     Args:
@@ -511,12 +549,16 @@ def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
         to_iso: Inclusive range end in ISO format.
         github_url: GitHub or GitHub Enterprise base URL.
         cancel_event: Optional signal used to stop concurrent retries.
+        include_breakdown: Whether to also extract ``ContributionBreakdown``
+            instances for each operative.
 
     Returns:
-        tuple: Range label, contribution counts keyed by username, and usernames
-        whose GraphQL aliases returned null.
+        tuple: Range label, contribution counts keyed by username, usernames
+        whose GraphQL aliases returned null, and (when ``include_breakdown`` is
+        True) a dict of ``ContributionBreakdown`` keyed by username.
     """
     range_result = {}
+    range_breakdowns = {}
     null_users = set()
     offset = 0
     batch_size = min(_MAX_OPERATIVES_PER_QUERY, len(users))
@@ -531,7 +573,9 @@ def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
             from_iso,
             to_iso,
         )
-        query, variables = build_contributions_query(batch, from_iso, to_iso)
+        query, variables = build_contributions_query(
+            batch, from_iso, to_iso, include_breakdown=include_breakdown
+        )
         try:
             data = make_github_graphql_request(
                 query,
@@ -562,20 +606,25 @@ def _fetch_year(users, label, from_iso, to_iso, github_url, cancel_event=None):
             if user_data is None:
                 logger.warning("no data returned for user=%s range=%s", username, label)
                 range_result[username] = 0
+                if include_breakdown:
+                    range_breakdowns[username] = ContributionBreakdown()
                 null_users.add(username)
                 continue
 
-            count = (
-                user_data.get("contributionsCollection", {})
-                .get("contributionCalendar", {})
-                .get("totalContributions", 0)
+            collection = user_data.get("contributionsCollection") or {}
+            count = collection.get("contributionCalendar", {}).get(
+                "totalContributions", 0
             )
             range_result[username] = count
+            if include_breakdown:
+                range_breakdowns[username] = _parse_breakdown(collection, count)
             logger.debug("user=%s range=%s contributions=%d", username, label, count)
 
         offset += len(batch)
 
     logger.debug("range=%s response received", label)
+    if include_breakdown:
+        return label, range_result, null_users, range_breakdowns
     return label, range_result, null_users
 
 
@@ -702,6 +751,104 @@ def get_custom_range(since: str, until: str | None = None) -> tuple[str, str, st
     return label, from_dt.isoformat(), to_dt.isoformat()
 
 
+def _fetch_contributions_internal(
+    users,
+    years,
+    github_url: str = DEFAULT_GITHUB_URL,
+    on_progress=None,
+    *,
+    period=None,
+    year_ranges=None,
+    include_breakdown=False,
+):
+    """Shared concurrent sweep engine for totals and optional breakdowns."""
+    if year_ranges is not None:
+        ranges = year_ranges
+    elif period is not None:
+        ranges = [get_period_range(period)]
+    else:
+        ranges = get_year_ranges(years)
+    total = len(ranges)
+    result = {username: {} for username in users}
+    breakdowns = {username: {} for username in users}
+    null_counts: dict[str, int] = {username: 0 for username in users}
+    if total == 0:
+        return result, breakdowns, set(users)
+
+    # A handle GitHub's own rules reject cannot name an account, so asking is a
+    # wasted request. Screening here also keeps one malformed handle from being
+    # the reason its whole batch comes back empty.
+    queryable_users = [u for u in users if is_valid_github_login(u)]
+    invalid_users = {u for u in users if not is_valid_github_login(u)}
+    for username in invalid_users:
+        logger.warning("skipping malformed operative handle user=%s", username)
+        for label, _, _ in ranges:
+            result[username][label] = 0
+            if include_breakdown:
+                breakdowns[username][label] = ContributionBreakdown()
+    if not queryable_users:
+        return result, breakdowns, invalid_users
+
+    cancel_event = threading.Event()
+    executor = ThreadPoolExecutor(max_workers=min(_MAX_RANGE_WORKERS, total))
+    futures = set()
+    completed_ranges = []
+    try:
+        for label, from_iso, to_iso in ranges:
+            if include_breakdown:
+                future = executor.submit(
+                    _fetch_year,
+                    queryable_users,
+                    label,
+                    from_iso,
+                    to_iso,
+                    github_url,
+                    cancel_event,
+                    include_breakdown=True,
+                )
+            else:
+                future = executor.submit(
+                    _fetch_year,
+                    queryable_users,
+                    label,
+                    from_iso,
+                    to_iso,
+                    github_url,
+                    cancel_event,
+                )
+            futures.add(future)
+
+        for completed, future in enumerate(as_completed(futures), start=1):
+            completed_ranges.append(future.result())
+
+            if on_progress is not None:
+                on_progress(completed, total)
+    finally:
+        cancel_event.set()
+        for pending_future in futures:
+            pending_future.cancel()
+        # Active HTTP calls cannot be interrupted, but the event prevents each
+        # worker from starting another retry after its current request returns.
+        executor.shutdown(wait=True, cancel_futures=True)
+
+    for entry in completed_ranges:
+        if include_breakdown:
+            label, range_result, null_users, range_breakdowns = entry
+            for username, item in range_breakdowns.items():
+                breakdowns[username][label] = item
+        else:
+            label, range_result, null_users = entry
+        for username, count in range_result.items():
+            result[username][label] = count
+        for username in null_users:
+            null_counts[username] += 1
+
+    not_found = {
+        u for u, c in null_counts.items() if c == total and u not in invalid_users
+    }
+    return result, breakdowns, not_found | invalid_users
+
+
 def fetch_contributions(
     users,
     years,
@@ -723,68 +870,39 @@ def fetch_contributions(
     highest precedence.  When period is set, a single named-window range is
     used.  Otherwise get_year_ranges(years) is called.
     """
-    if year_ranges is not None:
-        ranges = year_ranges
-    elif period is not None:
-        ranges = [get_period_range(period)]
-    else:
-        ranges = get_year_ranges(years)
-    total = len(ranges)
-    result = {username: {} for username in users}
-    null_counts: dict[str, int] = {username: 0 for username in users}
-    if total == 0:
-        return result, set(users)
+    result, _breakdowns, not_found = _fetch_contributions_internal(
+        users,
+        years,
+        github_url,
+        on_progress,
+        period=period,
+        year_ranges=year_ranges,
+        include_breakdown=False,
+    )
+    return result, not_found
 
-    # A handle GitHub's own rules reject cannot name an account, so asking is a
-    # wasted request. Screening here also keeps one malformed handle from being
-    # the reason its whole batch comes back empty.
-    queryable_users = [u for u in users if is_valid_github_login(u)]
-    invalid_users = {u for u in users if not is_valid_github_login(u)}
-    for username in invalid_users:
-        logger.warning("skipping malformed operative handle user=%s", username)
-        for label, _, _ in ranges:
-            result[username][label] = 0
-    if not queryable_users:
-        return result, invalid_users
 
-    cancel_event = threading.Event()
-    executor = ThreadPoolExecutor(max_workers=min(_MAX_RANGE_WORKERS, total))
-    futures = set()
-    completed_ranges = []
-    try:
-        for label, from_iso, to_iso in ranges:
-            futures.add(
-                executor.submit(
-                    _fetch_year,
-                    queryable_users,
-                    label,
-                    from_iso,
-                    to_iso,
-                    github_url,
-                    cancel_event,
-                )
-            )
+def fetch_contributions_with_breakdown(
+    users,
+    years,
+    github_url: str = DEFAULT_GITHUB_URL,
+    on_progress=None,
+    *,
+    period=None,
+    year_ranges=None,
+):
+    """Fetch contribution totals and category breakdowns across date ranges.
 
-        for completed, future in enumerate(as_completed(futures), start=1):
-            completed_ranges.append(future.result())
-
-            if on_progress is not None:
-                on_progress(completed, total)
-    finally:
-        cancel_event.set()
-        for pending_future in futures:
-            pending_future.cancel()
-        # Active HTTP calls cannot be interrupted, but the event prevents each
-        # worker from starting another retry after its current request returns.
-        executor.shutdown(wait=True, cancel_futures=True)
-
-    for label, range_result, null_users in completed_ranges:
-        for username, count in range_result.items():
-            result[username][label] = count
-        for username in null_users:
-            null_counts[username] += 1
-
-    not_found = {
-        u for u, c in null_counts.items() if c == total and u not in invalid_users
-    }
-    return result, not_found | invalid_users
+    Returns ``(totals, breakdowns, not_found)`` where ``totals`` matches
+    :func:`fetch_contributions` and ``breakdowns`` maps
+    ``username -> period_label -> ContributionBreakdown``.
+    """
+    return _fetch_contributions_internal(
+        users,
+        years,
+        github_url,
+        on_progress,
+        period=period,
+        year_ranges=year_ranges,
+        include_breakdown=True,
+    )
