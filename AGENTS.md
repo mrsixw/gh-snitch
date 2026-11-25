@@ -29,7 +29,7 @@
 
 ## Common Commands
 - `make test` — run tests (`uv run pytest -v`)
-- `make bats` — run the shell script tests (needs `bats`: `brew install bats-core` or `apt-get install bats`)
+- `make bats` — run the shell script tests (`npx --yes bats tests/bats`)
 - `make lint` — check linting and formatting (`ruff check` + `black --check` + `shellcheck` + `spell`)
 - `make shellcheck` — static analysis for every shell source
 - `make spell` — spell check (`typos`, pinned to the version CI runs)
@@ -50,6 +50,21 @@ GITHUB_TOKEN=<token> uv run gh-snitch --users mrsixw --years 3 --no-update-check
 ## Commit Messages
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`).
 - Keep the summary short and imperative.
+- **A `!` after the type, or `BREAKING CHANGE` anywhere in the body, releases a
+  new MAJOR version.** `feat!: drop the old flag` is what took the sibling
+  breakfast repo from 0.107.1 to 1.0.0. These are the *only* things that cause a
+  major bump, so neither is a decoration for "this is important" — use one when
+  you mean to change the first number, and say so in the PR description when you
+  do.
+- The version a merge will release is computed from these messages by
+  `git mkver`, not chosen by hand. The `version` CI job prints it on every pull
+  request, so check it before merging rather than discovering it afterwards.
+- **Mentioning either marker in a commit body counts as using it.** mkver scans
+  every line of every commit message since the last tag for the marker as a
+  substring, so a body explaining that a commit "was marked `feat!:`" reads to
+  mkver exactly like a declaration, and releases a major version. When you need
+  to write about them, break the string: `feat!` without the colon, or spell the
+  footer with a hyphen.
 
 ## Tone and Personality
 - This project embraces spy theming. Operatives, surveillance, handlers, dossiers — lean into it.

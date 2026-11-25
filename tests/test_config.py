@@ -44,6 +44,20 @@ def test_load_config_defaults_on_missing_file(tmp_path, capsys):
     assert "No handler config found" in captured.err
 
 
+def test_load_config_can_stay_quiet_about_a_missing_file(tmp_path, capsys):
+    """A run that names its operatives on the command line needs no config."""
+    cfg = load_config(str(tmp_path / "nonexistent.toml"), warn_if_missing=False)
+    assert cfg["users"] == []
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_load_config_still_warns_by_default(tmp_path, capsys):
+    """Silence must be opt-in, so no existing caller loses the warning."""
+    load_config(str(tmp_path / "nonexistent.toml"))
+    assert "No handler config found" in capsys.readouterr().err
+
+
 def test_load_config_defaults_for_missing_keys(tmp_path):
     config_file = tmp_path / "config.toml"
     config_file.write_text("[operatives]\n")
@@ -342,6 +356,7 @@ def test_render_config_custom_github_url_is_active():
         ("min_contributions", 7, "min-contributions = 7"),
         ("totals", True, "totals = true"),
         ("percent", True, "percent = true"),
+        ("total_percent", True, "total-percent = true"),
         ("rank_delta", False, "rank-delta = false"),
     ],
 )
@@ -371,6 +386,7 @@ def test_render_config_leaves_defaults_commented():
         "min-contributions",
         "totals",
         "percent",
+        "total-percent",
         "rank-delta",
     ):
         assert f"# {key} = " in output
@@ -392,6 +408,7 @@ def test_render_config_round_trips_every_setting(tmp_path):
         "min_contributions": 7,
         "totals": True,
         "percent": True,
+        "total_percent": True,
         "rank_delta": False,
         "output_format": "xlsx",
         "breakdown": True,

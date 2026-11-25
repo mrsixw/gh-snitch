@@ -488,6 +488,7 @@ def test_show_config_labels_match_the_config_file_spellings(runner, tmp_path):
         "min-contributions",
         "totals",
         "percent",
+        "total-percent",
         "rank-delta",
         "no-update-check",
         "teams",
@@ -527,6 +528,7 @@ def test_show_config_reports_every_setting_that_affects_a_run(runner, tmp_path):
         ("[display]\nmin-contributions = 10\n", "min-contributions = 10"),
         ("[display]\ntotals = true\n", "totals = True"),
         ("[display]\npercent = true\n", "percent = True"),
+        ("[display]\ntotal-percent = true\n", "total-percent = True"),
         ("[display]\nrank-delta = false\n", "rank-delta = False"),
     ],
 )
@@ -551,6 +553,7 @@ def test_show_config_reports_display_defaults(runner, tmp_path):
     assert "min-contributions = 0" in result.output
     assert "totals = False" in result.output
     assert "percent = False" in result.output
+    assert "total-percent = False" in result.output
     assert "rank-delta = True" in result.output
 
 
@@ -594,6 +597,9 @@ def test_show_config_reports_cli_overrides_not_the_file(runner, tmp_path):
         (["--min-contributions", "25"], "min-contributions = 25"),
         (["--totals"], "totals = True"),
         (["--percent"], "percent = True"),
+        (["--total-percent"], "total-percent = True"),
+        # The Total column is where the share prints, so the flag turns it on.
+        (["--total-percent"], "totals = True"),
         (["--no-rank-delta"], "rank-delta = False"),
         (["--format", "JSON"], "format = json"),
         (["--period", "Month"], "period = month"),
@@ -787,6 +793,86 @@ def test_not_found_operative_is_absent_from_structured_output(
 
     rows = _extract_json(result.output)
     assert [row["operative"] for row in rows] == ["alice"]
+
+
+# ---------------------------------------------------------------------------
+# 🤫 The missing-config nag
+# ---------------------------------------------------------------------------
+
+NAG = "No handler config found"
+
+
+def _run_without_config(runner, tmp_path, requests_mock, extra_args):
+    """Invoke the CLI with the default config path pointed at an absent file."""
+    missing = tmp_path / "absent" / "config.toml"
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_graphql_response(("alice", 5))
+    )
+    with patch("ghsnitch.config.get_config_path", return_value=missing):
+        with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+                with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                    return runner.invoke(gh_snitch, ["--no-update-check", *extra_args])
+
+
+def test_no_config_nag_when_users_given_on_the_command_line(
+    runner, tmp_path, requests_mock
+):
+    result = _run_without_config(
+        runner, tmp_path, requests_mock, ["--users", "alice", "--years", "0"]
+    )
+
+    assert result.exit_code == 0
+    assert NAG not in result.output
+
+
+def test_config_nag_survives_when_no_operative_source_is_given(
+    runner, tmp_path, requests_mock
+):
+    """With no --users and no --team the config is the only possible source,
+    so its absence is the actual explanation for an empty run."""
+    result = _run_without_config(runner, tmp_path, requests_mock, [])
+
+    assert NAG in result.output
+
+
+def test_config_nag_survives_for_an_explicit_path_that_is_not_there(
+    runner, tmp_path, requests_mock
+):
+    """The user named a file. Its absence is news, --users or not."""
+    requests_mock.post(
+        "https://api.github.com/graphql", json=_graphql_response(("alice", 5))
+    )
+    with patch("ghsnitch.cli.SECRET_GITHUB_TOKEN", "fake-token"):
+        with patch("ghsnitch.api.SECRET_GITHUB_TOKEN", "fake-token"):
+            with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+                result = runner.invoke(
+                    gh_snitch,
+                    [
+                        "--config",
+                        str(tmp_path / "nope.toml"),
+                        "--no-update-check",
+                        "--users",
+                        "alice",
+                        "--years",
+                        "0",
+                    ],
+                )
+
+    assert NAG in result.output
+
+
+def test_config_nag_survives_when_only_a_team_is_named(runner, tmp_path, requests_mock):
+    """--team names a source, but that source lives in the config file.
+
+    `--team alpha` without a config cannot work, so silence here would leave
+    "Known cells: none" — the symptom — as the only account of what went wrong,
+    while the cause goes unmentioned. Both lines are printed instead.
+    """
+    result = _run_without_config(runner, tmp_path, requests_mock, ["--team", "alpha"])
+
+    assert NAG in result.output
+    assert "Known cells: none" in result.output
 
 
 def test_min_contributions_suppresses_below_threshold(runner, tmp_path, requests_mock):

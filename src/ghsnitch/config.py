@@ -61,6 +61,10 @@ years = 3
 # Annotate each cell with the operative's percentage share of that year's total.
 # percent = false
 
+# Annotate the Total column with each operative's share of the grand total.
+# Implies totals.
+# total-percent = false
+
 # Show a ± column with each operative's rank change since the last run.
 # rank-delta = true
 
@@ -130,10 +134,20 @@ def get_config_path():
     return CONFIG_DIR / "config.toml"
 
 
-def load_config(config_path=None):
+def load_config(config_path=None, *, warn_if_missing=True):
     """Load config from TOML file.
 
-    Returns dict with keys 'users', 'years', 'teams', and more.
+    Args:
+        config_path: Explicit config file path, or None for the default.
+        warn_if_missing: Whether an absent file is worth mentioning. A run that
+            names its operatives on the command line does not need a config at
+            all, so the nag is noise there. Callers passing an explicit path
+            should leave this True: a file the user named and that is not there
+            is worth saying out loud.
+
+    Returns:
+        dict: Config with keys 'users', 'years', 'teams', and more.
+
     Warns (does not error) if the file is not found.
     """
     path = Path(config_path) if config_path else get_config_path()
@@ -148,6 +162,7 @@ def load_config(config_path=None):
         "min_contributions": 0,
         "totals": False,
         "percent": False,
+        "total_percent": False,
         "rank_delta": True,
         "output_format": "table",
         "breakdown": False,
@@ -160,11 +175,12 @@ def load_config(config_path=None):
 
     if not path.exists():
         logger.debug("config not found at %s, using defaults", path)
-        print(
-            f"⚠️  No handler config found at {path}. "
-            "Run gh-snitch --init-config to establish a cover.",
-            file=sys.stderr,
-        )
+        if warn_if_missing:
+            print(
+                f"⚠️  No handler config found at {path}. "
+                "Run gh-snitch --init-config to establish a cover.",
+                file=sys.stderr,
+            )
         return config
 
     try:
@@ -212,6 +228,9 @@ def load_config(config_path=None):
         config["totals"] = bool(display["totals"])
     if "percent" in display:
         config["percent"] = bool(display["percent"])
+    found, value = _lookup(display, "display", "total-percent")
+    if found:
+        config["total_percent"] = bool(value)
     found, value = _lookup(display, "display", "rank-delta")
     if found:
         config["rank_delta"] = bool(value)
@@ -357,6 +376,13 @@ _OPTIONAL_SETTINGS = (
                 False,
                 False,
                 "annotate cells with (N%) share of period total",
+            ),
+            (
+                "total-percent",
+                "total_percent",
+                False,
+                False,
+                "annotate Total column with (N%) share of grand total",
             ),
             (
                 "rank-delta",

@@ -86,6 +86,7 @@ make uninstall PREFIX=$HOME/.local
 | `--min-contributions` | Hide operatives below this contribution count |
 | `--totals` | Add a Total column per operative and a Total footer row |
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
+| `--total-percent` | Annotate the Total column with the operative's `(N%)` share of the grand total (implies `--totals`) |
 | `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph`, `stack`, `xlsx` |
 | `--breakdown` | Include core contribution category breakdown (`Commits`, `PRs`, `Reviews`, `Issues`) across all supported formats |
 | `--breakdown-style` | Table layout for `--breakdown`: `subrows` (default), `nested`, `cards`, or `columns` (implicitly enables `--breakdown`) |
