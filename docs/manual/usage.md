@@ -514,7 +514,7 @@ GitHub's `totalContributions` remains the authoritative headline metric for rank
 
 - **`--percent`:** Headline totals continue to show each operative's `(N%)` share of the cohort's period total, while category cells show each category's `(N%)` share of *that operative's* period total.
 - **`--totals`:** Adds a per-operative `Total` column (summed across displayed periods for both headline and categories) and a `Total` footer row.
-- **All output formats:** `--breakdown` (and `--breakdown-extended`) works with `--format json`, `--format csv`, `--format markdown`, `--format xlsx` (collapsible Excel outline rows and `SUMIF` totals), `--format graph` (cohort-aggregate line per category over time), and `--format stack` (cohort-aggregate stacked bar per period segmented by category).
+- **All output formats:** `--breakdown` (and `--breakdown-extended`) works with `--format json`, `--format csv`, `--format markdown`, `--format xlsx` (collapsible Excel outline rows and `SUMIF` totals), `--format graph`, and `--format stack`. In `graph` and `stack` formats, breakdown charts aggregate category counts across the whole surveilled cohort (not per operative — pass a single user with `--users` for an individual category chart).
 - **Unsupported combinations:** `--breakdown` cannot be combined with `--delta`.
 
 Set defaults in your config file:
@@ -605,7 +605,7 @@ gh-snitch --users alice,bob --last-months 6 --format graph
 gh-snitch --team platform --team backend --format graph
 ```
 
-**Note:** The `--totals` and `--percent` flags are ignored in graph mode.
+**Note:** The `--totals` and `--percent` flags are ignored in graph mode. When combined with `--breakdown` (or `--breakdown-extended`), the lines represent **cohort-aggregate** category totals summed across all surveilled operatives rather than individual operatives (pass a single user with `--users` to plot one operative's category trends).
 
 ## Stacked Bar Chart
 
@@ -626,7 +626,7 @@ The stacked view makes it easy to see team trajectory (bar height) and each pers
 gh-snitch --team platform --years 3 --format stack --redact
 ```
 
-**Note:** `--totals` and `--percent` are not applicable in stack format and are ignored.
+**Note:** `--totals` and `--percent` are not applicable in stack format and are ignored. When combined with `--breakdown` (or `--breakdown-extended`), each period's bar is segmented by **cohort-aggregate** category totals summed across all surveilled operatives rather than by individual operative (pass a single user with `--users` to view one operative's category mix).
 
 ## One-Shot Command
 
