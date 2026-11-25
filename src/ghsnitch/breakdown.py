@@ -5,7 +5,9 @@ from dataclasses import dataclass
 
 __all__ = [
     "BREAKDOWN_CATEGORIES",
+    "CORE_BREAKDOWN_CATEGORIES",
     "ContributionBreakdown",
+    "EXTENDED_BREAKDOWN_CATEGORIES",
     "VALID_BREAKDOWN_STYLES",
     "has_other_contributions",
     "sum_breakdowns",
@@ -13,14 +15,19 @@ __all__ = [
 
 VALID_BREAKDOWN_STYLES = ("subrows", "nested", "cards", "columns")
 
-BREAKDOWN_CATEGORIES = (
+CORE_BREAKDOWN_CATEGORIES = (
     ("commits", "Commits"),
     ("prs", "PRs"),
     ("reviews", "Reviews"),
     ("issues", "Issues"),
+)
+
+EXTENDED_BREAKDOWN_CATEGORIES = (
     ("repos", "Repos"),
     ("private", "Private"),
 )
+
+BREAKDOWN_CATEGORIES = CORE_BREAKDOWN_CATEGORIES + EXTENDED_BREAKDOWN_CATEGORIES
 
 
 @dataclass(frozen=True)
@@ -28,9 +35,10 @@ class ContributionBreakdown:
     """Category breakdown of a user's GitHub contributions for one time window.
 
     ``total`` comes from GitHub's ``contributionCalendar.totalContributions``
-    and remains the authoritative headline figure. When the six scalar
-    category counters do not sum to ``total``, ``other`` captures the
-    difference so rendered breakdowns reconcile cleanly.
+    and remains the authoritative headline figure. Default breakdowns display
+    the four core categories (``Commits``, ``PRs``, ``Reviews``, ``Issues``);
+    extended mode also includes ``Repos``, ``Private``, and ``Other`` (any
+    discrepancy between ``total`` and the six explicit counters).
     """
 
     total: int = 0
@@ -58,19 +66,36 @@ class ContributionBreakdown:
         """Return any discrepancy between ``total`` and the six categories."""
         return self.total - self.category_sum
 
-    def categories(self, *, include_other: bool = False) -> list[tuple[str, str, int]]:
-        """Return ``(key, label, value)`` tuples for each breakdown category."""
-        items = [
-            (key, label, getattr(self, key)) for key, label in BREAKDOWN_CATEGORIES
-        ]
-        if include_other:
+    def categories(
+        self,
+        *,
+        extended: bool = False,
+        include_other: bool | None = None,
+    ) -> list[tuple[str, str, int]]:
+        """Return ``(key, label, value)`` tuples for the selected categories.
+
+        When ``extended`` is False (default), returns the four core categories.
+        When ``extended`` is True, returns the six GitHub categories plus
+        ``Other`` (unless ``include_other=False`` is explicitly passed).
+        """
+        cat_defs = BREAKDOWN_CATEGORIES if extended else CORE_BREAKDOWN_CATEGORIES
+        items = [(key, label, getattr(self, key)) for key, label in cat_defs]
+        show_other = extended if include_other is None else include_other
+        if show_other:
             items.append(("other", "Other", self.other))
         return items
 
-    def to_dict(self, *, include_other: bool = False) -> dict[str, int]:
+    def to_dict(
+        self,
+        *,
+        extended: bool = False,
+        include_other: bool | None = None,
+    ) -> dict[str, int]:
         """Return a JSON-ready dictionary of ``total`` and category counts."""
         payload = {"total": self.total}
-        for key, _label, value in self.categories(include_other=include_other):
+        for key, _label, value in self.categories(
+            extended=extended, include_other=include_other
+        ):
             payload[key] = value
         return payload
 

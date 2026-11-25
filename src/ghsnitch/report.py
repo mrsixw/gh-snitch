@@ -26,6 +26,7 @@ class ContributionReport:
     suppressed_count: int
     missing_delta_snapshot: bool
     breakdowns: dict[str, dict[str, ContributionBreakdown]] | None = None
+    breakdown_extended: bool = False
 
 
 def _compute_rank_metadata(rows, current_period_label):
@@ -123,6 +124,7 @@ def build_contribution_report(  # noqa: PLR0913
     delta=False,
     min_contributions=0,
     breakdowns=None,
+    breakdown_extended=False,
 ):
     """Build one independently ranked and snapshotted contribution report.
 
@@ -158,6 +160,7 @@ def build_contribution_report(  # noqa: PLR0913
             suppressed_count=0,
             missing_delta_snapshot=False,
             breakdowns={} if breakdowns is not None else None,
+            breakdown_extended=breakdown_extended,
         )
 
     current_period_label = labels[0]
@@ -242,4 +245,5 @@ def build_contribution_report(  # noqa: PLR0913
         suppressed_count=suppressed_count,
         missing_delta_snapshot=missing_delta_snapshot,
         breakdowns=report_breakdowns,
+        breakdown_extended=breakdown_extended,
     )

@@ -17,7 +17,9 @@
 | `--totals` | off | Add a `Total` column (per-operative sum across all years) and a `Total` footer row (per-year sum across all operatives) |
 | `--percent` | off | Annotate each contribution cell with the operative's `(N%)` share of that year's total; percentages are colour-graded in TTY mode |
 | `--format TEXT` | `table` (from config) | Output format: `table`, `json`, `csv`, `markdown`, `graph`, `stack`, or `xlsx`. Text formats write clean data to stdout and send status messages to stderr. Excel writes a workbook to `--output`. |
-| `--breakdown TEXT` | none (from config) | Show contribution category breakdown (`Commits`, `PRs`, `Reviews`, `Issues`, `Repos`, `Private`, plus `Other` if totals differ) across every displayed period. Styles: `subrows`, `nested`, `cards`, or `columns`. Supported with `table`, `json`, `csv`, `markdown`, and `xlsx`; cannot be combined with `--delta`, `graph`, or `stack`. |
+| `--breakdown` | off (from config) | Include core contribution category breakdown (`Commits`, `PRs`, `Reviews`, `Issues`) across every displayed period. Works with all output formats (`table`, `json`, `csv`, `markdown`, `graph`, `stack`, `xlsx`); cannot be combined with `--delta`. |
+| `--breakdown-style TEXT` | `subrows` (from config) | Table layout for contribution breakdowns: `subrows`, `nested`, `cards`, or `columns`. Passing `--breakdown-style` on the CLI implicitly enables `--breakdown`. |
+| `--breakdown-extended` | off (from config) | Also include `Repos`, `Private`, and `Other` (any remainder vs `totalContributions`) in contribution breakdowns. Passing `--breakdown-extended` on the CLI implicitly enables `--breakdown`. |
 | `--output PATH` | none | Destination for `--format xlsx`. Required for Excel output, rejected with other formats, and never overwrites an existing file. |
 | `--no-rank-delta` | off | Hide the `±` rank-change column (rank delta is shown by default) |
 | `--redact` | off | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …); suppresses hyperlinks. Codenames are assigned in alphabetical order of the real username and are deterministic across runs. Works with all output formats. |
@@ -170,7 +172,9 @@ years = 3
 
 [display]
 # format = "table"      # table, json, csv, markdown, graph, stack, or xlsx
-# breakdown = "subrows" # subrows, nested, cards, or columns
+# breakdown = false     # include contribution category breakdowns
+# breakdown-style = "subrows" # subrows, nested, cards, or columns
+# breakdown-extended = false  # also include Repos, Private, and Other
 # min-contributions = 10  # hide operatives below this threshold
 # totals = false           # show Total column and footer row
 # percent = false          # annotate cells with (N%) share of year total
@@ -198,6 +202,6 @@ users = ["alice", "bob"]
 users = ["carol", "dave"]
 ```
 
-CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-quarters`, `--last-weeks`, `--format`, `--breakdown`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, and `--no-rank-delta` override config file values. `--since`, `--until`, and `--output` are command-line only because they encode a specific reporting run.
+CLI flags `--users`, `--team`, `--years`, `--period`, `--last-months`, `--last-quarters`, `--last-weeks`, `--format`, `--breakdown`, `--breakdown-style`, `--breakdown-extended`, `--github-url`, `--min-contributions`, `--totals`, `--percent`, and `--no-rank-delta` override config file values. `--since`, `--until`, and `--output` are command-line only because they encode a specific reporting run.
 
 `--last-quarters` cannot be combined on the command line with `--years`, `--period`, `--last-months`, `--last-weeks`, `--since`, or `--until`. An explicit legacy time selector overrides `last-quarters` when the latter comes from the config file.

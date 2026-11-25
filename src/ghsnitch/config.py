@@ -67,8 +67,14 @@ years = 3
 # Output format: table (default), json, csv, markdown, graph, stack, or xlsx.
 # format = "table"
 
-# Contribution breakdown layout: subrows, nested, cards, or columns.
-# breakdown = "subrows"
+# Include contribution category breakdowns (Commits, PRs, Reviews, Issues, etc.).
+# breakdown = false
+
+# Table layout for --breakdown: subrows (default), nested, cards, or columns.
+# breakdown-style = "subrows"
+
+# Include Repos, Private, and Other in contribution breakdowns.
+# breakdown-extended = false
 
 # Named cells (teams) — repeat --team <name> to surveil multiple groups.
 # [teams.backend]
@@ -144,7 +150,9 @@ def load_config(config_path=None):
         "percent": False,
         "rank_delta": True,
         "output_format": "table",
-        "breakdown": None,
+        "breakdown": False,
+        "breakdown_style": "subrows",
+        "breakdown_extended": False,
         "no_update_check": False,
         "teams": {},
     }
@@ -209,8 +217,12 @@ def load_config(config_path=None):
         config["rank_delta"] = bool(value)
     if "format" in display:
         config["output_format"] = str(display["format"])
-    if "breakdown" in display and display["breakdown"] is not None:
-        config["breakdown"] = str(display["breakdown"]).lower()
+    if "breakdown" in display:
+        config["breakdown"] = bool(display["breakdown"])
+    if "breakdown-style" in display and display["breakdown-style"] is not None:
+        config["breakdown_style"] = str(display["breakdown-style"]).lower()
+    if "breakdown-extended" in display:
+        config["breakdown_extended"] = bool(display["breakdown-extended"])
 
     teams_raw = data.get("teams", {})
     config["teams"] = {
@@ -313,9 +325,23 @@ _OPTIONAL_SETTINGS = (
             (
                 "breakdown",
                 "breakdown",
-                None,
+                False,
+                False,
+                "include contribution category breakdowns",
+            ),
+            (
+                "breakdown-style",
+                "breakdown_style",
+                "subrows",
                 "subrows",
                 "subrows, nested, cards, or columns",
+            ),
+            (
+                "breakdown-extended",
+                "breakdown_extended",
+                False,
+                False,
+                "include Repos, Private, and Other in breakdowns",
             ),
             (
                 "min-contributions",

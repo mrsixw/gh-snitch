@@ -164,14 +164,16 @@ def test_render_breakdown_table_all_styles_plain(monkeypatch, style):
     assert "alice" in output
     assert "bob" in output
     assert "Commits" in output
-    assert "Private" in output
+    assert "Issues" in output
+    assert "Repos" not in output
+    assert "Private" not in output
     assert "Other" not in output
     assert "60%" in output  # alice 60/100 commits in 2026
     assert "67%" in output  # alice 100/150 cohort share in 2026
 
 
 @pytest.mark.parametrize("style", VALID_BREAKDOWN_STYLES)
-def test_render_breakdown_table_tty_and_other_bucket(monkeypatch, style):
+def test_render_breakdown_table_tty_and_extended(monkeypatch, style):
     monkeypatch.setattr(ui, "IS_TTY", True)
     rows, labels, breakdowns = _sample_data()
     breakdowns["alice"]["2026"] = ContributionBreakdown(
@@ -182,10 +184,13 @@ def test_render_breakdown_table_tty_and_other_bucket(monkeypatch, style):
         labels,
         breakdowns,
         style=style,
+        extended=True,
         redact_map={"alice": "Operative Alpha", "bob": "Operative Bravo"},
     )
     assert "Operative Alpha" in output
     assert "alice" not in output
+    assert "Repos" in output
+    assert "Private" in output
     assert "Other" in output
 
 
@@ -200,13 +205,33 @@ def test_render_breakdown_table_empty_and_invalid_style():
         )
 
 
+def test_render_columns_groups_subcolumns_under_each_period(monkeypatch):
+    monkeypatch.setattr(ui, "IS_TTY", False)
+    rows, labels, breakdowns = _sample_data()
+    output = render_breakdown_table(
+        rows,
+        labels,
+        breakdowns,
+        style="columns",
+        show_totals=True,
+    )
+    lines = output.splitlines()
+    # Both period headers appear on the same top header row (single table, not stacked).
+    period_header_lines = [line for line in lines if "2026" in line and "2025" in line]
+    assert len(period_header_lines) == 1
+    assert "Trend" in output
+    # Each period column has its own Commits subcolumn header on the second header row.
+    sub_header_lines = [line for line in lines if line.count("Commits") == 3]
+    assert len(sub_header_lines) == 1  # 2026, 2025, and Total
+
+
 # ── Structured formats (JSON, CSV, Markdown, Excel) ──────────────────────────
 
 
 def test_render_json_csv_markdown_with_breakdown():
     rows, labels, breakdowns = _sample_data()
 
-    # JSON
+    # JSON (default core 4)
     payload = json.loads(
         ui.render_json(rows, labels, show_totals=True, breakdowns=breakdowns)
     )
@@ -217,10 +242,25 @@ def test_render_json_csv_markdown_with_breakdown():
         "prs": 15,
         "reviews": 12,
         "issues": 8,
-        "repos": 2,
-        "private": 3,
     }
     assert payload[0]["total"]["commits"] == 110
+
+    # JSON (extended: includes repos, private, other)
+    ext_payload = json.loads(
+        ui.render_json(
+            rows, labels, show_totals=True, breakdowns=breakdowns, extended=True
+        )
+    )
+    assert ext_payload[0]["2026"] == {
+        "total": 100,
+        "commits": 60,
+        "prs": 15,
+        "reviews": 12,
+        "issues": 8,
+        "repos": 2,
+        "private": 3,
+        "other": 0,
+    }
 
     # CSV
     csv_text = ui.render_csv(rows, labels, show_totals=True, breakdowns=breakdowns)
@@ -232,15 +272,21 @@ def test_render_json_csv_markdown_with_breakdown():
     assert parsed[-1]["operative"] == "Total"
     assert parsed[-1]["2026"] == "150"
 
-    # Markdown
+    # Markdown (core 4 by default, extended adds Repos/Private/Other)
     md = ui.render_markdown(rows, labels, show_totals=True, breakdowns=breakdowns)
     assert "### 2026" in md
     assert "### 2025" in md
-    expected_header = (
-        "| # | Operative | Commits | PRs | Reviews | Issues | Repos | Private | Total |"
-    )
-    assert expected_header in md
+    assert "| # | Operative | Commits | PRs | Reviews | Issues | Total |" in md
     assert "**Total**" in md
+
+    md_ext = ui.render_markdown(
+        rows, labels, show_totals=True, breakdowns=breakdowns, extended=True
+    )
+    ext_header = (
+        "| # | Operative | Commits | PRs | Reviews | Issues "
+        "| Repos | Private | Other | Total |"
+    )
+    assert ext_header in md_ext
 
 
 def test_render_multi_formats_with_breakdown():
@@ -325,13 +371,43 @@ def test_report_preserves_breakdowns_after_filtering(monkeypatch, tmp_path):
 def test_config_breakdown_roundtrip(tmp_path):
     cfg_file = tmp_path / "config.toml"
     cfg_file.write_text(
-        '[operatives]\nusers = ["alice"]\n\n[display]\nbreakdown = "NESTED"\n'
+        '[operatives]\nusers = ["alice"]\n\n[display]\n'
+        'breakdown = true\nbreakdown-style = "NESTED"\n'
     )
     loaded = config.load_config(cfg_file)
-    assert loaded["breakdown"] == "nested"
+    assert loaded["breakdown"] is True
+    assert loaded["breakdown_style"] == "nested"
 
     exported = config.render_config(loaded)
-    assert 'breakdown = "nested"' in exported
+    assert "breakdown = true" in exported
+    assert 'breakdown-style = "nested"' in exported
+
+
+def test_render_graph_and_stack_with_breakdown(monkeypatch):
+    monkeypatch.setattr(ui, "IS_TTY", False)
+    rows, labels, breakdowns = _sample_data()
+
+    graph = ui.render_graph(rows, labels, breakdowns=breakdowns)
+    assert "CATEGORY BREAKDOWN TREND" in graph
+    assert "Commits" in graph
+    assert "Private" not in graph
+    assert "alice" not in graph
+
+    graph_ext = ui.render_graph(rows, labels, breakdowns=breakdowns, extended=True)
+    assert "Private" in graph_ext
+    assert "Repos" in graph_ext
+    assert "Other" in graph_ext
+
+    stack = ui.render_stack(rows, labels, breakdowns=breakdowns)
+    assert "STACKED CATEGORY BREAKDOWN" in stack
+    assert "Commits" in stack
+    assert "Private" not in stack
+    assert "2025" in stack and "2026" in stack
+
+    stack_ext = ui.render_stack(rows, labels, breakdowns=breakdowns, extended=True)
+    assert "Private" in stack_ext
+    assert "Repos" in stack_ext
+    assert "Other" in stack_ext
 
 
 def test_cli_breakdown_validations_and_execution(monkeypatch):
@@ -339,31 +415,15 @@ def test_cli_breakdown_validations_and_execution(monkeypatch):
     monkeypatch.setattr(cli, "SECRET_GITHUB_TOKEN", "fake-token")
     monkeypatch.setattr(ui, "IS_TTY", False)
 
-    # Disallowed combinations
+    # Disallowed combination: --breakdown + --delta
     res_delta = runner.invoke(
         cli.gh_snitch,
-        ["--users", "alice", "--breakdown", "subrows", "--delta", "--no-update-check"],
+        ["--users", "alice", "--breakdown", "--delta", "--no-update-check"],
     )
     assert res_delta.exit_code != 0
     assert "--delta" in res_delta.output
 
-    for bad_fmt in ("graph", "stack"):
-        res_fmt = runner.invoke(
-            cli.gh_snitch,
-            [
-                "--users",
-                "alice",
-                "--breakdown",
-                "cards",
-                "--format",
-                bad_fmt,
-                "--no-update-check",
-            ],
-        )
-        assert res_fmt.exit_code != 0
-        assert bad_fmt in res_fmt.output
-
-    # Happy path
+    # Happy paths: --breakdown, --breakdown-style (implicit enable), and graph/stack
     _, _, breakdowns = _sample_data()
     monkeypatch.setattr(
         cli,
@@ -387,16 +447,56 @@ def test_cli_breakdown_validations_and_execution(monkeypatch):
 
     res = runner.invoke(
         cli.gh_snitch,
+        ["--users", "alice", "--years", "1", "--breakdown", "--no-update-check"],
+    )
+    assert res.exit_code == 0, res.output
+    assert "Commits" in res.output
+    assert "60" in res.output
+
+    res_style = runner.invoke(
+        cli.gh_snitch,
         [
             "--users",
             "alice",
             "--years",
             "1",
-            "--breakdown",
-            "subrows",
+            "--breakdown-style",
+            "columns",
             "--no-update-check",
         ],
     )
-    assert res.exit_code == 0, res.output
-    assert "Commits" in res.output
-    assert "60" in res.output
+    assert res_style.exit_code == 0, res_style.output
+    assert "Commits" in res_style.output
+
+    res_ext = runner.invoke(
+        cli.gh_snitch,
+        [
+            "--users",
+            "alice",
+            "--years",
+            "1",
+            "--breakdown-extended",
+            "--no-update-check",
+        ],
+    )
+    assert res_ext.exit_code == 0, res_ext.output
+    assert "Repos" in res_ext.output
+    assert "Private" in res_ext.output
+    assert "Other" in res_ext.output
+
+    for chart_fmt in ("graph", "stack"):
+        res_chart = runner.invoke(
+            cli.gh_snitch,
+            [
+                "--users",
+                "alice",
+                "--years",
+                "1",
+                "--breakdown",
+                "--format",
+                chart_fmt,
+                "--no-update-check",
+            ],
+        )
+        assert res_chart.exit_code == 0, res_chart.output
+        assert "Commits" in res_chart.output

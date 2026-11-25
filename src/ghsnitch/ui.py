@@ -10,7 +10,6 @@ from tabulate import tabulate
 
 from .breakdown import (
     ContributionBreakdown,
-    has_other_contributions,
     sum_breakdowns,
 )
 
@@ -343,6 +342,7 @@ def _tabular_records(
     show_totals=False,
     redact_map=None,
     breakdowns=None,
+    extended=False,
 ):
     """Return ranked plain-data records shared by structured renderers.
 
@@ -352,6 +352,7 @@ def _tabular_records(
         show_totals: Whether to include a per-operative total.
         redact_map: Optional username-to-codename mapping.
         breakdowns: Optional nested mapping of username -> period -> breakdown.
+        extended: Whether to include ``Repos``, ``Private``, and ``Other``.
 
     Returns:
         list[dict]: Ranked records without terminal formatting.
@@ -359,15 +360,6 @@ def _tabular_records(
     if not rows:
         return []
     sorted_rows, ranks = sorted_rows_and_ranks(rows, period_labels)
-    include_other = (
-        has_other_contributions(
-            breakdowns,
-            users=[row["username"] for row in sorted_rows],
-            period_labels=period_labels,
-        )
-        if breakdowns is not None
-        else False
-    )
     records = []
     for rank, row in zip(ranks, sorted_rows):
         username = row["username"]
@@ -378,10 +370,10 @@ def _tabular_records(
             for label in period_labels:
                 item = _breakdown_for(breakdowns, username, label, row.get(label, 0))
                 period_items.append(item)
-                record[label] = item.to_dict(include_other=include_other)
+                record[label] = item.to_dict(extended=extended)
             if show_totals:
                 record["total"] = sum_breakdowns(period_items).to_dict(
-                    include_other=include_other
+                    extended=extended
                 )
         else:
             for label in period_labels:
@@ -392,7 +384,14 @@ def _tabular_records(
     return records
 
 
-def render_json(rows, year_labels, show_totals=False, redact_map=None, breakdowns=None):
+def render_json(
+    rows,
+    year_labels,
+    show_totals=False,
+    redact_map=None,
+    breakdowns=None,
+    extended=False,
+):
     """Render contribution data as a JSON array (no ANSI codes).
 
     Each element is an object with "rank", "operative", one key per period
@@ -405,6 +404,7 @@ def render_json(rows, year_labels, show_totals=False, redact_map=None, breakdown
         show_totals=show_totals,
         redact_map=redact_map,
         breakdowns=breakdowns,
+        extended=extended,
     )
     return _json.dumps(records, indent=2, ensure_ascii=False)
 
@@ -431,6 +431,7 @@ def render_multi_json(reports, show_totals=False, redact_map=None):
                     show_totals=show_totals,
                     redact_map=redact_map,
                     breakdowns=report.breakdowns,
+                    extended=report.breakdown_extended,
                 ),
             }
         )
@@ -438,15 +439,16 @@ def render_multi_json(reports, show_totals=False, redact_map=None):
 
 
 def _breakdown_csv_rows(
-    rows, year_labels, breakdowns, *, show_totals=False, redact_map=None
+    rows,
+    year_labels,
+    breakdowns,
+    *,
+    show_totals=False,
+    redact_map=None,
+    extended=False,
 ):
     """Yield tidy CSV row dicts (one headline + category rows per operative)."""
     sorted_rows, ranks = sorted_rows_and_ranks(rows, year_labels)
-    include_other = has_other_contributions(
-        breakdowns,
-        users=[row["username"] for row in sorted_rows],
-        period_labels=year_labels,
-    )
     for rank, row in zip(ranks, sorted_rows):
         username = row["username"]
         operative_name = redact_map.get(username, username) if redact_map else username
@@ -467,9 +469,7 @@ def _breakdown_csv_rows(
             headline["total"] = total_item.total
         yield headline
 
-        for key, _label_text, total_val in total_item.categories(
-            include_other=include_other
-        ):
+        for key, _label_text, total_val in total_item.categories(extended=extended):
             cat_row = {
                 "rank": rank,
                 "operative": operative_name,
@@ -486,7 +486,14 @@ def _breakdown_csv_rows(
             yield cat_row
 
 
-def render_csv(rows, year_labels, show_totals=False, redact_map=None, breakdowns=None):
+def render_csv(
+    rows,
+    year_labels,
+    show_totals=False,
+    redact_map=None,
+    breakdowns=None,
+    extended=False,
+):
     """Render contribution data as CSV (no ANSI codes).
 
     Header row: rank, operative, <period labels…> [, total]
@@ -510,6 +517,7 @@ def render_csv(rows, year_labels, show_totals=False, redact_map=None, breakdowns
             breakdowns,
             show_totals=show_totals,
             redact_map=redact_map,
+            extended=extended,
         ):
             writer.writerow(record)
         if show_totals:
@@ -590,6 +598,7 @@ def render_multi_csv(reports, show_totals=False, redact_map=None):
                     report.breakdowns,
                     show_totals=show_totals,
                     redact_map=redact_map,
+                    extended=report.breakdown_extended,
                 ):
                     writer.writerow({"team": report.name, **record})
             if show_totals and report.rows:
@@ -624,15 +633,12 @@ def render_multi_csv(reports, show_totals=False, redact_map=None):
     return output.getvalue()
 
 
-def _render_breakdown_markdown(rows, year_labels, breakdowns, show_totals, redact_map):
+def _render_breakdown_markdown(
+    rows, year_labels, breakdowns, show_totals, redact_map, *, extended=False
+):
     """Render one GitHub-Flavoured Markdown breakdown table per period."""
     sorted_rows, ranks = sorted_rows_and_ranks(rows, year_labels)
-    include_other = has_other_contributions(
-        breakdowns,
-        users=[row["username"] for row in sorted_rows],
-        period_labels=year_labels,
-    )
-    sample_cats = ContributionBreakdown().categories(include_other=include_other)
+    sample_cats = ContributionBreakdown().categories(extended=extended)
     cat_keys = [key for key, _label, _val in sample_cats]
     cat_headers = [label for _key, label, _val in sample_cats]
 
@@ -674,7 +680,12 @@ def _render_breakdown_markdown(rows, year_labels, breakdowns, show_totals, redac
 
 
 def render_markdown(
-    rows, year_labels, show_totals=False, redact_map=None, breakdowns=None
+    rows,
+    year_labels,
+    show_totals=False,
+    redact_map=None,
+    breakdowns=None,
+    extended=False,
 ):
     """Render contribution data as a GitHub-Flavoured Markdown table (no ANSI).
 
@@ -686,7 +697,12 @@ def render_markdown(
         return "(no operatives configured)"
     if breakdowns is not None:
         return _render_breakdown_markdown(
-            rows, year_labels, breakdowns, show_totals, redact_map
+            rows,
+            year_labels,
+            breakdowns,
+            show_totals,
+            redact_map,
+            extended=extended,
         )
     sorted_rows, ranks = sorted_rows_and_ranks(rows, year_labels)
     headers = ["#", "Operative"] + year_labels + (["Total"] if show_totals else [])
@@ -742,6 +758,7 @@ def render_multi_markdown(reports, show_totals=False, redact_map=None):
             show_totals=show_totals,
             redact_map=redact_map,
             breakdowns=report.breakdowns,
+            extended=report.breakdown_extended,
         )
         sections.append(f"## Team: {report.name}\n\n{table}")
     return "\n\n".join(sections)
@@ -920,7 +937,38 @@ def render_table(
     )
 
 
-def render_graph(rows, year_labels, show_totals=False, redact_map=None):
+def _cohort_category_series(rows, x_labels, breakdowns, *, extended=False):
+    """Aggregate category totals across all operatives for each period in x_labels."""
+    sample_cats = ContributionBreakdown().categories(extended=extended)
+    per_period = {
+        label: sum_breakdowns(
+            _breakdown_for(breakdowns, row["username"], label, row.get(label, 0))
+            for row in rows
+        )
+        for label in x_labels
+    }
+    series = []
+    for key, cat_label, _val in sample_cats:
+        values = [
+            float(
+                per_period[label].other
+                if key == "other"
+                else getattr(per_period[label], key)
+            )
+            for label in x_labels
+        ]
+        series.append((cat_label, values))
+    return series
+
+
+def render_graph(
+    rows,
+    year_labels,
+    show_totals=False,
+    redact_map=None,
+    breakdowns=None,
+    extended=False,
+):
     """Render contribution data as a time-series line graph string."""
     if not rows:
         return "(no operatives configured)"
@@ -944,12 +992,28 @@ def render_graph(rows, year_labels, show_totals=False, redact_map=None):
         graph_height = 10
         target_width = len(x_labels) * 4
 
+    if breakdowns is not None:
+        named_series = _cohort_category_series(
+            sorted_rows, x_labels, breakdowns, extended=extended
+        )
+    else:
+        named_series = [
+            (
+                (
+                    redact_map.get(row["username"], row["username"])
+                    if redact_map
+                    else row["username"]
+                ),
+                [float(row.get(label, 0)) for label in x_labels],
+            )
+            for row in sorted_rows
+        ]
+
     # Interpolate data to stretch it horizontally
     all_series = []
     num_steps = len(x_labels)
     if num_steps > 1 and target_width > num_steps:
-        for row in sorted_rows:
-            raw_series = [float(row.get(label, 0)) for label in x_labels]
+        for _name, raw_series in named_series:
             interpolated = []
             for j in range(target_width):
                 # Map j [0, target_width-1] to fractional index [0, num_steps-1]
@@ -961,9 +1025,8 @@ def render_graph(rows, year_labels, show_totals=False, redact_map=None):
                 interpolated.append(val)
             all_series.append(interpolated)
     else:
-        for row in sorted_rows:
-            series = [float(row.get(label, 0)) for label in x_labels]
-            all_series.append(series)
+        for _name, raw_series in named_series:
+            all_series.append(raw_series)
 
     # Curate colors from asciichartpy
     ac_colors = [
@@ -983,7 +1046,7 @@ def render_graph(rows, year_labels, show_totals=False, redact_map=None):
 
     config = {
         "height": graph_height,
-        "colors": [ac_colors[i % len(ac_colors)] for i in range(len(sorted_rows))],
+        "colors": [ac_colors[i % len(ac_colors)] for i in range(len(named_series))],
         "offset": 2,
     }
 
@@ -992,23 +1055,19 @@ def render_graph(rows, year_labels, show_totals=False, redact_map=None):
 
     # Construct the title and legend
     labels_str = " – ".join(x_labels)
+    heading = "CATEGORY BREAKDOWN TREND" if breakdowns is not None else "TREND ANALYSIS"
     title = (
         "\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — "
-        f"TREND ANALYSIS ({labels_str})\n"
+        f"{heading} ({labels_str})\n"
     )
 
     legend_items = []
     reset = "\033[0m"
-    for i, row in enumerate(sorted_rows):
+    for i, (name, _raw_series) in enumerate(named_series):
         color_code = ac_colors[i % len(ac_colors)]
         if not IS_TTY:
             color_code = ""
             reset = ""
-        name = (
-            redact_map.get(row["username"], row["username"])
-            if redact_map
-            else row["username"]
-        )
         legend_items.append(f"{color_code}{name}{reset}")
 
     legend = "          " + ", ".join(legend_items) + "\n"
@@ -1038,8 +1097,8 @@ _ANSI_RESET = "\033[0m"
 _BLOCK = "█"
 
 
-def render_stack(rows, year_labels, redact_map=None):
-    """Render a stacked bar chart: one column per year, colour-coded by operative."""
+def render_stack(rows, year_labels, redact_map=None, breakdowns=None, extended=False):
+    """Render a stacked bar chart coloured by operative or contribution category."""
     if not rows:
         return "(no operatives configured)"
 
@@ -1055,10 +1114,36 @@ def render_stack(rows, year_labels, redact_map=None):
         u = row["username"]
         return redact_map.get(u, u) if redact_map else u
 
-    # Per-year totals and per-operative per-year counts.
-    year_totals = {
-        label: sum(r.get(label, 0) for r in sorted_rows) for label in x_labels
-    }
+    if breakdowns is not None:
+        cat_series = _cohort_category_series(
+            sorted_rows, x_labels, breakdowns, extended=extended
+        )
+        # Stack entries: (legend_label, dict[period_label, non_negative_count])
+        stack_entries = [
+            (
+                cat_label,
+                {label: max(0.0, val) for label, val in zip(x_labels, values)},
+            )
+            for cat_label, values in cat_series
+        ]
+        year_totals = {
+            label: sum(counts[label] for _name, counts in stack_entries)
+            for label in x_labels
+        }
+    else:
+        # Stack order: smallest operative at bottom, largest at top.
+        stack_order = list(reversed(sorted_rows))
+        stack_entries = [
+            (
+                _display_name(row),
+                {label: float(row.get(label, 0)) for label in x_labels},
+            )
+            for row in stack_order
+        ]
+        year_totals = {
+            label: sum(r.get(label, 0) for r in sorted_rows) for label in x_labels
+        }
+
     overall_max = max(year_totals.values()) if year_totals else 1
 
     try:
@@ -1076,24 +1161,12 @@ def render_stack(rows, year_labels, redact_map=None):
         4, min(10, (term_width - y_axis_width - gap) // max(num_years, 1) - gap)
     )
 
-    # Build the chart row by row (top = chart_height, bottom = 0).
-    # For each chart row r (1 = top), the threshold value it represents:
-    #   threshold = overall_max * r / chart_height
-    # A year column cell at row r is filled by operatives whose cumulative
-    # contribution (from the bottom) reaches that threshold.
-
-    # Stack order: smallest operative at bottom, largest at top.
-    # reversed(sorted_rows) → least-current-year first, so it sits at the base.
-    stack_order = list(reversed(sorted_rows))
-
     lines = []
     for chart_row in range(chart_height, 0, -1):
-        # Value band this row represents: (prev_threshold, threshold].
         threshold = overall_max * chart_row / chart_height
         prev_threshold = overall_max * (chart_row - 1) / chart_height
         tick_val = round(threshold)
 
-        # Y-axis label on labelled rows, continuation bar elsewhere.
         if chart_row == chart_height or chart_row % max(1, chart_height // 5) == 0:
             y_label = f"{tick_val:>{y_axis_width - 2}} ┤"
         else:
@@ -1103,18 +1176,16 @@ def render_stack(rows, year_labels, redact_map=None):
         for label in x_labels:
             total = year_totals[label]
             if total <= 0 or total < prev_threshold:
-                # Year has no contributions, or total doesn't reach this band.
                 cells.append(" " * col_width)
                 continue
 
-            # Find which operative owns the cumulative band containing prev_threshold.
             cumulative = 0.0
             cell_color = ""
-            for op_i, row in enumerate(stack_order):
-                cumulative += row.get(label, 0)
+            for seg_i, (_name, counts) in enumerate(stack_entries):
+                cumulative += counts[label]
                 if cumulative >= prev_threshold:
                     if IS_TTY:
-                        cell_color = _ANSI_COLORS[op_i % len(_ANSI_COLORS)]
+                        cell_color = _ANSI_COLORS[seg_i % len(_ANSI_COLORS)]
                     break
 
             block = _BLOCK * col_width
@@ -1134,8 +1205,7 @@ def render_stack(rows, year_labels, redact_map=None):
 
     # Legend: left→right matches bottom→top stack order.
     legend_parts = []
-    for i, row in enumerate(stack_order):
-        name = _display_name(row)
+    for i, (name, _counts) in enumerate(stack_entries):
         if IS_TTY:
             c = _ANSI_COLORS[i % len(_ANSI_COLORS)]
             legend_parts.append(f"{c}{_BLOCK}{_ANSI_RESET} {name}")
@@ -1143,6 +1213,11 @@ def render_stack(rows, year_labels, redact_map=None):
             legend_parts.append(f"{_BLOCK} {name}")
     legend = "  " + "   ".join(legend_parts)
 
-    title = "\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — STACKED SURVEILLANCE\n"
+    heading = (
+        "STACKED CATEGORY BREAKDOWN"
+        if breakdowns is not None
+        else "STACKED SURVEILLANCE"
+    )
+    title = f"\n          🕵️  OPERATIVE SURVEILLANCE DOSSIER — {heading}\n"
     body = "\n".join(lines)
     return f"{title}\n{body}\n\n{legend}\n"

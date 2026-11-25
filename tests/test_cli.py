@@ -482,6 +482,8 @@ def test_show_config_labels_match_the_config_file_spellings(runner, tmp_path):
         "last-weeks",
         "format",
         "breakdown",
+        "breakdown-style",
+        "breakdown-extended",
         "github-url",
         "min-contributions",
         "totals",

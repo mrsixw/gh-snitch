@@ -11,7 +11,6 @@ from xlsxwriter.utility import xl_rowcol_to_cell
 
 from .breakdown import (
     ContributionBreakdown,
-    has_other_contributions,
     sum_breakdowns,
 )
 
@@ -170,15 +169,6 @@ def _write_report_worksheet(  # noqa: PLR0913
     worksheet.write_row(1, 0, headers, header_format)
 
     ranked_rows = _ranked_rows(report.rows, report.period_labels)
-    include_other = (
-        has_other_contributions(
-            report.breakdowns,
-            users=[row["username"] for _, row in ranked_rows],
-            period_labels=report.period_labels,
-        )
-        if has_breakdown
-        else False
-    )
     data_start_row = 2
     current_row = data_start_row
     for rank, row in ranked_rows:
@@ -235,7 +225,7 @@ def _write_report_worksheet(  # noqa: PLR0913
             }
             summed = sum_breakdowns(period_items.values())
             for key, cat_label, total_val in summed.categories(
-                include_other=include_other
+                extended=report.breakdown_extended
             ):
                 worksheet.set_row(current_row, None, None, {"level": 1})
                 worksheet.write(current_row, 2, cat_label, category_sub_format)

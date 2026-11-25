@@ -491,34 +491,39 @@ percent = true
 
 ## Contribution Breakdown
 
-Use `--breakdown` to decompose each operative's total contributions into GitHub activity categories (`Commits`, `PRs`, `Reviews`, `Issues`, `Repos`, and `Private`) across every displayed period — at zero extra API request cost:
+Use `--breakdown` to decompose each operative's total contributions into the core GitHub activity categories (`Commits`, `PRs`, `Reviews`, and `Issues`) across every displayed period — at zero extra API request cost. Add `--breakdown-extended` to also include `Repos`, `Private`, and `Other` (any remainder against GitHub's `totalContributions`). Choose a terminal table layout with `--breakdown-style` (passing either `--breakdown-style` or `--breakdown-extended` on the CLI implicitly enables `--breakdown`):
 
 ```bash
-# Tree-indented sub-rows beneath each operative (compact, multi-period friendly)
-gh-snitch --users alice,bob --years 2 --breakdown subrows
+# Tree-indented sub-rows beneath each operative (default layout, core 4 categories)
+gh-snitch --users alice,bob --years 2 --breakdown
+
+# Include Repos, Private, and Other as well
+gh-snitch --users alice,bob --years 2 --breakdown-extended
 
 # Table-within-table (Rich nested mini-table inside each period cell)
-gh-snitch --users alice,bob --years 2 --breakdown nested
+gh-snitch --users alice,bob --years 2 --breakdown-style nested
 
 # Dossier cards (one breakdown table per operative)
-gh-snitch --users alice,bob --years 2 --breakdown cards
+gh-snitch --users alice,bob --years 2 --breakdown-style cards
 
-# Flat category columns (one table per period, stacked newest-first)
-gh-snitch --users alice,bob --years 2 --breakdown columns
+# Subcolumns grouped under each period header
+gh-snitch --users alice,bob --years 2 --breakdown-style columns
 ```
 
-GitHub's `totalContributions` remains the authoritative headline metric for ranking, `--min-contributions`, ghost detection, and YoY trend arrows. If GitHub's headline total ever differs from the sum of the six categories, an `Other` bucket is automatically shown so the breakdown reconciles with the total.
+GitHub's `totalContributions` remains the authoritative headline metric for ranking, `--min-contributions`, ghost detection, and YoY trend arrows.
 
 - **`--percent`:** Headline totals continue to show each operative's `(N%)` share of the cohort's period total, while category cells show each category's `(N%)` share of *that operative's* period total.
 - **`--totals`:** Adds a per-operative `Total` column (summed across displayed periods for both headline and categories) and a `Total` footer row.
-- **Structured formats:** `--breakdown` works with `--format json` (nested breakdown objects per period), `--format csv` (adds a `category` column), `--format markdown` (one GFM table per period), and `--format xlsx` (adds a `Category` column with collapsible Excel outline rows and `SUMIF` totals).
-- **Unsupported combinations:** `--breakdown` cannot be combined with `--delta`, `--format graph`, or `--format stack`.
+- **All output formats:** `--breakdown` (and `--breakdown-extended`) works with `--format json`, `--format csv`, `--format markdown`, `--format xlsx` (collapsible Excel outline rows and `SUMIF` totals), `--format graph` (cohort-aggregate line per category over time), and `--format stack` (cohort-aggregate stacked bar per period segmented by category).
+- **Unsupported combinations:** `--breakdown` cannot be combined with `--delta`.
 
-Set a default breakdown style in your config file:
+Set defaults in your config file:
 
 ```toml
 [display]
-breakdown = "subrows"
+breakdown = true
+breakdown-style = "subrows"
+breakdown-extended = false
 ```
 
 ## Alternative Output Formats

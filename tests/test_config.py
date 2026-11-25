@@ -394,7 +394,9 @@ def test_render_config_round_trips_every_setting(tmp_path):
         "percent": True,
         "rank_delta": False,
         "output_format": "xlsx",
-        "breakdown": "nested",
+        "breakdown": True,
+        "breakdown_style": "nested",
+        "breakdown_extended": True,
         "no_update_check": True,
         "teams": {},
     }
