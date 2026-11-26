@@ -88,6 +88,9 @@ make uninstall PREFIX=$HOME/.local
 | `--percent` | Annotate each cell with the operative's `(N%)` share of that year's total |
 | `--total-percent` | Annotate the Total column with the operative's `(N%)` share of the grand total (implies `--totals`) |
 | `--format` | Output format: `table` (default), `json`, `csv`, `markdown`, `graph`, `stack`, `xlsx` |
+| `--breakdown` | Include core contribution category breakdown (`Commits`, `PRs`, `Reviews`, `Issues`) across all supported formats |
+| `--breakdown-style` | Table layout for `--breakdown`: `subrows` (default), `nested`, `cards`, or `columns` (implicitly enables `--breakdown`) |
+| `--breakdown-extended` | Also include `Repos`, `Private`, and `Other` in contribution breakdowns (implicitly enables `--breakdown`) |
 | `--output PATH` | Destination workbook path; required with `--format xlsx` |
 | `--no-rank-delta` | Hide the `±` rank-change column (shown by default) |
 | `--redact` | Replace operative usernames with NATO phonetic codenames (Operative Alpha, Bravo, …) for shareable reports |

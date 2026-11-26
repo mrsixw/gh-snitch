@@ -23,6 +23,7 @@ from .api import (
     configure_api_stats,
     current_year_fraction,
     fetch_contributions,
+    fetch_contributions_with_breakdown,
     get_api_stats,
     get_custom_range,
     get_graphql_rate_limit,
@@ -32,6 +33,8 @@ from .api import (
     get_rolling_week_ranges,
     get_year_ranges,
 )
+from .breakdown import VALID_BREAKDOWN_STYLES
+from .breakdown_ui import render_breakdown_table
 from .config import generate_default_config, get_config_path, load_config
 from .excel import write_excel_report
 from .logger import setup_logging
@@ -374,6 +377,32 @@ def _stable_unique(values):
     help="Output format: table, json, csv, markdown, graph, stack, or xlsx.",
 )
 @click.option(
+    "--breakdown",
+    is_flag=True,
+    default=False,
+    help=(
+        "Include contribution category breakdown " "(Commits, PRs, Reviews, Issues)."
+    ),
+)
+@click.option(
+    "--breakdown-style",
+    default=None,
+    type=click.Choice(list(VALID_BREAKDOWN_STYLES), case_sensitive=False),
+    help=(
+        "Table layout for contribution breakdowns: subrows (default), nested, "
+        "cards, or columns. Implicitly enables --breakdown."
+    ),
+)
+@click.option(
+    "--breakdown-extended",
+    is_flag=True,
+    default=False,
+    help=(
+        "Include Repos, Private, and Other in contribution breakdowns. "
+        "Implicitly enables --breakdown."
+    ),
+)
+@click.option(
     "--output",
     default=None,
     type=click.Path(path_type=Path, dir_okay=False),
@@ -410,6 +439,9 @@ def gh_snitch(  # noqa: PLR0913
     delta,
     reset_snapshot,
     output_format,
+    breakdown,
+    breakdown_style,
+    breakdown_extended,
     output,
 ):
     """Spy-themed GitHub contribution surveillance tool."""
@@ -607,6 +639,14 @@ def gh_snitch(  # noqa: PLR0913
         cfg["rank_delta"] = False
     if output_format is not None:
         cfg["output_format"] = output_format.lower()
+    if breakdown:
+        cfg["breakdown"] = True
+    if breakdown_style is not None:
+        cfg["breakdown"] = True
+        cfg["breakdown_style"] = breakdown_style.lower()
+    if breakdown_extended:
+        cfg["breakdown"] = True
+        cfg["breakdown_extended"] = True
 
     # Printed only after every CLI override has been applied, so each line is
     # the value this run would use rather than what the file says. Reporting
@@ -620,6 +660,9 @@ def gh_snitch(  # noqa: PLR0913
         click.echo(f"last-quarters = {cfg['last_quarters']}")
         click.echo(f"last-weeks = {cfg['last_weeks']}")
         click.echo(f"format = {cfg.get('output_format', 'table')}")
+        click.echo(f"breakdown = {cfg.get('breakdown', False)}")
+        click.echo(f"breakdown-style = {cfg.get('breakdown_style', 'subrows')}")
+        click.echo(f"breakdown-extended = {cfg.get('breakdown_extended', False)}")
         click.echo(f"github-url = {cfg['github_url']}")
         # The display settings decide which operatives reach the table at all.
         # Omitting min-contributions here meant a config that silently filtered
@@ -651,6 +694,18 @@ def gh_snitch(  # noqa: PLR0913
         return
 
     active_format = cfg.get("output_format", "table")
+    active_breakdown = bool(cfg.get("breakdown", False))
+    active_breakdown_style = cfg.get("breakdown_style", "subrows")
+    active_breakdown_extended = bool(cfg.get("breakdown_extended", False))
+    if active_breakdown_style not in VALID_BREAKDOWN_STYLES:
+        valid = ", ".join(VALID_BREAKDOWN_STYLES)
+        raise click.UsageError(
+            f"Invalid breakdown-style '{active_breakdown_style}'. "
+            f"Valid styles: {valid}."
+        )
+    if active_breakdown and delta:
+        raise click.UsageError("--breakdown cannot be combined with --delta.")
+
     if active_format == "xlsx":
         if output is None:
             raise click.UsageError("--format xlsx requires --output PATH.")
@@ -755,13 +810,23 @@ def gh_snitch(  # noqa: PLR0913
             def on_progress(completed, total):  # noqa: ARG001
                 progress.update(task, completed=completed)
 
-            data, not_found = fetch_contributions(
-                operative_list,
-                num_years,
-                operative_github_url,
-                on_progress,
-                year_ranges=active_year_ranges,
-            )
+            if active_breakdown:
+                data, breakdowns, not_found = fetch_contributions_with_breakdown(
+                    operative_list,
+                    num_years,
+                    operative_github_url,
+                    on_progress,
+                    year_ranges=active_year_ranges,
+                )
+            else:
+                data, not_found = fetch_contributions(
+                    operative_list,
+                    num_years,
+                    operative_github_url,
+                    on_progress,
+                    year_ranges=active_year_ranges,
+                )
+                breakdowns = None
     except GitHubGraphQLRateLimitError as e:
         duration = time.monotonic() - sweep_start
         logger.error(
@@ -842,6 +907,8 @@ def gh_snitch(  # noqa: PLR0913
             operative_github_url,
             delta=delta,
             min_contributions=cfg["min_contributions"],
+            breakdowns=breakdowns,
+            breakdown_extended=active_breakdown_extended,
         )
         for name, cohort_users in surveilled_cohorts
     ]
@@ -873,6 +940,8 @@ def gh_snitch(  # noqa: PLR0913
                 primary_report.period_labels,
                 show_totals=show_totals,
                 redact_map=_redact,
+                breakdowns=primary_report.breakdowns,
+                extended=primary_report.breakdown_extended,
             )
         click.echo(rendered_output)
     elif active_format == "csv":
@@ -886,6 +955,8 @@ def gh_snitch(  # noqa: PLR0913
                 primary_report.period_labels,
                 show_totals=show_totals,
                 redact_map=_redact,
+                breakdowns=primary_report.breakdowns,
+                extended=primary_report.breakdown_extended,
             )
         click.echo(rendered_output, nl=False)
     elif active_format == "markdown":
@@ -899,6 +970,8 @@ def gh_snitch(  # noqa: PLR0913
                 primary_report.period_labels,
                 show_totals=show_totals,
                 redact_map=_redact,
+                breakdowns=primary_report.breakdowns,
+                extended=primary_report.breakdown_extended,
             )
         click.echo(rendered_output)
     elif active_format == "graph":
@@ -925,6 +998,8 @@ def gh_snitch(  # noqa: PLR0913
                     report.period_labels,
                     show_totals=show_totals,
                     redact_map=_redact,
+                    breakdowns=report.breakdowns,
+                    extended=report.breakdown_extended,
                 )
                 sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{graph}")
             click.echo("\n\n".join(sections))
@@ -935,6 +1010,8 @@ def gh_snitch(  # noqa: PLR0913
                     primary_report.period_labels,
                     show_totals=show_totals,
                     redact_map=_redact,
+                    breakdowns=primary_report.breakdowns,
+                    extended=primary_report.breakdown_extended,
                 )
             )
     elif active_format == "stack":
@@ -948,7 +1025,11 @@ def gh_snitch(  # noqa: PLR0913
             sections = []
             for report in reports:
                 stack = render_stack(
-                    report.rows, report.period_labels, redact_map=_redact
+                    report.rows,
+                    report.period_labels,
+                    redact_map=_redact,
+                    breakdowns=report.breakdowns,
+                    extended=report.breakdown_extended,
                 )
                 sections.append(f"🕵️  TEAM DOSSIER: {report.name}\n{stack}")
             click.echo("\n\n".join(sections))
@@ -958,6 +1039,8 @@ def gh_snitch(  # noqa: PLR0913
                     primary_report.rows,
                     primary_report.period_labels,
                     redact_map=_redact,
+                    breakdowns=primary_report.breakdowns,
+                    extended=primary_report.breakdown_extended,
                 )
             )
     elif active_format == "xlsx":
@@ -980,23 +1063,47 @@ def gh_snitch(  # noqa: PLR0913
     else:
         tables = []
         for report in reports:
-            table = render_table(
-                report.rows,
-                report.period_labels,
-                year_fraction=current_year_fraction(),
-                show_trend=(
-                    not no_trend and report.delta_column is None and not suppress_trend
-                ),
-                show_totals=show_totals,
-                show_percent=cfg.get("percent", False),
-                show_total_percent=cfg.get("total_percent", False),
-                show_rank_delta=cfg.get("rank_delta", True),
-                delta_col=report.delta_column,
-                rank_deltas=report.rank_deltas,
-                ghost_usernames=report.ghost_usernames if not delta else None,
-                redact_map=_redact,
-                github_url=operative_github_url,
-            )
+            if active_breakdown:
+                table = render_breakdown_table(
+                    report.rows,
+                    report.period_labels,
+                    report.breakdowns,
+                    style=active_breakdown_style,
+                    extended=report.breakdown_extended,
+                    year_fraction=current_year_fraction(),
+                    show_trend=(
+                        not no_trend
+                        and report.delta_column is None
+                        and not suppress_trend
+                    ),
+                    show_totals=show_totals,
+                    show_percent=cfg.get("percent", False),
+                    show_rank_delta=cfg.get("rank_delta", True),
+                    rank_deltas=report.rank_deltas,
+                    ghost_usernames=report.ghost_usernames,
+                    redact_map=_redact,
+                    github_url=operative_github_url,
+                )
+            else:
+                table = render_table(
+                    report.rows,
+                    report.period_labels,
+                    year_fraction=current_year_fraction(),
+                    show_trend=(
+                        not no_trend
+                        and report.delta_column is None
+                        and not suppress_trend
+                    ),
+                    show_totals=show_totals,
+                    show_percent=cfg.get("percent", False),
+                    show_total_percent=cfg.get("total_percent", False),
+                    show_rank_delta=cfg.get("rank_delta", True),
+                    delta_col=report.delta_column,
+                    rank_deltas=report.rank_deltas,
+                    ghost_usernames=report.ghost_usernames if not delta else None,
+                    redact_map=_redact,
+                    github_url=operative_github_url,
+                )
             if multiple_team_reports:
                 table = f"🕵️  TEAM DOSSIER: {report.name}\n{table}"
             tables.append(table)

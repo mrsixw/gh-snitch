@@ -3,6 +3,7 @@
 import hashlib
 from dataclasses import dataclass
 
+from .breakdown import ContributionBreakdown
 from .snapshot import compute_scope, load_snapshot, save_snapshot
 
 __all__ = [
@@ -24,6 +25,8 @@ class ContributionReport:
     delta_column: str | None
     suppressed_count: int
     missing_delta_snapshot: bool
+    breakdowns: dict[str, dict[str, ContributionBreakdown]] | None = None
+    breakdown_extended: bool = False
 
 
 def _compute_rank_metadata(rows, current_period_label):
@@ -120,6 +123,8 @@ def build_contribution_report(  # noqa: PLR0913
     *,
     delta=False,
     min_contributions=0,
+    breakdowns=None,
+    breakdown_extended=False,
 ):
     """Build one independently ranked and snapshotted contribution report.
 
@@ -154,6 +159,8 @@ def build_contribution_report(  # noqa: PLR0913
             delta_column="Δ Today" if delta else None,
             suppressed_count=0,
             missing_delta_snapshot=False,
+            breakdowns={} if breakdowns is not None else None,
+            breakdown_extended=breakdown_extended,
         )
 
     current_period_label = labels[0]
@@ -218,6 +225,15 @@ def build_contribution_report(  # noqa: PLR0913
         delta_column = "Δ Today"
         rank_deltas = None
 
+    report_breakdowns = None
+    if breakdowns is not None:
+        surviving = {row["username"] for row in rows}
+        report_breakdowns = {
+            username: dict(breakdowns.get(username, {}))
+            for username in users
+            if username in surviving
+        }
+
     return ContributionReport(
         name=name,
         users=list(users),
@@ -228,4 +244,6 @@ def build_contribution_report(  # noqa: PLR0913
         delta_column=delta_column,
         suppressed_count=suppressed_count,
         missing_delta_snapshot=missing_delta_snapshot,
+        breakdowns=report_breakdowns,
+        breakdown_extended=breakdown_extended,
     )

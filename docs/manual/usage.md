@@ -513,6 +513,43 @@ percent = true
 total-percent = true
 ```
 
+## Contribution Breakdown
+
+Use `--breakdown` to decompose each operative's total contributions into the core GitHub activity categories (`Commits`, `PRs`, `Reviews`, and `Issues`) across every displayed period — at zero extra API request cost. Add `--breakdown-extended` to also include `Repos`, `Private`, and `Other` (any remainder against GitHub's `totalContributions`). Choose a terminal table layout with `--breakdown-style` (passing either `--breakdown-style` or `--breakdown-extended` on the CLI implicitly enables `--breakdown`):
+
+```bash
+# Tree-indented sub-rows beneath each operative (default layout, core 4 categories)
+gh-snitch --users alice,bob --years 2 --breakdown
+
+# Include Repos, Private, and Other as well
+gh-snitch --users alice,bob --years 2 --breakdown-extended
+
+# Table-within-table (Rich nested mini-table inside each period cell)
+gh-snitch --users alice,bob --years 2 --breakdown-style nested
+
+# Dossier cards (one breakdown table per operative)
+gh-snitch --users alice,bob --years 2 --breakdown-style cards
+
+# Subcolumns grouped under each period header
+gh-snitch --users alice,bob --years 2 --breakdown-style columns
+```
+
+GitHub's `totalContributions` remains the authoritative headline metric for ranking, `--min-contributions`, ghost detection, and YoY trend arrows.
+
+- **`--percent`:** Headline totals continue to show each operative's `(N%)` share of the cohort's period total, while category cells show each category's `(N%)` share of *that operative's* period total.
+- **`--totals`:** Adds a per-operative `Total` column (summed across displayed periods for both headline and categories) and a `Total` footer row.
+- **All output formats:** `--breakdown` (and `--breakdown-extended`) works with `--format json`, `--format csv`, `--format markdown`, `--format xlsx` (collapsible Excel outline rows and `SUMIF` totals), `--format graph`, and `--format stack`. In `graph` and `stack` formats, breakdown charts aggregate category counts across the whole surveilled cohort (not per operative — pass a single user with `--users` for an individual category chart).
+- **Unsupported combinations:** `--breakdown` cannot be combined with `--delta`.
+
+Set defaults in your config file:
+
+```toml
+[display]
+breakdown = true
+breakdown-style = "subrows"
+breakdown-extended = false
+```
+
 ## Alternative Output Formats
 
 By default gh-snitch renders a coloured terminal table. Use `--format` to get clean, scriptable output instead:
@@ -592,7 +629,7 @@ gh-snitch --users alice,bob --last-months 6 --format graph
 gh-snitch --team platform --team backend --format graph
 ```
 
-**Note:** The `--totals`, `--percent` and `--total-percent` flags are ignored in graph mode.
+**Note:** The `--totals`, `--percent`, and `--total-percent` flags are ignored in graph mode. When combined with `--breakdown` (or `--breakdown-extended`), the lines represent **cohort-aggregate** category totals summed across all surveilled operatives rather than individual operatives (pass a single user with `--users` to plot one operative's category trends).
 
 ## Stacked Bar Chart
 
@@ -613,7 +650,7 @@ The stacked view makes it easy to see team trajectory (bar height) and each pers
 gh-snitch --team platform --years 3 --format stack --redact
 ```
 
-**Note:** `--totals`, `--percent` and `--total-percent` are not applicable in stack format and are ignored.
+**Note:** `--totals`, `--percent`, and `--total-percent` are not applicable in stack format and are ignored. When combined with `--breakdown` (or `--breakdown-extended`), each period's bar is segmented by **cohort-aggregate** category totals summed across all surveilled operatives rather than by individual operative (pass a single user with `--users` to view one operative's category mix).
 
 ## One-Shot Command
 
