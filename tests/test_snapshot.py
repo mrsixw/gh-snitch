@@ -123,6 +123,35 @@ def test_save_snapshot_writes_file(tmp_path):
     assert "timestamp" in data
 
 
+def test_save_snapshot_leaves_no_temp_residue(tmp_path):
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+        from ghsnitch.snapshot import save_snapshot
+
+        save_snapshot({"alice": {"2026": 100}}, scope="abc123")
+    assert [p.name for p in tmp_path.iterdir()] == ["snapshot-abc123.json"]
+
+
+def test_save_snapshot_keeps_the_previous_snapshot_when_the_write_fails(tmp_path):
+    """load_snapshot reports unparsable JSON as "no snapshot", so a torn write
+    silently resets movement history. The old file has to survive instead."""
+    from ghsnitch.snapshot import load_snapshot, save_snapshot
+
+    with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
+        save_snapshot({"alice": {"2026": 100}}, scope="abc123")
+
+        def boom(src, dst):
+            raise OSError("interrupted mid-write")
+
+        with patch("ghsnitch.atomicio.os.replace", boom):
+            save_snapshot({"alice": {"2026": 999}}, scope="abc123")
+
+        recovered = load_snapshot(scope="abc123")
+
+    assert recovered is not None
+    assert recovered["contributions"]["alice"]["2026"] == 100
+    assert [p.name for p in tmp_path.iterdir()] == ["snapshot-abc123.json"]
+
+
 def test_save_snapshot_context_id(tmp_path):
     with patch("ghsnitch.snapshot.CACHE_DIR", tmp_path):
         from ghsnitch.snapshot import save_snapshot
